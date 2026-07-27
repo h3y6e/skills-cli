@@ -1,13 +1,23 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"runtime/debug"
 
+	"github.com/h3y6e/skills/internal/git"
 	"github.com/h3y6e/skills/internal/lock"
 	"github.com/h3y6e/skills/internal/skill"
 	"github.com/spf13/cobra"
+)
+
+// Git operations as variables, replaceable for testing (same pattern as IsTTY).
+var (
+	ShallowClone     = git.ShallowClone
+	ResolveRef       = git.ResolveRef
+	NewUpstreamFuncs = skill.NewUpstreamFuncs
 )
 
 func NewRootCmd(version string) *cobra.Command {
@@ -33,8 +43,13 @@ func Execute(version string) error {
 	return NewRootCmd(version).Execute()
 }
 
+// loadLockFile reads the lockfile, returning an empty file when it does not
+// exist (e.g. destinations managed purely in gh skill format).
 func loadLockFile(layout lock.Layout) (lock.File, error) {
 	lf, err := lock.ReadFile(layout.LockPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return lock.File{Version: 1, Skills: map[string]lock.Entry{}}, nil
+	}
 	if err != nil {
 		return lock.File{}, fmt.Errorf("read lockfile: %w", err)
 	}

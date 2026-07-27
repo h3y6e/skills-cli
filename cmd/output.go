@@ -91,6 +91,10 @@ func (r *CheckRenderer) Render(result CheckResult) {
 		fmt.Fprintf(r.w, "%s: update available (%s -> %s)\n", result.SkillName, ShortHash(result.CurrentHash), ShortHash(result.LatestHash))
 	case skill.StatusCheckFailed:
 		fmt.Fprintf(r.w, "%s: check failed (%s)\n", result.SkillName, result.Reason)
+	case skill.StatusPinned:
+		fmt.Fprintf(r.w, "%s: pinned (%s)\n", result.SkillName, result.Reason)
+	case skill.StatusLocal:
+		fmt.Fprintf(r.w, "%s: local (%s)\n", result.SkillName, result.Reason)
 	default:
 		fmt.Fprintf(r.w, "%s: %s\n", result.SkillName, result.Status)
 	}

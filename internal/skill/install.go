@@ -1,12 +1,14 @@
 package skill
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 
+	"github.com/h3y6e/skills/internal/git"
 	"github.com/h3y6e/skills/internal/lock"
 )
 
@@ -68,6 +70,46 @@ func InstallSkills(skills []DiscoveredSkill, ref SourceRef, layout lock.Layout) 
 	}
 
 	return nil
+}
+
+// InstallTrackedSkills copies discovered skills to the destination directory,
+// injecting gh-compatible source metadata into each SKILL.md. No lockfile is
+// written; the frontmatter metadata is the install record, as with
+// gh skill install. Only github sources are supported.
+// repoRoot is the cloned repository the skills were discovered in, and
+// resolved is the ref the clone was made from.
+func InstallTrackedSkills(ctx context.Context, skills []DiscoveredSkill, repoRoot string, ref SourceRef, resolved git.ResolvedRef, layout lock.Layout) error {
+	if len(skills) == 0 {
+		return fmt.Errorf("no skills to install")
+	}
+	if ref.SourceType != "github" {
+		return fmt.Errorf("gh skill format supports only github sources, got %q", ref.SourceType)
+	}
+
+	tx, err := stageSkillReplacements(layout, discoveredSkillReplacements(skills))
+	if err != nil {
+		return err
+	}
+	defer tx.Cleanup()
+
+	for i, s := range skills {
+		treeSHA, err := git.TreeSHA(ctx, repoRoot, s.Path)
+		if err != nil {
+			return fmt.Errorf("resolve tree SHA for %q: %w", s.Name, err)
+		}
+		meta := SourceMetadata{
+			RepoURL: RepoURLForSource(ref.CanonicalSource),
+			Ref:     resolved.Full,
+			TreeSHA: treeSHA,
+			Path:    s.Path,
+			Pinned:  ref.Ref,
+		}
+		if err := injectStagedMetadata(tx.staged[i].StagedDir, meta); err != nil {
+			return fmt.Errorf("inject metadata for %q: %w", s.Name, err)
+		}
+	}
+
+	return tx.Apply()
 }
 
 // ApplyCandidateUpdates replaces updated skills and persists hashes to the lockfile.

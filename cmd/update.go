@@ -22,6 +22,15 @@ func runUpdate(cmd *cobra.Command, source string, skillFilter []string, destDir 
 		return err
 	}
 
+	installed, err := skill.ScanInstalledSkills(layout.DestDir)
+	if err != nil {
+		return err
+	}
+	foreign, err := skill.FilterInstalledBySource(skill.UnmanagedSkills(installed, entriesForDest), source)
+	if err != nil {
+		return err
+	}
+
 	cloneFn, cleanup := skill.NewCloneFunc(cmd.Context(), "skills-update-*")
 	defer cleanup()
 
@@ -29,6 +38,15 @@ func runUpdate(cmd *cobra.Command, source string, skillFilter []string, destDir 
 	if err != nil {
 		return err
 	}
+
+	fns, foreignCleanup := NewUpstreamFuncs(cmd.Context(), "skills-update-foreign-*")
+	defer foreignCleanup()
+
+	foreignCandidates, err := skill.AggregateForeignUpdateCandidates(foreign, fns)
+	if err != nil {
+		return err
+	}
+	candidates = append(candidates, foreignCandidates...)
 
 	candidates = skill.FilterCandidates(candidates, skillFilter)
 
@@ -64,7 +82,7 @@ func runUpdate(cmd *cobra.Command, source string, skillFilter []string, destDir 
 		return fmt.Errorf("updates available; re-run with -y or in a TTY to apply")
 	}
 
-	applicable := make([]skill.UpdateCandidate, 0, len(candidates))
+	var applicable, foreignApplicable []skill.UpdateCandidate
 
 	for _, c := range candidates {
 		switch c.Status {
@@ -81,10 +99,20 @@ func runUpdate(cmd *cobra.Command, source string, skillFilter []string, destDir 
 				fmt.Fprintf(w, "--- %s ---\n%s\n", c.SkillName, diffOutput)
 			}
 
-			applicable = append(applicable, c)
+			if c.Foreign {
+				foreignApplicable = append(foreignApplicable, c)
+			} else {
+				applicable = append(applicable, c)
+			}
 
 		case skill.StatusCheckFailed:
 			fmt.Fprintf(w, "%s: %s (%s)\n", c.SkillName, c.Status, c.Reason)
+
+		case skill.StatusPinned:
+			fmt.Fprintf(w, "%s: pinned to %s (skipped)\n", c.SkillName, c.Reason)
+
+		case skill.StatusLocal:
+			fmt.Fprintf(w, "%s: installed from local path (skipped)\n", c.SkillName)
 		}
 	}
 
@@ -95,6 +123,13 @@ func runUpdate(cmd *cobra.Command, source string, skillFilter []string, destDir 
 
 	for _, name := range appliedNames {
 		fmt.Fprintf(w, "%s: updated\n", name)
+	}
+
+	for _, c := range foreignApplicable {
+		if err := skill.ReplaceSkill(c.SkillName, c.StagedDir, layout); err != nil {
+			return fmt.Errorf("update %s: %w", c.SkillName, err)
+		}
+		fmt.Fprintf(w, "%s: updated\n", c.SkillName)
 	}
 
 	return nil

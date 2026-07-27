@@ -16,7 +16,13 @@ func runCheck(cmd *cobra.Command, destDir string, jsonFlag bool) error {
 	}
 	entries := lock.FilterEntriesByDest(lf.Skills, layout.DestDir)
 
-	if len(entries) == 0 {
+	installed, err := skill.ScanInstalledSkills(layout.DestDir)
+	if err != nil {
+		return err
+	}
+	foreign := skill.UnmanagedSkills(installed, entries)
+
+	if len(entries) == 0 && len(foreign) == 0 {
 		fmt.Fprintln(cmd.OutOrStdout(), "no installed skills to check")
 		return nil
 	}
@@ -28,6 +34,15 @@ func runCheck(cmd *cobra.Command, destDir string, jsonFlag bool) error {
 	if err != nil {
 		return err
 	}
+
+	fns, foreignCleanup := NewUpstreamFuncs(cmd.Context(), "skills-check-foreign-*")
+	defer foreignCleanup()
+
+	foreignCandidates, err := skill.AggregateForeignUpdateCandidates(foreign, fns)
+	if err != nil {
+		return err
+	}
+	candidates = append(candidates, foreignCandidates...)
 
 	printSkippedEntries(cmd.OutOrStdout(), skipped)
 

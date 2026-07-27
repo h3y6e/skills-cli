@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -14,11 +15,14 @@ import (
 
 // DiscoverSkills finds skills in a cloned repository.
 // It prefers the skills/ subdirectory; if found, the root level is ignored.
-// A valid skill directory must contain SKILL.md. Only one level is scanned.
+// A valid skill directory must contain SKILL.md. Skills may be nested one
+// namespace level deep (skills/<namespace>/<name>), following the Agent
+// Skills convention used by gh skill; namespaced skills are installed flat
+// under their leaf name. The root level is scanned flat.
 func DiscoverSkills(repoRoot string) ([]DiscoveredSkill, error) {
 	skillsDir := filepath.Join(repoRoot, "skills")
 	if info, err := os.Stat(skillsDir); err == nil && info.IsDir() {
-		skills, err := scanDir(skillsDir)
+		skills, err := scanDir(skillsDir, "skills", true)
 		if err != nil {
 			return nil, err
 		}
@@ -27,14 +31,14 @@ func DiscoverSkills(repoRoot string) ([]DiscoveredSkill, error) {
 		}
 	}
 
-	return scanDir(repoRoot)
+	return scanDir(repoRoot, "", false)
 }
 
-func scanDir(dir string) ([]DiscoveredSkill, error) {
-	return scanDirWithHashFunc(dir, ComputeHash)
+func scanDir(dir, pathPrefix string, allowNamespaced bool) ([]DiscoveredSkill, error) {
+	return scanDirWithHashFunc(dir, pathPrefix, allowNamespaced, ComputeHash)
 }
 
-func scanDirWithHashFunc(dir string, hashFn func(string) (string, error)) ([]DiscoveredSkill, error) {
+func scanDirWithHashFunc(dir, pathPrefix string, allowNamespaced bool, hashFn func(string) (string, error)) ([]DiscoveredSkill, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
@@ -43,6 +47,7 @@ func scanDirWithHashFunc(dir string, hashFn func(string) (string, error)) ([]Dis
 	type skillTarget struct {
 		name string
 		dir  string
+		path string
 	}
 
 	targets := make([]skillTarget, 0, len(entries))
@@ -54,14 +59,47 @@ func scanDirWithHashFunc(dir string, hashFn func(string) (string, error)) ([]Dis
 		name := entry.Name()
 		skillDir := filepath.Join(dir, name)
 
-		if _, err := os.Stat(filepath.Join(skillDir, "SKILL.md")); err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, fmt.Errorf("stat SKILL.md in %q: %w", skillDir, err)
+		hasSkill, err := hasSkillFile(skillDir)
+		if err != nil {
+			return nil, err
+		}
+		if hasSkill {
+			targets = append(targets, skillTarget{name: name, dir: skillDir, path: path.Join(pathPrefix, name)})
+			continue
 		}
 
-		targets = append(targets, skillTarget{name: name, dir: skillDir})
+		if !allowNamespaced {
+			continue
+		}
+		subEntries, err := os.ReadDir(skillDir)
+		if err != nil {
+			return nil, fmt.Errorf("read namespace dir %q: %w", skillDir, err)
+		}
+		for _, sub := range subEntries {
+			if !sub.IsDir() {
+				continue
+			}
+			subDir := filepath.Join(skillDir, sub.Name())
+			hasSkill, err := hasSkillFile(subDir)
+			if err != nil {
+				return nil, err
+			}
+			if hasSkill {
+				targets = append(targets, skillTarget{
+					name: sub.Name(),
+					dir:  subDir,
+					path: path.Join(pathPrefix, name, sub.Name()),
+				})
+			}
+		}
+	}
+
+	seen := make(map[string]bool, len(targets))
+	for _, target := range targets {
+		if seen[target.name] {
+			return nil, fmt.Errorf("duplicate skill name %q in %q", target.name, dir)
+		}
+		seen[target.name] = true
 	}
 
 	type scanResult struct {
@@ -88,6 +126,7 @@ func scanDirWithHashFunc(dir string, hashFn func(string) (string, error)) ([]Dis
 				skill: DiscoveredSkill{
 					Name:         target.name,
 					Dir:          target.dir,
+					Path:         target.path,
 					ComputedHash: hash,
 				},
 			}
@@ -117,6 +156,16 @@ func scanDirWithHashFunc(dir string, hashFn func(string) (string, error)) ([]Dis
 	})
 
 	return skills, nil
+}
+
+func hasSkillFile(dir string) (bool, error) {
+	if _, err := os.Stat(filepath.Join(dir, "SKILL.md")); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("stat SKILL.md in %q: %w", dir, err)
+	}
+	return true, nil
 }
 
 // ComputeHash returns a SHA256 hash of the directory contents.
