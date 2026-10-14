@@ -3,6 +3,8 @@
 Manage local [agent skills](https://agentskills.io) from git repos.
 Reads and writes both [vercel-labs/skills](https://github.com/vercel-labs/skills) lockfiles and [`gh skill`](https://cli.github.com/manual/gh_skill) metadata.
 
+![skolar reads and writes both the vercel-labs/skills lockfile and gh skill metadata](docs/flow.svg)
+
 ## Why
 
 - Version-control skills from external repositories, say in your dotfiles
