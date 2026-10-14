@@ -60,6 +60,7 @@ Exit status: 0 on success, 1 on failure (including a skill that could not be che
 	root.AddCommand(newUpdateCmd())
 	root.AddCommand(newListCmd())
 	root.AddCommand(newRemoveCmd())
+	root.AddCommand(newVerifyCmd())
 
 	return root
 }
@@ -121,6 +122,7 @@ const (
 	codeDeclined             = "declined"
 	codeSkillNotFound        = "skill_not_found"
 	codeCheckFailed          = "check_failed"
+	codeVerifyFailed         = "verify_failed"
 )
 
 type cliError struct {
@@ -281,6 +283,35 @@ func newCheckCmd() *cobra.Command {
 		},
 	}
 
+	bindDirFlag(c, &dirFlag)
+	c.Flags().BoolVar(&jsonFlag, "json", false, "Output results in JSON format")
+
+	return c
+}
+
+func newVerifyCmd() *cobra.Command {
+	var (
+		skillFlag []string
+		dirFlag   string
+		jsonFlag  bool
+	)
+
+	c := &cobra.Command{
+		Use:   "verify",
+		Short: "Verify installed skills against their records",
+		Long: `Verify installed skills against their records.
+
+Lockfile skills are hashed on disk and compared with computedHash, offline.
+gh skill metadata is compared file by file with the tree github-tree-sha names, fetched at github-ref.
+Exits 1 when a skill is modified or cannot be verified.`,
+		Annotations: map[string]string{recordKey: "results"},
+		Args:        usageArgs(cobra.NoArgs),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runVerify(cmd, dirFlag, skillFlag, jsonFlag)
+		},
+	}
+
+	c.Flags().StringSliceVarP(&skillFlag, "skill", "s", nil, "Verify only specified skills (repeatable)")
 	bindDirFlag(c, &dirFlag)
 	c.Flags().BoolVar(&jsonFlag, "json", false, "Output results in JSON format")
 

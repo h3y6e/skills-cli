@@ -37,6 +37,7 @@ skolar add -d dot_agents/exact_skills ...     # other directory (default .agents
 skolar list
 skolar check
 skolar update                                 # show diffs, then confirm
+skolar verify                                 # files on disk match the record
 skolar remove spec-plan
 ```
 

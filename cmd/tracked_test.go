@@ -107,6 +107,12 @@ func stubGitHubTransport(t *testing.T, canonical, bareURL string) {
 				}
 				return real.FetchLatest(url)
 			},
+			FetchRef: func(url, ref string) (string, error) {
+				if url == repoURL {
+					url = bareURL
+				}
+				return real.FetchRef(url, ref)
+			},
 			TreeSHA: real.TreeSHA,
 		}, cleanup
 	}
