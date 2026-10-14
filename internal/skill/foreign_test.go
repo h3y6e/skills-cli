@@ -12,14 +12,14 @@ import (
 	"github.com/h3y6e/skolar/internal/skill"
 )
 
-func writeSkillWithMetadata(t *testing.T, destDir, name string, meta skill.SourceMetadata) {
+func writeSkillWithMetadata(t *testing.T, skillsDir, name string, meta skill.SourceMetadata) {
 	t.Helper()
 
 	content, err := skill.InjectSourceMetadata("# "+name+"\n", meta)
 	if err != nil {
 		t.Fatalf("InjectSourceMetadata() error = %v", err)
 	}
-	writeFiles(t, destDir, map[string]string{
+	writeFiles(t, skillsDir, map[string]string{
 		name + "/SKILL.md": content,
 	})
 }
@@ -34,16 +34,16 @@ func TestScanInstalledSkills(t *testing.T) {
 		Path:    "skills/creating-issues",
 	}
 
-	t.Run("when dest contains skills with github metadata, scanning returns them sorted by name", func(t *testing.T) {
+	t.Run("when dir contains skills with github metadata, scanning returns them sorted by name", func(t *testing.T) {
 		t.Parallel()
 
 		// Arrange
-		destDir := t.TempDir()
-		writeSkillWithMetadata(t, destDir, "zeta", githubMeta)
-		writeSkillWithMetadata(t, destDir, "alpha", githubMeta)
+		skillsDir := t.TempDir()
+		writeSkillWithMetadata(t, skillsDir, "zeta", githubMeta)
+		writeSkillWithMetadata(t, skillsDir, "alpha", githubMeta)
 
 		// Act
-		installed, err := skill.ScanInstalledSkills(destDir)
+		installed, err := skill.ScanInstalledSkills(skillsDir)
 
 		// Assert
 		if err != nil {
@@ -58,7 +58,7 @@ func TestScanInstalledSkills(t *testing.T) {
 		if installed[0].Meta.RepoURL != githubMeta.RepoURL {
 			t.Errorf("Meta.RepoURL = %q", installed[0].Meta.RepoURL)
 		}
-		if installed[0].Dir != filepath.Join(destDir, "alpha") {
+		if installed[0].Dir != filepath.Join(skillsDir, "alpha") {
 			t.Errorf("Dir = %q", installed[0].Dir)
 		}
 	})
@@ -67,13 +67,13 @@ func TestScanInstalledSkills(t *testing.T) {
 		t.Parallel()
 
 		// Arrange
-		destDir := t.TempDir()
-		writeFiles(t, destDir, map[string]string{
+		skillsDir := t.TempDir()
+		writeFiles(t, skillsDir, map[string]string{
 			"plain/SKILL.md": "---\nname: plain\n---\n# Plain\n",
 		})
 
 		// Act
-		installed, err := skill.ScanInstalledSkills(destDir)
+		installed, err := skill.ScanInstalledSkills(skillsDir)
 
 		// Assert
 		if err != nil {
@@ -88,14 +88,14 @@ func TestScanInstalledSkills(t *testing.T) {
 		t.Parallel()
 
 		// Arrange
-		destDir := t.TempDir()
-		writeFiles(t, destDir, map[string]string{
+		skillsDir := t.TempDir()
+		writeFiles(t, skillsDir, map[string]string{
 			"broken/SKILL.md": "---\n: : invalid\n---\n# Broken\n",
 		})
-		writeSkillWithMetadata(t, destDir, "valid", githubMeta)
+		writeSkillWithMetadata(t, skillsDir, "valid", githubMeta)
 
 		// Act
-		installed, err := skill.ScanInstalledSkills(destDir)
+		installed, err := skill.ScanInstalledSkills(skillsDir)
 
 		// Assert
 		if err != nil {
@@ -106,14 +106,14 @@ func TestScanInstalledSkills(t *testing.T) {
 		}
 	})
 
-	t.Run("when dest does not exist, scanning returns no skills and no error", func(t *testing.T) {
+	t.Run("when dir does not exist, scanning returns no skills and no error", func(t *testing.T) {
 		t.Parallel()
 
 		// Arrange
-		destDir := filepath.Join(t.TempDir(), "does-not-exist")
+		skillsDir := filepath.Join(t.TempDir(), "does-not-exist")
 
 		// Act
-		installed, err := skill.ScanInstalledSkills(destDir)
+		installed, err := skill.ScanInstalledSkills(skillsDir)
 
 		// Assert
 		if err != nil {
@@ -131,7 +131,7 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 	installed := func(name, repoURL, treeSHA, path string) skill.InstalledSkill {
 		return skill.InstalledSkill{
 			Name: name,
-			Dir:  filepath.Join("dest", name),
+			Dir:  filepath.Join("dir", name),
 			Meta: skill.SourceMetadata{RepoURL: repoURL, Ref: "refs/tags/v1.0.0", TreeSHA: treeSHA, Path: path},
 		}
 	}
@@ -330,7 +330,7 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		// Arrange
 		local := skill.InstalledSkill{
 			Name: "mine",
-			Dir:  filepath.Join("dest", "mine"),
+			Dir:  filepath.Join("dir", "mine"),
 			Meta: skill.SourceMetadata{LocalPath: "/home/user/skills/mine"},
 		}
 		fns := skill.UpstreamFuncs{

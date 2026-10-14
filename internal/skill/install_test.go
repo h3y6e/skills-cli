@@ -17,7 +17,7 @@ func TestInstallSkills(t *testing.T) {
 		t.Parallel()
 
 		srcDir := t.TempDir()
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 		writeFiles(t, srcDir, map[string]string{
 			"skills/my-skill/SKILL.md": "# My Skill\n",
 			"skills/my-skill/ref.md":   "reference\n",
@@ -32,12 +32,12 @@ func TestInstallSkills(t *testing.T) {
 			CloneURL:        "https://github.com/h3y6e/spec-skills.git",
 		}
 
-		err := skill.InstallSkills(discovered, ref, lock.NewLayout(destDir))
+		err := skill.InstallSkills(discovered, ref, lock.NewLayout(skillsDir))
 		if err != nil {
 			t.Fatalf("InstallSkills() error = %v", err)
 		}
 
-		data, err := os.ReadFile(filepath.Join(destDir, "my-skill", "SKILL.md"))
+		data, err := os.ReadFile(filepath.Join(skillsDir, "my-skill", "SKILL.md"))
 		if err != nil {
 			t.Fatalf("expected installed SKILL.md: %v", err)
 		}
@@ -45,7 +45,7 @@ func TestInstallSkills(t *testing.T) {
 			t.Errorf("content = %q, want %q", string(data), "# My Skill\n")
 		}
 
-		data2, err := os.ReadFile(filepath.Join(destDir, "my-skill", "ref.md"))
+		data2, err := os.ReadFile(filepath.Join(skillsDir, "my-skill", "ref.md"))
 		if err != nil {
 			t.Fatalf("expected installed ref.md: %v", err)
 		}
@@ -58,7 +58,7 @@ func TestInstallSkills(t *testing.T) {
 		t.Parallel()
 
 		srcDir := t.TempDir()
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 		writeFiles(t, srcDir, map[string]string{
 			"skills/alpha/SKILL.md": "# Alpha\n",
 		})
@@ -69,8 +69,8 @@ func TestInstallSkills(t *testing.T) {
 			SourceType:      "github",
 		}
 
-		lockPath := lock.FilePath(destDir)
-		if err := skill.InstallSkills(discovered, ref, lock.NewLayout(destDir)); err != nil {
+		lockPath := lock.FilePath(skillsDir)
+		if err := skill.InstallSkills(discovered, ref, lock.NewLayout(skillsDir)); err != nil {
 			t.Fatalf("InstallSkills() error = %v", err)
 		}
 
@@ -101,12 +101,12 @@ func TestInstallSkills(t *testing.T) {
 		t.Parallel()
 
 		srcDir := t.TempDir()
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 		writeFiles(t, srcDir, map[string]string{
 			"skills/new-skill/SKILL.md": "# New\n",
 		})
 
-		lockPath := lock.FilePath(destDir)
+		lockPath := lock.FilePath(skillsDir)
 		existing := lock.File{
 			Version: 1,
 			Skills: map[string]lock.Entry{
@@ -127,7 +127,7 @@ func TestInstallSkills(t *testing.T) {
 			SourceType:      "github",
 		}
 
-		if err := skill.InstallSkills(discovered, ref, lock.NewLayout(destDir)); err != nil {
+		if err := skill.InstallSkills(discovered, ref, lock.NewLayout(skillsDir)); err != nil {
 			t.Fatalf("InstallSkills() error = %v", err)
 		}
 
@@ -147,8 +147,8 @@ func TestInstallSkills(t *testing.T) {
 	t.Run("does not corrupt destination on empty input", func(t *testing.T) {
 		t.Parallel()
 
-		destDir := t.TempDir()
-		err := skill.InstallSkills(nil, skill.SourceRef{}, lock.NewLayout(destDir))
+		skillsDir := t.TempDir()
+		err := skill.InstallSkills(nil, skill.SourceRef{}, lock.NewLayout(skillsDir))
 		if err == nil {
 			t.Fatal("expected error for empty skill list")
 		}
@@ -161,10 +161,10 @@ func TestReplaceSkill(t *testing.T) {
 	t.Run("replaces existing skill directory with staged content", func(t *testing.T) {
 		t.Parallel()
 
-		destDir := t.TempDir()
+		skillsDir := t.TempDir()
 		stagedDir := t.TempDir()
 
-		writeFiles(t, destDir, map[string]string{
+		writeFiles(t, skillsDir, map[string]string{
 			"my-skill/SKILL.md": "# Old\n",
 			"my-skill/old-file": "old content\n",
 		})
@@ -174,12 +174,12 @@ func TestReplaceSkill(t *testing.T) {
 			"new-file": "new content\n",
 		})
 
-		err := skill.ReplaceSkill("my-skill", stagedDir, lock.NewLayout(destDir))
+		err := skill.ReplaceSkill("my-skill", stagedDir, lock.NewLayout(skillsDir))
 		if err != nil {
 			t.Fatalf("ReplaceSkill() error = %v", err)
 		}
 
-		data, err := os.ReadFile(filepath.Join(destDir, "my-skill", "SKILL.md"))
+		data, err := os.ReadFile(filepath.Join(skillsDir, "my-skill", "SKILL.md"))
 		if err != nil {
 			t.Fatalf("read SKILL.md: %v", err)
 		}
@@ -187,7 +187,7 @@ func TestReplaceSkill(t *testing.T) {
 			t.Errorf("SKILL.md = %q, want %q", string(data), "# New\n")
 		}
 
-		data, err = os.ReadFile(filepath.Join(destDir, "my-skill", "new-file"))
+		data, err = os.ReadFile(filepath.Join(skillsDir, "my-skill", "new-file"))
 		if err != nil {
 			t.Fatalf("read new-file: %v", err)
 		}
@@ -195,7 +195,7 @@ func TestReplaceSkill(t *testing.T) {
 			t.Errorf("new-file = %q, want %q", string(data), "new content\n")
 		}
 
-		if _, err := os.Stat(filepath.Join(destDir, "my-skill", "old-file")); !errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Stat(filepath.Join(skillsDir, "my-skill", "old-file")); !errors.Is(err, os.ErrNotExist) {
 			t.Error("old-file should have been removed")
 		}
 	})
@@ -203,19 +203,19 @@ func TestReplaceSkill(t *testing.T) {
 	t.Run("creates skill directory if it does not exist", func(t *testing.T) {
 		t.Parallel()
 
-		destDir := t.TempDir()
+		skillsDir := t.TempDir()
 		stagedDir := t.TempDir()
 
 		writeFiles(t, stagedDir, map[string]string{
 			"SKILL.md": "# Brand New\n",
 		})
 
-		err := skill.ReplaceSkill("brand-new", stagedDir, lock.NewLayout(destDir))
+		err := skill.ReplaceSkill("brand-new", stagedDir, lock.NewLayout(skillsDir))
 		if err != nil {
 			t.Fatalf("ReplaceSkill() error = %v", err)
 		}
 
-		data, err := os.ReadFile(filepath.Join(destDir, "brand-new", "SKILL.md"))
+		data, err := os.ReadFile(filepath.Join(skillsDir, "brand-new", "SKILL.md"))
 		if err != nil {
 			t.Fatalf("read SKILL.md: %v", err)
 		}

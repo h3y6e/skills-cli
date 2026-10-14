@@ -33,7 +33,7 @@ Or download a binary from [Releases](https://github.com/h3y6e/skolar/releases).
 skolar add h3y6e/spec-skills                  # latest release, else default branch
 skolar add h3y6e/spec-skills#main             # pin a ref
 skolar add -s spec-plan h3y6e/spec-skills     # only some skills
-skolar add -d dot_agents/exact_skills ...     # other destination (default .agents/skills)
+skolar add -d dot_agents/exact_skills ...     # other directory (default .agents/skills)
 skolar list
 skolar check
 skolar update                                 # show diffs, then confirm
@@ -42,12 +42,12 @@ skolar remove spec-plan
 
 - `add`, `update`, and `remove` take `--dry-run`, and confirm before overwriting or deleting; pass `-y` without a TTY.
 - `list --json` and `check --json` print `{"skills": [...]}` and `{"results": [...]}`, plus `"error": {"code", "message", "fix"}` on failure.
-- Any flag except `--help` and `--version` can be set as `SKOLAR_<FLAG>`, e.g. `SKOLAR_DEST`.
+- Any flag except `--help` and `--version` can be set as `SKOLAR_<FLAG>`, e.g. `SKOLAR_DIR`.
 - Exit status: 0 success, 1 failure (including a skill that could not be checked), 2 usage error or missing `-y`.
 
 ## Formats
 
-A destination with a `skills-lock.json` beside it, or a non-GitHub source, uses the vercel-labs/skills lockfile. Otherwise skolar writes `gh skill` metadata into each `SKILL.md` and no lockfile, so skills installed by either tool are managed by both.
+skolar records each skill in `gh skill` metadata in its `SKILL.md`, in any directory, so skills installed by either tool are managed by both. In a project with a `skills-lock.json`, `.agents/skills` keeps using the lockfile so vercel-labs/skills still works. Non-GitHub sources need the lockfile, so they can only be added to `.agents/skills`.
 
 In `gh skill` format:
 

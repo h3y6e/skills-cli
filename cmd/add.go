@@ -11,23 +11,21 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func runAdd(cmd *cobra.Command, source string, dryRun, yes bool, skillFilter []string, destDir string) error {
+func runAdd(cmd *cobra.Command, source string, dryRun, yes bool, skillFilter []string, skillsDir string) error {
 	ctx := cmd.Context()
-	layout := lock.NewLayout(destDir)
+	layout := lock.NewLayout(skillsDir)
 
 	ref, err := skill.ParseSource(source)
 	if err != nil {
 		return err
 	}
 
-	// Mode selection: a lockfile alongside the destination keeps the vercel
-	// format; otherwise install in gh skill format (frontmatter metadata).
-	_, statErr := os.Stat(layout.LockPath())
-	lockfileExists := statErr == nil
-	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
-		return fmt.Errorf("stat lockfile: %w", statErr)
+	_, err = lock.ReadFile(layout.LockPath())
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
-	tracked := skill.PreferTrackedInstall(lockfileExists, ref.SourceType)
+	lockfileForDir := err == nil && layout.UsesLockfile()
+	tracked := skill.PreferTrackedInstall(lockfileForDir, ref.SourceType)
 
 	// gh skill format resolves the ref like gh skill install: explicit ref,
 	// else latest release, else default branch.

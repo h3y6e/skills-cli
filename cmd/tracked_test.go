@@ -86,11 +86,11 @@ func stubGitHubTransport(t *testing.T, canonical, bareURL string) {
 
 	origClone, origResolve, origUpstream := cmd.ShallowClone, cmd.ResolveRef, cmd.NewUpstreamFuncs
 
-	cmd.ShallowClone = func(ctx context.Context, url, ref, dest string) error {
+	cmd.ShallowClone = func(ctx context.Context, url, ref, dir string) error {
 		if url == cloneURL {
 			url = bareURL
 		}
-		return origClone(ctx, url, ref, dest)
+		return origClone(ctx, url, ref, dir)
 	}
 	cmd.ResolveRef = func(ctx context.Context, url, ref string) (git.ResolvedRef, error) {
 		if url == cloneURL {
@@ -130,10 +130,10 @@ func runSkills(t *testing.T, args ...string) (string, error) {
 	return out.String(), err
 }
 
-func readMetadata(t *testing.T, destDir, name string) skill.SourceMetadata {
+func readMetadata(t *testing.T, skillsDir, name string) skill.SourceMetadata {
 	t.Helper()
 
-	data, err := os.ReadFile(filepath.Join(destDir, name, "SKILL.md"))
+	data, err := os.ReadFile(filepath.Join(skillsDir, name, "SKILL.md"))
 	if err != nil {
 		t.Fatalf("expected %s/SKILL.md: %v", name, err)
 	}
@@ -150,19 +150,19 @@ func TestAddTrackedMode(t *testing.T) {
 	t.Run("when no lockfile exists, add installs in gh skill format without creating one", func(t *testing.T) {
 		// Arrange
 		stubGitHubTransport(t, "h3y6e/spec-skills", initBareRepoWithTwoTags(t))
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 		// Act
-		output, err := runSkills(t, "add", "-s", "alpha", "-d", destDir, "h3y6e/spec-skills")
+		output, err := runSkills(t, "add", "-s", "alpha", "-d", skillsDir, "h3y6e/spec-skills")
 
 		// Assert
 		if err != nil {
 			t.Fatalf("add: %v", err)
 		}
-		if !strings.Contains(output, "install "+filepath.Join(destDir, "alpha")) {
-			t.Errorf("output = %q, want it to contain %q", output, "install "+filepath.Join(destDir, "alpha"))
+		if !strings.Contains(output, "install "+filepath.Join(skillsDir, "alpha")) {
+			t.Errorf("output = %q, want it to contain %q", output, "install "+filepath.Join(skillsDir, "alpha"))
 		}
-		meta := readMetadata(t, destDir, "alpha")
+		meta := readMetadata(t, skillsDir, "alpha")
 		if meta.RepoURL != "https://github.com/h3y6e/spec-skills" {
 			t.Errorf("RepoURL = %q", meta.RepoURL)
 		}
@@ -172,7 +172,7 @@ func TestAddTrackedMode(t *testing.T) {
 		if meta.TreeSHA == "" || meta.Path != "skills/alpha" || meta.Pinned != "" {
 			t.Errorf("unexpected metadata: %+v", meta)
 		}
-		if _, err := os.Stat(lock.FilePath(destDir)); !errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Stat(lock.FilePath(skillsDir)); !errors.Is(err, os.ErrNotExist) {
 			t.Error("no lockfile should be created in gh skill format")
 		}
 	})
@@ -181,27 +181,27 @@ func TestAddTrackedMode(t *testing.T) {
 		// Arrange
 		bareURL := initBareRepoWithTwoTags(t)
 		stubGitHubTransport(t, "h3y6e/spec-skills", bareURL)
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 		seed := lock.File{Version: 1, Skills: map[string]lock.Entry{}}
-		if err := lock.WriteFile(lock.FilePath(destDir), seed); err != nil {
+		if err := lock.WriteFile(lock.FilePath(skillsDir), seed); err != nil {
 			t.Fatalf("seed lockfile: %v", err)
 		}
 
 		// Act
-		_, err := runSkills(t, "add", "-s", "alpha", "-d", destDir, bareURL)
+		_, err := runSkills(t, "add", "-s", "alpha", "-d", skillsDir, bareURL)
 
 		// Assert
 		if err != nil {
 			t.Fatalf("add: %v", err)
 		}
-		lf, err := lock.ReadFile(lock.FilePath(destDir))
+		lf, err := lock.ReadFile(lock.FilePath(skillsDir))
 		if err != nil {
 			t.Fatalf("read lockfile: %v", err)
 		}
 		if _, ok := lf.Skills["alpha"]; !ok {
 			t.Error("lockfile should contain alpha in lock mode")
 		}
-		data, err := os.ReadFile(filepath.Join(destDir, "alpha", "SKILL.md"))
+		data, err := os.ReadFile(filepath.Join(skillsDir, "alpha", "SKILL.md"))
 		if err != nil {
 			t.Fatalf("read SKILL.md: %v", err)
 		}
@@ -213,23 +213,23 @@ func TestAddTrackedMode(t *testing.T) {
 	t.Run("when the source uses a ref fragment, the install is pinned to that version", func(t *testing.T) {
 		// Arrange
 		stubGitHubTransport(t, "h3y6e/spec-skills", initBareRepoWithTwoTags(t))
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 		// Act
-		_, err := runSkills(t, "add", "-s", "alpha", "-d", destDir, "h3y6e/spec-skills#v1.0.0")
+		_, err := runSkills(t, "add", "-s", "alpha", "-d", skillsDir, "h3y6e/spec-skills#v1.0.0")
 
 		// Assert
 		if err != nil {
 			t.Fatalf("add: %v", err)
 		}
-		meta := readMetadata(t, destDir, "alpha")
+		meta := readMetadata(t, skillsDir, "alpha")
 		if meta.Pinned != "v1.0.0" {
 			t.Errorf("Pinned = %q, want %q", meta.Pinned, "v1.0.0")
 		}
 		if meta.Ref != "refs/tags/v1.0.0" {
 			t.Errorf("Ref = %q, want %q", meta.Ref, "refs/tags/v1.0.0")
 		}
-		data, err := os.ReadFile(filepath.Join(destDir, "alpha", "SKILL.md"))
+		data, err := os.ReadFile(filepath.Join(skillsDir, "alpha", "SKILL.md"))
 		if err != nil {
 			t.Fatalf("read SKILL.md: %v", err)
 		}
@@ -243,16 +243,16 @@ func TestAddTrackedMode(t *testing.T) {
 		bareURL := initBareRepo(t, map[string]string{
 			"skills/foo/SKILL.md": "# Foo\n",
 		})
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 		// Act
-		_, err := runSkills(t, "add", "-d", destDir, bareURL)
+		_, err := runSkills(t, "add", "-d", skillsDir, bareURL)
 
 		// Assert
 		if err != nil {
 			t.Fatalf("add: %v", err)
 		}
-		lf, err := lock.ReadFile(lock.FilePath(destDir))
+		lf, err := lock.ReadFile(lock.FilePath(skillsDir))
 		if err != nil {
 			t.Fatalf("read lockfile: %v", err)
 		}
@@ -263,10 +263,10 @@ func TestAddTrackedMode(t *testing.T) {
 
 	t.Run("when the source is not github or local and no lockfile exists, add falls back to lock mode", func(t *testing.T) {
 		// Arrange
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 		// Act
-		_, err := runSkills(t, "add", "-d", destDir, "https://gitlab.com/example/repo.git")
+		_, err := runSkills(t, "add", "-d", skillsDir, "https://gitlab.com/example/repo.git")
 
 		// Assert
 		if err == nil {
@@ -285,15 +285,15 @@ func TestE2ETrackedLifecycle(t *testing.T) {
 	t.Cleanup(func() { cmd.IsTTY = origIsTTY })
 
 	stubGitHubTransport(t, "h3y6e/spec-skills", initBareRepoWithTwoTags(t))
-	destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+	skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 	// --- add (gh skill format) ---
-	if _, err := runSkills(t, "add", "-s", "alpha", "-d", destDir, "h3y6e/spec-skills"); err != nil {
+	if _, err := runSkills(t, "add", "-s", "alpha", "-d", skillsDir, "h3y6e/spec-skills"); err != nil {
 		t.Fatalf("add: %v", err)
 	}
 
 	// --- list shows the tracked skill without a lockfile ---
-	listOut, err := runSkills(t, "list", "-d", destDir)
+	listOut, err := runSkills(t, "list", "-d", skillsDir)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -302,7 +302,7 @@ func TestE2ETrackedLifecycle(t *testing.T) {
 	}
 
 	// --- check reports up-to-date ---
-	checkOut, err := runSkills(t, "check", "-d", destDir)
+	checkOut, err := runSkills(t, "check", "-d", skillsDir)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -311,8 +311,8 @@ func TestE2ETrackedLifecycle(t *testing.T) {
 	}
 
 	// --- tamper with the install to simulate an outdated skill ---
-	alphaPath := filepath.Join(destDir, "alpha", "SKILL.md")
-	meta := readMetadata(t, destDir, "alpha")
+	alphaPath := filepath.Join(skillsDir, "alpha", "SKILL.md")
+	meta := readMetadata(t, skillsDir, "alpha")
 	meta.TreeSHA = "stale-tree-sha"
 	data, _ := os.ReadFile(alphaPath)
 	tampered, err := skill.InjectSourceMetadata(string(data), meta)
@@ -325,7 +325,7 @@ func TestE2ETrackedLifecycle(t *testing.T) {
 	}
 
 	// --- check reports update available ---
-	checkOut, err = runSkills(t, "check", "-d", destDir)
+	checkOut, err = runSkills(t, "check", "-d", skillsDir)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -334,23 +334,23 @@ func TestE2ETrackedLifecycle(t *testing.T) {
 	}
 
 	// --- update re-downloads and re-injects metadata ---
-	if _, err := runSkills(t, "update", "-y", "-d", destDir); err != nil {
+	if _, err := runSkills(t, "update", "-y", "-d", skillsDir); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	data, _ = os.ReadFile(alphaPath)
 	if !strings.Contains(string(data), "# Alpha v2") {
 		t.Errorf("update should restore upstream content, got:\n%s", data)
 	}
-	meta = readMetadata(t, destDir, "alpha")
+	meta = readMetadata(t, skillsDir, "alpha")
 	if meta.TreeSHA == "stale-tree-sha" || meta.TreeSHA == "" {
 		t.Errorf("update should refresh github-tree-sha, got %q", meta.TreeSHA)
 	}
-	if _, err := os.Stat(lock.FilePath(destDir)); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(lock.FilePath(skillsDir)); !errors.Is(err, os.ErrNotExist) {
 		t.Error("update must not create a lockfile for tracked skills")
 	}
 
 	// --- check is up-to-date again ---
-	checkOut, err = runSkills(t, "check", "-d", destDir)
+	checkOut, err = runSkills(t, "check", "-d", skillsDir)
 	if err != nil {
 		t.Fatalf("check after update: %v", err)
 	}
@@ -359,13 +359,13 @@ func TestE2ETrackedLifecycle(t *testing.T) {
 	}
 
 	// --- remove deletes the skill without a lockfile ---
-	if _, err := runSkills(t, "remove", "-y", "-d", destDir, "alpha"); err != nil {
+	if _, err := runSkills(t, "remove", "-y", "-d", skillsDir, "alpha"); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(destDir, "alpha")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(skillsDir, "alpha")); !errors.Is(err, os.ErrNotExist) {
 		t.Error("alpha directory should not exist after remove")
 	}
-	if _, err := os.Stat(lock.FilePath(destDir)); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(lock.FilePath(skillsDir)); !errors.Is(err, os.ErrNotExist) {
 		t.Error("remove must not create a lockfile for tracked skills")
 	}
 }
@@ -377,14 +377,14 @@ func TestE2ETrackedPinnedIsSkipped(t *testing.T) {
 	t.Cleanup(func() { cmd.IsTTY = origIsTTY })
 
 	stubGitHubTransport(t, "h3y6e/spec-skills", initBareRepoWithTwoTags(t))
-	destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+	skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
-	if _, err := runSkills(t, "add", "-s", "alpha", "-d", destDir, "h3y6e/spec-skills#v1.0.0"); err != nil {
+	if _, err := runSkills(t, "add", "-s", "alpha", "-d", skillsDir, "h3y6e/spec-skills#v1.0.0"); err != nil {
 		t.Fatalf("add: %v", err)
 	}
 
 	// --- check reports pinned ---
-	checkOut, err := runSkills(t, "check", "-d", destDir)
+	checkOut, err := runSkills(t, "check", "-d", skillsDir)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -393,14 +393,14 @@ func TestE2ETrackedPinnedIsSkipped(t *testing.T) {
 	}
 
 	// --- update skips pinned ---
-	updateOut, err := runSkills(t, "update", "-y", "-d", destDir)
+	updateOut, err := runSkills(t, "update", "-y", "-d", skillsDir)
 	if err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	if !strings.Contains(updateOut, "alpha: pinned to v1.0.0 (skipped)") {
 		t.Fatalf("update should skip pinned alpha, got: %q", updateOut)
 	}
-	meta := readMetadata(t, destDir, "alpha")
+	meta := readMetadata(t, skillsDir, "alpha")
 	if meta.Pinned != "v1.0.0" || meta.Ref != "refs/tags/v1.0.0" {
 		t.Errorf("pinned metadata should be untouched, got %+v", meta)
 	}
@@ -410,14 +410,14 @@ func TestListMixedLockfileAndTrackedSkills(t *testing.T) {
 	t.Parallel()
 
 	// Arrange: a lock-managed entry and a foreign tracked skill.
-	destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+	skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 	seed := lock.File{
 		Version: 1,
 		Skills: map[string]lock.Entry{
-			"beta": {Source: "h3y6e/spec-skills", SourceType: "github", ComputedHash: "abc123", Dest: destDir},
+			"beta": {Source: "h3y6e/spec-skills", SourceType: "github", ComputedHash: "abc123"},
 		},
 	}
-	if err := lock.WriteFile(lock.FilePath(destDir), seed); err != nil {
+	if err := lock.WriteFile(lock.FilePath(skillsDir), seed); err != nil {
 		t.Fatalf("seed lockfile: %v", err)
 	}
 	content, err := skill.InjectSourceMetadata("# Alpha\n", skill.SourceMetadata{
@@ -429,15 +429,15 @@ func TestListMixedLockfileAndTrackedSkills(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InjectSourceMetadata() error = %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(destDir, "alpha"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(destDir, "alpha", "SKILL.md"), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Act
-	listOut, err := runSkills(t, "list", "-d", destDir)
+	listOut, err := runSkills(t, "list", "-d", skillsDir)
 
 	// Assert
 	if err != nil {

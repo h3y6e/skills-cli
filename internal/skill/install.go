@@ -25,7 +25,7 @@ type stagedSkillReplacement struct {
 
 type appliedSkillReplacement struct {
 	Name      string
-	DestDir   string
+	Dir       string
 	BackupDir string
 }
 
@@ -35,7 +35,7 @@ type replacementTxn struct {
 	applied []appliedSkillReplacement
 }
 
-// InstallSkills copies discovered skills to destDir and updates the lockfile.
+// InstallSkills copies discovered skills to skillsDir and updates the lockfile.
 func InstallSkills(skills []DiscoveredSkill, ref SourceRef, layout lock.Layout) error {
 	if len(skills) == 0 {
 		return fmt.Errorf("no skills to install")
@@ -51,6 +51,9 @@ func InstallSkills(skills []DiscoveredSkill, ref SourceRef, layout lock.Layout) 
 	if err != nil {
 		return err
 	}
+	if !layout.UsesLockfile() {
+		return fmt.Errorf("%s sources can't be added to %q: skills-lock.json records only %s", ref.SourceType, layout.Dir, lock.DefaultDir)
+	}
 
 	if err := tx.Apply(); err != nil {
 		return err
@@ -62,7 +65,6 @@ func InstallSkills(skills []DiscoveredSkill, ref SourceRef, layout lock.Layout) 
 			Ref:          ref.Ref,
 			SourceType:   ref.SourceType,
 			ComputedHash: s.ComputedHash,
-			Dest:         filepath.Clean(layout.DestDir),
 		}
 	}
 
@@ -190,13 +192,13 @@ func stageSkillReplacements(layout lock.Layout, replacements []skillReplacement)
 		return nil, fmt.Errorf("no skill changes to apply")
 	}
 
-	if err := os.MkdirAll(layout.DestDir, 0o755); err != nil {
-		return nil, fmt.Errorf("create destination directory %q: %w", layout.DestDir, err)
+	if err := os.MkdirAll(layout.Dir, 0o755); err != nil {
+		return nil, fmt.Errorf("create destination directory %q: %w", layout.Dir, err)
 	}
 
 	tx := &replacementTxn{layout: layout}
 	for _, replacement := range replacements {
-		stagedDir, err := os.MkdirTemp(layout.DestDir, "."+replacement.Name+".staged-*")
+		stagedDir, err := os.MkdirTemp(layout.Dir, "."+replacement.Name+".staged-*")
 		if err != nil {
 			tx.Cleanup()
 			return nil, fmt.Errorf("create staged directory for %q: %w", replacement.Name, err)
@@ -229,7 +231,7 @@ func (tx *replacementTxn) Apply() error {
 
 		tx.applied = append(tx.applied, appliedSkillReplacement{
 			Name:      replacement.Name,
-			DestDir:   tx.layout.SkillDir(replacement.Name),
+			Dir:       tx.layout.SkillDir(replacement.Name),
 			BackupDir: backupDir,
 		})
 	}
@@ -241,7 +243,7 @@ func (tx *replacementTxn) Rollback() error {
 	var errs []error
 
 	for _, applied := range slices.Backward(tx.applied) {
-		if err := os.RemoveAll(applied.DestDir); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := os.RemoveAll(applied.Dir); err != nil && !errors.Is(err, os.ErrNotExist) {
 			errs = append(errs, fmt.Errorf("remove applied skill %q: %w", applied.Name, err))
 			continue
 		}
@@ -250,7 +252,7 @@ func (tx *replacementTxn) Rollback() error {
 			continue
 		}
 
-		if err := os.Rename(applied.BackupDir, applied.DestDir); err != nil {
+		if err := os.Rename(applied.BackupDir, applied.Dir); err != nil {
 			errs = append(errs, fmt.Errorf("restore backup for %q: %w", applied.Name, err))
 		}
 	}
@@ -289,7 +291,7 @@ func (tx *replacementTxn) swapIn(replacement stagedSkillReplacement) (string, er
 	backupDir := ""
 
 	if _, err := os.Stat(dst); err == nil {
-		path, err := tempPath(tx.layout.DestDir, "."+replacement.Name+".backup-*")
+		path, err := tempPath(tx.layout.Dir, "."+replacement.Name+".backup-*")
 		if err != nil {
 			return "", fmt.Errorf("prepare backup for %q: %w", replacement.Name, err)
 		}

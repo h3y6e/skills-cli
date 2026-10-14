@@ -33,7 +33,7 @@ func NewRootCmd(version string) *cobra.Command {
 		Short: "Manage local agent skills",
 		Long: `Manage local agent skills.
 
-Every flag except --help and --version can also be set with a SKOLAR_<FLAG> environment variable, e.g. SKOLAR_DEST.
+Every flag except --help and --version can also be set with a SKOLAR_<FLAG> environment variable, e.g. SKOLAR_DIR.
 
 Exit status: 0 on success, 1 on failure (including a skill that could not be checked), 2 on usage errors or a missing --yes.`,
 		Version:       resolveVersion(version),
@@ -215,7 +215,7 @@ func applyEnv(root *cobra.Command) error {
 }
 
 // loadLockFile reads the lockfile, returning an empty file when it does not
-// exist (e.g. destinations managed purely in gh skill format).
+// exist (e.g. directories managed purely in gh skill format).
 func loadLockFile(layout lock.Layout) (lock.File, error) {
 	lf, err := lock.ReadFile(layout.LockPath())
 	if errors.Is(err, os.ErrNotExist) {
@@ -233,8 +233,8 @@ func printSkippedEntries(w io.Writer, skipped []skill.SkippedEntry) {
 	}
 }
 
-func bindDestFlag(c *cobra.Command, target *string) {
-	c.Flags().StringVarP(target, "dest", "d", lock.DefaultDestDir, "Skill directory; a skills-lock.json beside it selects the lockfile format")
+func bindDirFlag(c *cobra.Command, target *string) {
+	c.Flags().StringVarP(target, "dir", "d", lock.DefaultDir, "Skill directory; .agents/skills beside a skills-lock.json uses the lockfile, others SKILL.md metadata")
 }
 
 func newAddCmd() *cobra.Command {
@@ -242,7 +242,7 @@ func newAddCmd() *cobra.Command {
 		dryRunFlag bool
 		yesFlag    bool
 		skillFlag  []string
-		destFlag   string
+		dirFlag    string
 	)
 
 	c := &cobra.Command{
@@ -250,21 +250,21 @@ func newAddCmd() *cobra.Command {
 		Short: "Add skills from a source repository (destructive when overwriting)",
 		Args:  usageArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAdd(cmd, args[0], dryRunFlag, yesFlag, skillFlag, destFlag)
+			return runAdd(cmd, args[0], dryRunFlag, yesFlag, skillFlag, dirFlag)
 		},
 	}
 
 	c.Flags().BoolVar(&dryRunFlag, "dry-run", false, "Show the skills that would be installed without installing")
 	c.Flags().BoolVarP(&yesFlag, "yes", "y", false, "Overwrite existing skills without confirmation")
 	c.Flags().StringSliceVarP(&skillFlag, "skill", "s", nil, "Install only specified skills (repeatable)")
-	bindDestFlag(c, &destFlag)
+	bindDirFlag(c, &dirFlag)
 
 	return c
 }
 
 func newCheckCmd() *cobra.Command {
 	var (
-		destFlag string
+		dirFlag  string
 		jsonFlag bool
 	)
 
@@ -274,11 +274,11 @@ func newCheckCmd() *cobra.Command {
 		Annotations: map[string]string{recordKey: "results"},
 		Args:        usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCheck(cmd, destFlag, jsonFlag)
+			return runCheck(cmd, dirFlag, jsonFlag)
 		},
 	}
 
-	bindDestFlag(c, &destFlag)
+	bindDirFlag(c, &dirFlag)
 	c.Flags().BoolVar(&jsonFlag, "json", false, "Output results in JSON format")
 
 	return c
@@ -287,7 +287,7 @@ func newCheckCmd() *cobra.Command {
 func newUpdateCmd() *cobra.Command {
 	var (
 		skillFlag  []string
-		destFlag   string
+		dirFlag    string
 		yesFlag    bool
 		dryRunFlag bool
 	)
@@ -304,12 +304,12 @@ Shows the diff of each skill, then overwrites local changes after confirmation.`
 			if len(args) > 0 {
 				source = args[0]
 			}
-			return runUpdate(cmd, source, skillFlag, destFlag, yesFlag, dryRunFlag)
+			return runUpdate(cmd, source, skillFlag, dirFlag, yesFlag, dryRunFlag)
 		},
 	}
 
 	c.Flags().StringSliceVarP(&skillFlag, "skill", "s", nil, "Update only specified skills (repeatable)")
-	bindDestFlag(c, &destFlag)
+	bindDirFlag(c, &dirFlag)
 	c.Flags().BoolVarP(&yesFlag, "yes", "y", false, "Apply updates without confirmation")
 	c.Flags().BoolVar(&dryRunFlag, "dry-run", false, "Show the diffs without applying")
 
@@ -318,7 +318,7 @@ Shows the diff of each skill, then overwrites local changes after confirmation.`
 
 func newListCmd() *cobra.Command {
 	var (
-		destFlag string
+		dirFlag  string
 		jsonFlag bool
 	)
 
@@ -329,11 +329,11 @@ func newListCmd() *cobra.Command {
 		Short:       "List installed skills",
 		Args:        usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runList(cmd, destFlag, jsonFlag)
+			return runList(cmd, dirFlag, jsonFlag)
 		},
 	}
 
-	bindDestFlag(c, &destFlag)
+	bindDirFlag(c, &dirFlag)
 	c.Flags().BoolVar(&jsonFlag, "json", false, "Output results in JSON format")
 
 	return c
@@ -341,7 +341,7 @@ func newListCmd() *cobra.Command {
 
 func newRemoveCmd() *cobra.Command {
 	var (
-		destFlag   string
+		dirFlag    string
 		yesFlag    bool
 		dryRunFlag bool
 	)
@@ -352,11 +352,11 @@ func newRemoveCmd() *cobra.Command {
 		Short:   "Remove installed skills (destructive)",
 		Args:    usageArgs(cobra.MinimumNArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRemove(cmd, args, destFlag, yesFlag, dryRunFlag)
+			return runRemove(cmd, args, dirFlag, yesFlag, dryRunFlag)
 		},
 	}
 
-	bindDestFlag(c, &destFlag)
+	bindDirFlag(c, &dirFlag)
 	c.Flags().BoolVarP(&yesFlag, "yes", "y", false, "Remove without confirmation")
 	c.Flags().BoolVar(&dryRunFlag, "dry-run", false, "Show the directories that would be removed")
 

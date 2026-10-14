@@ -41,23 +41,23 @@ func initGitRepo(t *testing.T, files map[string]string) string {
 	return dir
 }
 
-func installTracked(t *testing.T, repoRoot string, ref skill.SourceRef, resolved git.ResolvedRef, destDir string) []skill.DiscoveredSkill {
+func installTracked(t *testing.T, repoRoot string, ref skill.SourceRef, resolved git.ResolvedRef, skillsDir string) []skill.DiscoveredSkill {
 	t.Helper()
 
 	discovered, err := skill.DiscoverSkills(repoRoot)
 	if err != nil {
 		t.Fatalf("DiscoverSkills() error = %v", err)
 	}
-	if err := skill.InstallTrackedSkills(t.Context(), discovered, repoRoot, ref, resolved, lock.NewLayout(destDir)); err != nil {
+	if err := skill.InstallTrackedSkills(t.Context(), discovered, repoRoot, ref, resolved, lock.NewLayout(skillsDir)); err != nil {
 		t.Fatalf("InstallTrackedSkills() error = %v", err)
 	}
 	return discovered
 }
 
-func readInstalledMetadata(t *testing.T, destDir, name string) skill.SourceMetadata {
+func readInstalledMetadata(t *testing.T, skillsDir, name string) skill.SourceMetadata {
 	t.Helper()
 
-	data, err := os.ReadFile(filepath.Join(destDir, name, "SKILL.md"))
+	data, err := os.ReadFile(filepath.Join(skillsDir, name, "SKILL.md"))
 	if err != nil {
 		t.Fatalf("expected installed SKILL.md: %v", err)
 	}
@@ -78,15 +78,15 @@ func TestInstallTrackedSkills(t *testing.T) {
 		repoRoot := initGitRepo(t, map[string]string{
 			"skills/foo/SKILL.md": "# Foo\n",
 		})
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 		ref := skill.SourceRef{SourceType: "github", CanonicalSource: "h3y6e/agent-skills"}
 		resolved := git.ResolvedRef{Full: "refs/heads/main"}
 
 		// Act
-		installTracked(t, repoRoot, ref, resolved, destDir)
+		installTracked(t, repoRoot, ref, resolved, skillsDir)
 
 		// Assert
-		meta := readInstalledMetadata(t, destDir, "foo")
+		meta := readInstalledMetadata(t, skillsDir, "foo")
 		if meta.RepoURL != "https://github.com/h3y6e/agent-skills" {
 			t.Errorf("RepoURL = %q", meta.RepoURL)
 		}
@@ -103,7 +103,7 @@ func TestInstallTrackedSkills(t *testing.T) {
 		if meta.TreeSHA != wantTree {
 			t.Errorf("TreeSHA = %q, want %q", meta.TreeSHA, wantTree)
 		}
-		if _, err := os.Stat(lock.FilePath(destDir)); !errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Stat(lock.FilePath(skillsDir)); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("lockfile must not be written in gh format, stat err = %v", err)
 		}
 	})
@@ -115,15 +115,15 @@ func TestInstallTrackedSkills(t *testing.T) {
 		repoRoot := initGitRepo(t, map[string]string{
 			"skills/foo/SKILL.md": "# Foo\n",
 		})
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 		ref := skill.SourceRef{SourceType: "github", CanonicalSource: "h3y6e/agent-skills", Ref: "v1.0.0"}
 		resolved := git.ResolvedRef{Full: "refs/tags/v1.0.0"}
 
 		// Act
-		installTracked(t, repoRoot, ref, resolved, destDir)
+		installTracked(t, repoRoot, ref, resolved, skillsDir)
 
 		// Assert
-		meta := readInstalledMetadata(t, destDir, "foo")
+		meta := readInstalledMetadata(t, skillsDir, "foo")
 		if meta.Pinned != "v1.0.0" {
 			t.Errorf("Pinned = %q, want %q", meta.Pinned, "v1.0.0")
 		}
@@ -139,7 +139,7 @@ func TestInstallTrackedSkills(t *testing.T) {
 		repoRoot := initGitRepo(t, map[string]string{
 			"skills/foo/SKILL.md": "# Foo\n",
 		})
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 		ref := skill.SourceRef{SourceType: "gitlab", CanonicalSource: "h3y6e/agent-skills"}
 		resolved := git.ResolvedRef{Full: "refs/heads/main"}
 		discovered, err := skill.DiscoverSkills(repoRoot)
@@ -148,7 +148,7 @@ func TestInstallTrackedSkills(t *testing.T) {
 		}
 
 		// Act
-		err = skill.InstallTrackedSkills(t.Context(), discovered, repoRoot, ref, resolved, lock.NewLayout(destDir))
+		err = skill.InstallTrackedSkills(t.Context(), discovered, repoRoot, ref, resolved, lock.NewLayout(skillsDir))
 
 		// Assert
 		if err == nil {
@@ -163,18 +163,18 @@ func TestInstallTrackedSkills(t *testing.T) {
 		repoRoot := initGitRepo(t, map[string]string{
 			"skills/foo/SKILL.md": "# Foo v2\n",
 		})
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
-		writeFiles(t, destDir, map[string]string{
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		writeFiles(t, skillsDir, map[string]string{
 			"foo/SKILL.md": "# Foo v1\n",
 		})
 		ref := skill.SourceRef{SourceType: "github", CanonicalSource: "h3y6e/agent-skills"}
 		resolved := git.ResolvedRef{Full: "refs/heads/main"}
 
 		// Act
-		installTracked(t, repoRoot, ref, resolved, destDir)
+		installTracked(t, repoRoot, ref, resolved, skillsDir)
 
 		// Assert
-		data, err := os.ReadFile(filepath.Join(destDir, "foo", "SKILL.md"))
+		data, err := os.ReadFile(filepath.Join(skillsDir, "foo", "SKILL.md"))
 		if err != nil {
 			t.Fatalf("expected installed SKILL.md: %v", err)
 		}

@@ -9,15 +9,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func runRemove(cmd *cobra.Command, skillNames []string, destDir string, yes, dryRun bool) error {
-	layout := lock.NewLayout(destDir)
+func runRemove(cmd *cobra.Command, skillNames []string, skillsDir string, yes, dryRun bool) error {
+	layout := lock.NewLayout(skillsDir)
 	lf, err := loadLockFile(layout)
 	if err != nil {
 		return err
 	}
-	entries := lock.FilterEntriesByDest(lf.Skills, layout.DestDir)
+	entries := layout.Entries(lf)
 
-	installed, err := skill.ScanInstalledSkills(layout.DestDir)
+	installed, err := skill.ScanInstalledSkills(layout.Dir)
 	if err != nil {
 		return err
 	}
@@ -30,7 +30,7 @@ func runRemove(cmd *cobra.Command, skillNames []string, destDir string, yes, dry
 		_, inLock := entries[name]
 		_, isForeign := foreign[name]
 		if !inLock && !isForeign {
-			return &cliError{codeSkillNotFound, fmt.Errorf("skill %q not found in %q", name, layout.DestDir), "skolar list --dest " + layout.DestDir}
+			return &cliError{codeSkillNotFound, fmt.Errorf("skill %q not found in %q", name, layout.Dir), "skolar list --dir " + layout.Dir}
 		}
 	}
 

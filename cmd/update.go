@@ -9,24 +9,24 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func runUpdate(cmd *cobra.Command, source string, skillFilter []string, destDir string, yes, dryRun bool) error {
-	layout := lock.NewLayout(destDir)
+func runUpdate(cmd *cobra.Command, source string, skillFilter []string, skillsDir string, yes, dryRun bool) error {
+	layout := lock.NewLayout(skillsDir)
 	lf, err := loadLockFile(layout)
 	if err != nil {
 		return err
 	}
-	entriesForDest := lock.FilterEntriesByDest(lf.Skills, layout.DestDir)
+	dirEntries := layout.Entries(lf)
 
-	entries, err := filterEntriesBySource(entriesForDest, source)
+	entries, err := filterEntriesBySource(dirEntries, source)
 	if err != nil {
 		return err
 	}
 
-	installed, err := skill.ScanInstalledSkills(layout.DestDir)
+	installed, err := skill.ScanInstalledSkills(layout.Dir)
 	if err != nil {
 		return err
 	}
-	foreign, err := skill.FilterInstalledBySource(skill.UnmanagedSkills(installed, entriesForDest), source)
+	foreign, err := skill.FilterInstalledBySource(skill.UnmanagedSkills(installed, dirEntries), source)
 	if err != nil {
 		return err
 	}

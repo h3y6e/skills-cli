@@ -22,16 +22,16 @@ type InstalledSkill struct {
 	Meta SourceMetadata
 }
 
-// ScanInstalledSkills returns the skills in destDir that carry gh-compatible
+// ScanInstalledSkills returns the skills in skillsDir that carry gh-compatible
 // source metadata, sorted by name. Skills without metadata, with unreadable
 // SKILL.md, or with invalid frontmatter are skipped.
-func ScanInstalledSkills(destDir string) ([]InstalledSkill, error) {
-	entries, err := os.ReadDir(destDir)
+func ScanInstalledSkills(skillsDir string) ([]InstalledSkill, error) {
+	entries, err := os.ReadDir(skillsDir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read skills directory %q: %w", destDir, err)
+		return nil, fmt.Errorf("read skills directory %q: %w", skillsDir, err)
 	}
 
 	var installed []InstalledSkill
@@ -40,7 +40,7 @@ func ScanInstalledSkills(destDir string) ([]InstalledSkill, error) {
 			continue
 		}
 
-		dir := filepath.Join(destDir, entry.Name())
+		dir := filepath.Join(skillsDir, entry.Name())
 		data, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
 		if err != nil {
 			continue

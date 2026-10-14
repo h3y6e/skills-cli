@@ -18,7 +18,7 @@ func TestE2ELifecycle(t *testing.T) {
 	cmd.IsTTY = func() bool { return false }
 	t.Cleanup(func() { cmd.IsTTY = origIsTTY })
 
-	destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+	skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 	// --- Step 1: Create source repo with initial content ---
 	bareURL := initBareRepo(t, map[string]string{
@@ -39,24 +39,24 @@ func TestE2ELifecycle(t *testing.T) {
 		t.Fatalf("add --dry-run should show alpha and beta, got: %q", got)
 	}
 	// No lockfile should exist yet.
-	if _, err := os.Stat(lock.FilePath(destDir)); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(lock.FilePath(skillsDir)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("add --dry-run should not create lockfile")
 	}
 
 	// --- Step 3: add (install) ---
 	root = cmd.NewRootCmd("test")
-	root.SetArgs([]string{"add", "-d", destDir, bareURL})
+	root.SetArgs([]string{"add", "-d", skillsDir, bareURL})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("add: %v", err)
 	}
 	// Verify files exist.
 	for _, name := range []string{"alpha", "beta"} {
-		if _, err := os.Stat(filepath.Join(destDir, name, "SKILL.md")); err != nil {
+		if _, err := os.Stat(filepath.Join(skillsDir, name, "SKILL.md")); err != nil {
 			t.Fatalf("%s/SKILL.md should exist after add: %v", name, err)
 		}
 	}
 	// Verify lockfile.
-	lf, err := lock.ReadFile(lock.FilePath(destDir))
+	lf, err := lock.ReadFile(lock.FilePath(skillsDir))
 	if err != nil {
 		t.Fatalf("read lockfile after add: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestE2ELifecycle(t *testing.T) {
 	var humanOut bytes.Buffer
 	root = cmd.NewRootCmd("test")
 	root.SetOut(&humanOut)
-	root.SetArgs([]string{"list", "-d", destDir})
+	root.SetArgs([]string{"list", "-d", skillsDir})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestE2ELifecycle(t *testing.T) {
 	var jsonOut bytes.Buffer
 	root = cmd.NewRootCmd("test")
 	root.SetOut(&jsonOut)
-	root.SetArgs([]string{"list", "--json", "-d", destDir})
+	root.SetArgs([]string{"list", "--json", "-d", skillsDir})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("list --json: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestE2ELifecycle(t *testing.T) {
 	var checkOut bytes.Buffer
 	root = cmd.NewRootCmd("test")
 	root.SetOut(&checkOut)
-	root.SetArgs([]string{"check", "-d", destDir})
+	root.SetArgs([]string{"check", "-d", skillsDir})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestE2ELifecycle(t *testing.T) {
 	var checkJSON bytes.Buffer
 	root = cmd.NewRootCmd("test")
 	root.SetOut(&checkJSON)
-	root.SetArgs([]string{"check", "--json", "-d", destDir})
+	root.SetArgs([]string{"check", "--json", "-d", skillsDir})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("check --json: %v", err)
 	}
@@ -120,27 +120,27 @@ func TestE2ELifecycle(t *testing.T) {
 
 	// --- Step 8: update -y (no changes — should succeed silently) ---
 	root = cmd.NewRootCmd("test")
-	root.SetArgs([]string{"update", "-y", "-d", destDir})
+	root.SetArgs([]string{"update", "-y", "-d", skillsDir})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("update -y (no changes): %v", err)
 	}
 
 	// --- Step 9: remove alpha ---
 	root = cmd.NewRootCmd("test")
-	root.SetArgs([]string{"remove", "-y", "-d", destDir, "alpha"})
+	root.SetArgs([]string{"remove", "-y", "-d", skillsDir, "alpha"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("remove alpha: %v", err)
 	}
 	// Alpha should be gone.
-	if _, err := os.Stat(filepath.Join(destDir, "alpha")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(skillsDir, "alpha")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("alpha directory should not exist after remove")
 	}
 	// Beta should remain.
-	if _, err := os.Stat(filepath.Join(destDir, "beta", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(skillsDir, "beta", "SKILL.md")); err != nil {
 		t.Fatal("beta should still exist after removing alpha")
 	}
 	// Lockfile should only have beta.
-	lf, err = lock.ReadFile(lock.FilePath(destDir))
+	lf, err = lock.ReadFile(lock.FilePath(skillsDir))
 	if err != nil {
 		t.Fatalf("read lockfile after remove: %v", err)
 	}
@@ -153,16 +153,16 @@ func TestE2ELifecycle(t *testing.T) {
 
 	// --- Step 10: rm beta (alias) ---
 	root = cmd.NewRootCmd("test")
-	root.SetArgs([]string{"rm", "-y", "-d", destDir, "beta"})
+	root.SetArgs([]string{"rm", "-y", "-d", skillsDir, "beta"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("rm beta: %v", err)
 	}
 	// Beta should be gone.
-	if _, err := os.Stat(filepath.Join(destDir, "beta")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(skillsDir, "beta")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("beta directory should not exist after rm")
 	}
 	// Lockfile should be empty.
-	lf, err = lock.ReadFile(lock.FilePath(destDir))
+	lf, err = lock.ReadFile(lock.FilePath(skillsDir))
 	if err != nil {
 		t.Fatalf("read lockfile after rm: %v", err)
 	}
@@ -178,20 +178,20 @@ func TestE2EUpdateWithDiff(t *testing.T) {
 		"skills/alpha/SKILL.md": "# Alpha v2\n",
 	})
 
-	destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+	skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 	// Install.
 	root := cmd.NewRootCmd("test")
-	root.SetArgs([]string{"add", "-d", destDir, bareURL})
+	root.SetArgs([]string{"add", "-d", skillsDir, bareURL})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("add: %v", err)
 	}
 
 	// Tamper the installed content to simulate an outdated install.
-	os.WriteFile(filepath.Join(destDir, "alpha", "SKILL.md"), []byte("# Alpha v1\n"), 0o644)
+	os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("# Alpha v1\n"), 0o644)
 
 	// Tamper the lockfile hash to simulate a stale entry.
-	lockPath := lock.FilePath(destDir)
+	lockPath := lock.FilePath(skillsDir)
 	lf, _ := lock.ReadFile(lockPath)
 	entry := lf.Skills["alpha"]
 	entry.ComputedHash = "stale-hash"
@@ -202,7 +202,7 @@ func TestE2EUpdateWithDiff(t *testing.T) {
 	var checkOut bytes.Buffer
 	root = cmd.NewRootCmd("test")
 	root.SetOut(&checkOut)
-	root.SetArgs([]string{"check", "-d", destDir})
+	root.SetArgs([]string{"check", "-d", skillsDir})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -212,13 +212,13 @@ func TestE2EUpdateWithDiff(t *testing.T) {
 
 	// Update -y should apply.
 	root = cmd.NewRootCmd("test")
-	root.SetArgs([]string{"update", "-y", "-d", destDir})
+	root.SetArgs([]string{"update", "-y", "-d", skillsDir})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("update -y: %v", err)
 	}
 
 	// Verify content was restored to v2.
-	data, err := os.ReadFile(filepath.Join(destDir, "alpha", "SKILL.md"))
+	data, err := os.ReadFile(filepath.Join(skillsDir, "alpha", "SKILL.md"))
 	if err != nil {
 		t.Fatalf("read alpha after update: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestE2EUpdateWithDiff(t *testing.T) {
 	var checkOut2 bytes.Buffer
 	root = cmd.NewRootCmd("test")
 	root.SetOut(&checkOut2)
-	root.SetArgs([]string{"check", "-d", destDir})
+	root.SetArgs([]string{"check", "-d", skillsDir})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("check after update: %v", err)
 	}
