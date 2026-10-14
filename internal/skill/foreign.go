@@ -316,5 +316,5 @@ func copyToStaging(parentDir, srcDir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return dir, copyDir(srcDir, dir)
+	return dir, copyDir(srcDir, dir, false)
 }

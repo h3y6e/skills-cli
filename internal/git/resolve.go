@@ -122,7 +122,11 @@ func lsRemote(ctx context.Context, cloneURL string, patterns ...string) ([]strin
 
 // TreeSHA returns the git tree object SHA for path at HEAD of repoDir.
 func TreeSHA(ctx context.Context, repoDir, path string) (string, error) {
-	out, err := runGit(ctx, "-C", repoDir, "rev-parse", "HEAD:"+path)
+	rev := "HEAD:" + path
+	if path == "." {
+		rev = "HEAD^{tree}"
+	}
+	out, err := runGit(ctx, "-C", repoDir, "rev-parse", rev)
 	if err != nil {
 		return "", err
 	}

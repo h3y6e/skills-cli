@@ -213,6 +213,26 @@ func TestTreeSHA(t *testing.T) {
 		}
 	})
 
+	t.Run("when the path is the repository root, TreeSHA returns the root tree SHA", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		repo := initTaggedRepo(t)
+		clone := filepath.Join(t.TempDir(), "clone")
+		if err := git.ShallowClone(context.Background(), repo, "v1.0.0", clone); err != nil {
+			t.Fatalf("ShallowClone() error = %v", err)
+		}
+		want := strings.TrimSpace(gitInDir(t, clone, "rev-parse", "HEAD^{tree}"))
+
+		// Act
+		got, err := git.TreeSHA(context.Background(), clone, ".")
+
+		// Assert
+		if err != nil || got != want {
+			t.Errorf("TreeSHA() = %q, %v, want %q", got, err, want)
+		}
+	})
+
 	t.Run("when the path does not exist at HEAD, TreeSHA returns an error", func(t *testing.T) {
 		t.Parallel()
 
