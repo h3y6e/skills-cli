@@ -146,11 +146,7 @@ func AggregateUpdateCandidates(entries map[string]lock.Entry, cloneFn CloneFunc)
 	var wg sync.WaitGroup
 
 	for source, group := range bySource {
-		source, group := source, group
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			cloneDir, err := cloneFn(source)
 			if err != nil {
 				results <- aggregateResult{err: fmt.Errorf("clone source %q: %w", source, err)}
@@ -164,7 +160,7 @@ func AggregateUpdateCandidates(entries map[string]lock.Entry, cloneFn CloneFunc)
 			}
 
 			results <- aggregateResult{candidates: ResolveUpdateCandidates(group, upstream)}
-		}()
+		})
 	}
 
 	go func() {

@@ -2,9 +2,13 @@ package cmd_test
 
 import (
 	"bytes"
+	"context"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/h3y6e/skolar/cmd"
@@ -47,13 +51,13 @@ func TestRemoveAlias(t *testing.T) {
 	var out bytes.Buffer
 	root2 := cmd.NewRootCmd("test")
 	root2.SetOut(&out)
-	root2.SetArgs([]string{"rm", "-d", destDir, "alpha"})
+	root2.SetArgs([]string{"rm", "-y", "-d", destDir, "alpha"})
 	if err := root2.Execute(); err != nil {
 		t.Fatalf("rm error: %v", err)
 	}
 
 	// Skill directory should be gone.
-	if _, err := os.Stat(filepath.Join(destDir, "alpha")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(destDir, "alpha")); !errors.Is(err, os.ErrNotExist) {
 		t.Error("expected alpha directory to be removed via rm alias")
 	}
 
@@ -89,13 +93,13 @@ func TestRemove(t *testing.T) {
 
 		// Remove only alpha.
 		root2 := cmd.NewRootCmd("test")
-		root2.SetArgs([]string{"remove", "-d", destDir, "alpha"})
+		root2.SetArgs([]string{"remove", "-y", "-d", destDir, "alpha"})
 		if err := root2.Execute(); err != nil {
 			t.Fatalf("remove error: %v", err)
 		}
 
 		// Alpha directory should be gone.
-		if _, err := os.Stat(filepath.Join(destDir, "alpha")); !os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(destDir, "alpha")); !errors.Is(err, os.ErrNotExist) {
 			t.Error("expected alpha directory to be removed")
 		}
 
@@ -222,13 +226,13 @@ func TestRemove(t *testing.T) {
 
 		// Act
 		root := cmd.NewRootCmd("test")
-		root.SetArgs([]string{"remove", "-d", destA, "beta"})
+		root.SetArgs([]string{"remove", "-y", "-d", destA, "beta"})
 		if err := root.Execute(); err != nil {
 			t.Fatalf("remove: %v", err)
 		}
 
 		// Assert
-		if _, err := os.Stat(filepath.Join(destA, "beta")); !os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(destA, "beta")); !errors.Is(err, os.ErrNotExist) {
 			t.Error("expected beta directory in destA to be removed")
 		}
 		updated, err := lock.ReadFile(lock.FilePath(destA))
@@ -243,4 +247,147 @@ func TestRemove(t *testing.T) {
 			t.Errorf("entry.Dest = %q, want %q", entry.Dest, destB)
 		}
 	})
+}
+
+func TestRemoveConfirmation(t *testing.T) {
+	// Not parallel: overrides IsTTY.
+	origIsTTY := cmd.IsTTY
+	t.Cleanup(func() { cmd.IsTTY = origIsTTY })
+
+	t.Run("when --dry-run is given, removing prints the directory and keeps it", func(t *testing.T) {
+		// Arrange
+		cmd.IsTTY = func() bool { return false }
+		destDir := filepath.Join(t.TempDir(), "skills")
+		writeTrackedSkill(t, destDir, "alpha")
+		var out bytes.Buffer
+		root := cmd.NewRootCmd("test")
+		root.SetOut(&out)
+		root.SetArgs([]string{"remove", "--dry-run", "-d", destDir, "alpha"})
+
+		// Act
+		err := root.Execute()
+
+		// Assert
+		if err != nil {
+			t.Fatalf("remove: %v", err)
+		}
+		if !strings.Contains(out.String(), filepath.Join(destDir, "alpha")) {
+			t.Errorf("output = %q, want the directory to remove", out.String())
+		}
+		if _, err := os.Stat(filepath.Join(destDir, "alpha")); err != nil {
+			t.Error("alpha should remain")
+		}
+	})
+
+	t.Run("when there is no TTY and no --yes, removing fails and keeps the skill", func(t *testing.T) {
+		// Arrange
+		cmd.IsTTY = func() bool { return false }
+		destDir := filepath.Join(t.TempDir(), "skills")
+		writeTrackedSkill(t, destDir, "alpha")
+		root := cmd.NewRootCmd("test")
+		root.SetOut(&bytes.Buffer{})
+		root.SetArgs([]string{"remove", "-d", destDir, "alpha"})
+
+		// Act
+		err := root.Execute()
+
+		// Assert
+		if err == nil || !strings.Contains(err.Error(), "confirmation required") {
+			t.Fatalf("err = %v, want confirmation required", err)
+		}
+		if _, err := os.Stat(filepath.Join(destDir, "alpha")); err != nil {
+			t.Error("alpha should remain")
+		}
+	})
+
+	t.Run("when the user declines on a TTY, removing fails and keeps the skill", func(t *testing.T) {
+		// Arrange
+		cmd.IsTTY = func() bool { return true }
+		destDir := filepath.Join(t.TempDir(), "skills")
+		writeTrackedSkill(t, destDir, "alpha")
+		root := cmd.NewRootCmd("test")
+		root.SetOut(&bytes.Buffer{})
+		root.SetErr(&bytes.Buffer{})
+		root.SetIn(strings.NewReader("n\n"))
+		root.SetArgs([]string{"remove", "-d", destDir, "alpha"})
+
+		// Act
+		err := root.Execute()
+
+		// Assert
+		if err == nil {
+			t.Fatal("expected an error when declined")
+		}
+		if _, err := os.Stat(filepath.Join(destDir, "alpha")); err != nil {
+			t.Error("alpha should remain")
+		}
+	})
+
+	t.Run("when canceled while waiting for an answer on a TTY, removing fails and keeps the skill", func(t *testing.T) {
+		// Arrange
+		cmd.IsTTY = func() bool { return true }
+		destDir := filepath.Join(t.TempDir(), "skills")
+		writeTrackedSkill(t, destDir, "alpha")
+		stdin, _ := io.Pipe()
+		ctx, cancel := context.WithCancel(context.Background())
+		root := cmd.NewRootCmd("test")
+		root.SetOut(&bytes.Buffer{})
+		root.SetErr(&bytes.Buffer{})
+		root.SetIn(stdin)
+		root.SetArgs([]string{"remove", "-d", destDir, "alpha"})
+		cancel()
+
+		// Act
+		err := root.ExecuteContext(ctx)
+
+		// Assert
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v, want context.Canceled", err)
+		}
+		if _, err := os.Stat(filepath.Join(destDir, "alpha")); err != nil {
+			t.Error("alpha should remain")
+		}
+	})
+
+	t.Run("when the user accepts on a TTY, removing deletes the skill", func(t *testing.T) {
+		// Arrange
+		cmd.IsTTY = func() bool { return true }
+		destDir := filepath.Join(t.TempDir(), "skills")
+		writeTrackedSkill(t, destDir, "alpha")
+		root := cmd.NewRootCmd("test")
+		root.SetOut(&bytes.Buffer{})
+		root.SetErr(&bytes.Buffer{})
+		root.SetIn(strings.NewReader("y\n"))
+		root.SetArgs([]string{"remove", "-d", destDir, "alpha"})
+
+		// Act
+		err := root.Execute()
+
+		// Assert
+		if err != nil {
+			t.Fatalf("remove: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(destDir, "alpha")); !errors.Is(err, os.ErrNotExist) {
+			t.Error("alpha should be removed")
+		}
+	})
+}
+
+func writeTrackedSkill(t *testing.T, destDir, name string) {
+	t.Helper()
+	content, err := skill.InjectSourceMetadata("# "+name+"\n", skill.SourceMetadata{
+		RepoURL: "https://github.com/h3y6e/spec-skills",
+		Ref:     "refs/tags/v1.0.0",
+		TreeSHA: "abc123",
+		Path:    "skills/" + name,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(destDir, name), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(destDir, name, "SKILL.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }

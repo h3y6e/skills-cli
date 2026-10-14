@@ -3,6 +3,7 @@ package skill
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -26,7 +27,7 @@ type InstalledSkill struct {
 // SKILL.md, or with invalid frontmatter are skipped.
 func ScanInstalledSkills(destDir string) ([]InstalledSkill, error) {
 	entries, err := os.ReadDir(destDir)
-	if os.IsNotExist(err) {
+	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {

@@ -8,7 +8,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func runCheck(cmd *cobra.Command, destDir string, jsonFlag bool) error {
+func runCheck(cmd *cobra.Command, destDir string, jsonFlag bool) (err error) {
+	results := []CheckResult{}
+	if jsonFlag {
+		defer func() { err = writeRecord(cmd.OutOrStdout(), cmd.Annotations[recordKey], results, err) }()
+	}
+
 	layout := lock.NewLayout(destDir)
 	lf, err := loadLockFile(layout)
 	if err != nil {
@@ -23,11 +28,13 @@ func runCheck(cmd *cobra.Command, destDir string, jsonFlag bool) error {
 	foreign := skill.UnmanagedSkills(installed, entries)
 
 	if len(entries) == 0 && len(foreign) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "no installed skills to check")
+		if !jsonFlag {
+			fmt.Fprintln(cmd.ErrOrStderr(), "no installed skills to check")
+		}
 		return nil
 	}
 
-	cloneFn, cleanup := skill.NewCloneFunc(cmd.Context(), "skills-check-*")
+	cloneFn, cleanup := skill.NewCloneFunc(cmd.Context(), "skolar-check-*")
 	defer cleanup()
 
 	candidates, skipped, err := skill.AggregateUpdateCandidates(entries, cloneFn)
@@ -35,7 +42,7 @@ func runCheck(cmd *cobra.Command, destDir string, jsonFlag bool) error {
 		return err
 	}
 
-	fns, foreignCleanup := NewUpstreamFuncs(cmd.Context(), "skills-check-foreign-*")
+	fns, foreignCleanup := NewUpstreamFuncs(cmd.Context(), "skolar-check-foreign-*")
 	defer foreignCleanup()
 
 	foreignCandidates, err := skill.AggregateForeignUpdateCandidates(foreign, fns)
@@ -44,14 +51,18 @@ func runCheck(cmd *cobra.Command, destDir string, jsonFlag bool) error {
 	}
 	candidates = append(candidates, foreignCandidates...)
 
-	printSkippedEntries(cmd.OutOrStdout(), skipped)
+	printSkippedEntries(cmd.ErrOrStderr(), skipped)
 
-	outputMode := ResolveOutputMode(jsonFlag)
-	renderer := NewCheckRenderer(outputMode, cmd.OutOrStdout())
-
+	var failed []string
 	for _, c := range candidates {
-		renderer.Render(NewCheckResult(c))
+		result := NewCheckResult(c)
+		results = append(results, result)
+		if !jsonFlag {
+			renderCheckResult(cmd.OutOrStdout(), result)
+		}
+		if c.Status == skill.StatusCheckFailed {
+			failed = append(failed, c.SkillName)
+		}
 	}
-
-	return renderer.Flush()
+	return checkFailed(failed)
 }

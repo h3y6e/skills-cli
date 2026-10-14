@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/h3y6e/skolar/internal/git"
 	"github.com/h3y6e/skolar/internal/lock"
@@ -239,9 +240,8 @@ func (tx *replacementTxn) Apply() error {
 func (tx *replacementTxn) Rollback() error {
 	var errs []error
 
-	for i := len(tx.applied) - 1; i >= 0; i-- {
-		applied := tx.applied[i]
-		if err := os.RemoveAll(applied.DestDir); err != nil && !os.IsNotExist(err) {
+	for _, applied := range slices.Backward(tx.applied) {
+		if err := os.RemoveAll(applied.DestDir); err != nil && !errors.Is(err, os.ErrNotExist) {
 			errs = append(errs, fmt.Errorf("remove applied skill %q: %w", applied.Name, err))
 			continue
 		}
@@ -267,7 +267,7 @@ func (tx *replacementTxn) Cleanup() error {
 		if replacement.StagedDir == "" {
 			continue
 		}
-		if err := os.RemoveAll(replacement.StagedDir); err != nil && !os.IsNotExist(err) {
+		if err := os.RemoveAll(replacement.StagedDir); err != nil && !errors.Is(err, os.ErrNotExist) {
 			errs = append(errs, fmt.Errorf("cleanup staged skill %q: %w", replacement.Name, err))
 		}
 	}
@@ -276,7 +276,7 @@ func (tx *replacementTxn) Cleanup() error {
 		if applied.BackupDir == "" {
 			continue
 		}
-		if err := os.RemoveAll(applied.BackupDir); err != nil && !os.IsNotExist(err) {
+		if err := os.RemoveAll(applied.BackupDir); err != nil && !errors.Is(err, os.ErrNotExist) {
 			errs = append(errs, fmt.Errorf("cleanup backup for %q: %w", applied.Name, err))
 		}
 	}
@@ -297,7 +297,7 @@ func (tx *replacementTxn) swapIn(replacement stagedSkillReplacement) (string, er
 			return "", fmt.Errorf("backup existing skill %q: %w", replacement.Name, err)
 		}
 		backupDir = path
-	} else if !os.IsNotExist(err) {
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("stat existing skill %q: %w", replacement.Name, err)
 	}
 

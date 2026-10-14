@@ -203,7 +203,7 @@ func TestUpdateSkillFilter(t *testing.T) {
 		// Act
 		var out bytes.Buffer
 		root := cmd.NewRootCmd("test")
-		root.SetOut(&out)
+		root.SetErr(&out)
 		root.SetArgs([]string{"update", "-y", "-d", destDir})
 		err := root.Execute()
 
@@ -654,7 +654,7 @@ func TestUpdateIntegration(t *testing.T) {
 		}
 	})
 
-	t.Run("check-failed candidate is reported in update output", func(t *testing.T) {
+	t.Run("when a skill cannot be checked, updating reports it and fails after applying the rest", func(t *testing.T) {
 		t.Parallel()
 
 		// Upstream has only beta, but lockfile references alpha too.
@@ -686,8 +686,8 @@ func TestUpdateIntegration(t *testing.T) {
 		root := cmd.NewRootCmd("test")
 		root.SetOut(&out)
 		root.SetArgs([]string{"update", "-y", "-d", destDir})
-		if err := root.Execute(); err != nil {
-			t.Fatalf("update error: %v", err)
+		if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "could not check alpha") {
+			t.Fatalf("err = %v, want it to name alpha", err)
 		}
 
 		got := out.String()

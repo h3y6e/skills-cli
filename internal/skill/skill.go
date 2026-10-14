@@ -111,11 +111,7 @@ func scanDirWithHashFunc(dir, pathPrefix string, allowNamespaced bool, hashFn fu
 	var wg sync.WaitGroup
 
 	for _, target := range targets {
-		target := target
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			hash, err := hashFn(target.dir)
 			if err != nil {
 				results <- scanResult{err: err}
@@ -130,7 +126,7 @@ func scanDirWithHashFunc(dir, pathPrefix string, allowNamespaced bool, hashFn fu
 					ComputedHash: hash,
 				},
 			}
-		}()
+		})
 	}
 
 	go func() {
@@ -160,7 +156,7 @@ func scanDirWithHashFunc(dir, pathPrefix string, allowNamespaced bool, hashFn fu
 
 func hasSkillFile(dir string) (bool, error) {
 	if _, err := os.Stat(filepath.Join(dir, "SKILL.md")); err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return false, nil
 		}
 		return false, fmt.Errorf("stat SKILL.md in %q: %w", dir, err)
