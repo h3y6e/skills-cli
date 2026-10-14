@@ -11,7 +11,7 @@ import (
 func runCheck(cmd *cobra.Command, destDir string, jsonFlag bool) (err error) {
 	results := []CheckResult{}
 	if jsonFlag {
-		defer func() { err = writeRecord(cmd.OutOrStdout(), "results", results, err) }()
+		defer func() { err = writeRecord(cmd.OutOrStdout(), cmd.Annotations[recordKey], results, err) }()
 	}
 
 	layout := lock.NewLayout(destDir)

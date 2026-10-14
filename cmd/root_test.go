@@ -105,6 +105,40 @@ func TestExitStatus(t *testing.T) {
 	})
 }
 
+func TestUsageErrorRecord(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		env  []string
+		args []string
+		key  string
+	}{
+		{"when --json precedes an unknown flag, listing prints an error record", nil, []string{"list", "--json", "--nope"}, "skills"},
+		{"when SKOLAR_JSON is set and an argument is extra, checking prints an error record", []string{"SKOLAR_JSON=true"}, []string{"check", "extra"}, "results"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Act
+			stdout, _, code := runMain(t, tc.env, tc.args...)
+
+			// Assert
+			var record map[string]json.RawMessage
+			if err := json.Unmarshal([]byte(stdout), &record); err != nil {
+				t.Fatalf("stdout is not a record: %v\n%s", err, stdout)
+			}
+			if string(record[tc.key]) != "[]" || !strings.Contains(string(record["error"]), `"code": "usage"`) {
+				t.Errorf("record = %s, want empty %q and a usage error", stdout, tc.key)
+			}
+			if code != 2 {
+				t.Errorf("exit = %d, want 2", code)
+			}
+		})
+	}
+}
+
 func TestFlagsFromEnv(t *testing.T) {
 	t.Parallel()
 

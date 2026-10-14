@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,11 +28,24 @@ func approve(cmd *cobra.Command, yes bool, question string) error {
 		return &cliError{codeConfirmationRequired, errors.New("confirmation required"), "re-run with --yes"}
 	}
 	fmt.Fprintf(cmd.ErrOrStderr(), "%s [y/N] ", question)
-	answer, _ := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
-	if a := strings.ToLower(strings.TrimSpace(answer)); a != "y" && a != "yes" {
-		return &cliError{code: codeDeclined, err: errors.New("declined")}
+	answers := make(chan string, 1)
+	go func() {
+		answer, _ := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+		answers <- answer
+	}()
+	ctx := cmd.Context()
+	select {
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	case answer := <-answers:
+		if ctx.Err() != nil {
+			return context.Cause(ctx)
+		}
+		if a := strings.ToLower(strings.TrimSpace(answer)); a != "y" && a != "yes" {
+			return &cliError{code: codeDeclined, err: errors.New("declined")}
+		}
+		return nil
 	}
-	return nil
 }
 
 // writeRecord writes the --json result record, with err as its error field, and returns err.

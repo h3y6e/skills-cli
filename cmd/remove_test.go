@@ -2,7 +2,9 @@ package cmd_test
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -315,6 +317,32 @@ func TestRemoveConfirmation(t *testing.T) {
 		// Assert
 		if err == nil {
 			t.Fatal("expected an error when declined")
+		}
+		if _, err := os.Stat(filepath.Join(destDir, "alpha")); err != nil {
+			t.Error("alpha should remain")
+		}
+	})
+
+	t.Run("when canceled while waiting for an answer on a TTY, removing fails and keeps the skill", func(t *testing.T) {
+		// Arrange
+		cmd.IsTTY = func() bool { return true }
+		destDir := filepath.Join(t.TempDir(), "skills")
+		writeTrackedSkill(t, destDir, "alpha")
+		stdin, _ := io.Pipe()
+		ctx, cancel := context.WithCancel(context.Background())
+		root := cmd.NewRootCmd("test")
+		root.SetOut(&bytes.Buffer{})
+		root.SetErr(&bytes.Buffer{})
+		root.SetIn(stdin)
+		root.SetArgs([]string{"remove", "-d", destDir, "alpha"})
+		cancel()
+
+		// Act
+		err := root.ExecuteContext(ctx)
+
+		// Assert
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v, want context.Canceled", err)
 		}
 		if _, err := os.Stat(filepath.Join(destDir, "alpha")); err != nil {
 			t.Error("alpha should remain")

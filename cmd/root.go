@@ -34,7 +34,7 @@ func NewRootCmd(version string) *cobra.Command {
 		Short: "Manage local agent skills",
 		Long: `Manage local agent skills.
 
-Every flag can also be set with a SKOLAR_<FLAG> environment variable, e.g. SKOLAR_DEST.
+Every flag except --help and --version can also be set with a SKOLAR_<FLAG> environment variable, e.g. SKOLAR_DEST.
 
 Exit status: 0 on success, 1 on failure (including a skill that could not be checked), 2 on usage errors or a missing --yes.`,
 		Version:       resolveVersion(version),
@@ -50,9 +50,6 @@ Exit status: 0 on success, 1 on failure (including a skill that could not be che
 				msg += "\n\nDid you mean this?\n\t" + strings.Join(s, "\n\t")
 			}
 			return usageError(c, errors.New(msg))
-		},
-		PersistentPreRunE: func(c *cobra.Command, _ []string) error {
-			return bindEnv(c)
 		},
 	}
 	root.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
@@ -86,7 +83,10 @@ func Execute(version string) int {
 	}
 	go func() { cancel(signalError{<-sigs}) }()
 
-	err := root.ExecuteContext(ctx)
+	c, err := root, applyEnv(root)
+	if err == nil {
+		c, err = root.ExecuteContextC(ctx)
+	}
 
 	if sig, ok := errors.AsType[signalError](context.Cause(ctx)); ok {
 		reraise(sig.Signal)
@@ -95,6 +95,12 @@ func Execute(version string) int {
 		return 0
 	}
 	rec := newErrorRecord(err)
+	// Handlers write their own record; usage errors stop before any handler runs.
+	if key := c.Annotations[recordKey]; key != "" && rec.Code == codeUsage {
+		if asJSON, _ := c.Flags().GetBool("json"); asJSON {
+			writeRecord(c.OutOrStdout(), key, []any{}, err)
+		}
+	}
 	fmt.Fprintf(os.Stderr, "error: %s\n", rec.Message)
 	if rec.Fix != "" {
 		fmt.Fprintf(os.Stderr, "fix: %s\n", rec.Fix)
@@ -104,6 +110,9 @@ func Execute(version string) int {
 	}
 	return 1
 }
+
+// recordKey annotates a command with the key of its --json result collection.
+const recordKey = "skolar/record"
 
 // Error codes are part of the --json output; renaming one is breaking.
 const (
@@ -173,22 +182,41 @@ func reraise(sig os.Signal) {
 	}
 }
 
-func bindEnv(c *cobra.Command) error {
+// applyEnv makes each SKOLAR_<FLAG> the default of its flag, before parsing lets the command line override it.
+// Cobra adds --help and --version during execution, so they have no variable.
+func applyEnv(root *cobra.Command) error {
 	v := viper.New()
 	v.SetEnvPrefix("skolar")
 	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	v.AutomaticEnv()
 
-	var err error
-	c.Flags().VisitAll(func(f *pflag.Flag) {
-		if err != nil || f.Changed || !v.IsSet(f.Name) {
-			return
+	commands := []*cobra.Command{root}
+	for len(commands) > 0 {
+		c := commands[0]
+		commands = append(commands[1:], c.Commands()...)
+
+		var err error
+		c.Flags().VisitAll(func(f *pflag.Flag) {
+			if err != nil || !v.IsSet(f.Name) {
+				return
+			}
+			value := v.GetString(f.Name)
+			if slice, ok := f.Value.(pflag.SliceValue); ok {
+				err = slice.Replace(strings.Split(value, ","))
+			} else {
+				err = f.Value.Set(value)
+			}
+			if err != nil {
+				err = usageError(root, fmt.Errorf("SKOLAR_%s: %w", strings.ToUpper(strings.ReplaceAll(f.Name, "-", "_")), err))
+				return
+			}
+			f.DefValue = f.Value.String()
+		})
+		if err != nil {
+			return err
 		}
-		if setErr := c.Flags().Set(f.Name, v.GetString(f.Name)); setErr != nil {
-			err = usageError(c, fmt.Errorf("SKOLAR_%s: %w", strings.ToUpper(strings.ReplaceAll(f.Name, "-", "_")), setErr))
-		}
-	})
-	return err
+	}
+	return nil
 }
 
 // loadLockFile reads the lockfile, returning an empty file when it does not
@@ -246,9 +274,10 @@ func newCheckCmd() *cobra.Command {
 	)
 
 	c := &cobra.Command{
-		Use:   "check",
-		Short: "Check installed skills for updates",
-		Args:  usageArgs(cobra.NoArgs),
+		Use:         "check",
+		Short:       "Check installed skills for updates",
+		Annotations: map[string]string{recordKey: "results"},
+		Args:        usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCheck(cmd, destFlag, jsonFlag)
 		},
@@ -299,10 +328,11 @@ func newListCmd() *cobra.Command {
 	)
 
 	c := &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls"},
-		Short:   "List installed skills",
-		Args:    usageArgs(cobra.NoArgs),
+		Use:         "list",
+		Aliases:     []string{"ls"},
+		Annotations: map[string]string{recordKey: "skills"},
+		Short:       "List installed skills",
+		Args:        usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runList(cmd, destFlag, jsonFlag)
 		},

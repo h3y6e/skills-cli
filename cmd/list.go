@@ -22,7 +22,7 @@ type listEntryJSON struct {
 func runList(cmd *cobra.Command, destDir string, jsonFlag bool) (err error) {
 	payload := []listEntryJSON{}
 	if jsonFlag {
-		defer func() { err = writeRecord(cmd.OutOrStdout(), "skills", payload, err) }()
+		defer func() { err = writeRecord(cmd.OutOrStdout(), cmd.Annotations[recordKey], payload, err) }()
 	}
 
 	layout := lock.NewLayout(destDir)

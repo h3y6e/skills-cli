@@ -32,7 +32,7 @@ skolar remove spec-plan
 
 - `add`, `update`, and `remove` take `--dry-run`, and confirm before overwriting or deleting; pass `-y` without a TTY.
 - `list --json` and `check --json` print `{"skills": [...]}` and `{"results": [...]}`, plus `"error": {"code", "message", "fix"}` on failure.
-- Any flag can be set as `SKOLAR_<FLAG>`, e.g. `SKOLAR_DEST`.
+- Any flag except `--help` and `--version` can be set as `SKOLAR_<FLAG>`, e.g. `SKOLAR_DEST`.
 - Exit status: 0 success, 1 failure (including a skill that could not be checked), 2 usage error or missing `-y`.
 
 ## Formats
