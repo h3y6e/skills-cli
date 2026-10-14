@@ -2,13 +2,14 @@ package skill
 
 import (
 	"bytes"
-	"cmp"
+	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/h3y6e/skolar/internal/lock"
 )
@@ -30,6 +31,8 @@ type VerifyResult struct {
 	Source    string       `json:"source"`
 	Files     []string     `json:"files,omitempty"`
 	Reason    string       `json:"reason,omitempty"`
+	// Reinstall is the add argument that restores the skill as recorded.
+	Reinstall string `json:"-"`
 }
 
 // VerifyLocked recomputes each lockfile skill's computedHash from disk.
@@ -37,7 +40,7 @@ func VerifyLocked(layout lock.Layout, entries map[string]lock.Entry) []VerifyRes
 	results := make([]VerifyResult, 0, len(entries))
 	for _, name := range slices.Sorted(maps.Keys(entries)) {
 		entry := entries[name]
-		result := VerifyResult{SkillName: name, Source: entry.Source, Status: VerifyVerified}
+		result := VerifyResult{SkillName: name, Source: entry.Source, Status: VerifyVerified, Reinstall: SourceInput(entry)}
 		hash, err := ComputeHash(layout.SkillDir(name))
 		switch {
 		case err != nil:
@@ -57,7 +60,7 @@ func VerifyTracked(installed []InstalledSkill, fns UpstreamFuncs) []VerifyResult
 	results := make([]VerifyResult, 0, len(installed))
 	for _, s := range installed {
 		source, _ := OwnerRepoFromURL(s.Meta.RepoURL)
-		result := VerifyResult{SkillName: s.Name, Source: source}
+		result := VerifyResult{SkillName: s.Name, Source: source, Reinstall: FormatSourceInput(source, s.Meta.Pinned)}
 		switch {
 		case s.Meta.IsLocal():
 			result.Status, result.Reason = VerifyLocal, s.Meta.LocalPath
@@ -68,7 +71,6 @@ func VerifyTracked(installed []InstalledSkill, fns UpstreamFuncs) []VerifyResult
 		}
 		results = append(results, result)
 	}
-	slices.SortFunc(results, func(a, b VerifyResult) int { return cmp.Compare(a.SkillName, b.SkillName) })
 	return results
 }
 
@@ -107,6 +109,32 @@ func verifyTracked(s InstalledSkill, fns UpstreamFuncs, clones map[[2]string]str
 		return VerifyModified, files, ""
 	}
 	return VerifyVerified, nil, ""
+}
+
+// VerifyUnrecorded reports every skill directory in skillsDir that neither the
+// lockfile nor readable gh skill metadata records.
+func VerifyUnrecorded(skillsDir string, recorded func(name string) bool) ([]VerifyResult, error) {
+	entries, err := os.ReadDir(skillsDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read skills directory %q: %w", skillsDir, err)
+	}
+	var results []VerifyResult
+	for _, e := range entries {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") || recorded(e.Name()) {
+			continue
+		}
+		reason := "no lockfile entry or gh skill metadata"
+		if data, err := os.ReadFile(filepath.Join(skillsDir, e.Name(), "SKILL.md")); err != nil {
+			reason = err.Error()
+		} else if _, err := ParseSourceMetadata(string(data)); err != nil {
+			reason = err.Error()
+		}
+		results = append(results, VerifyResult{SkillName: e.Name(), Status: VerifyUnverifiable, Reason: reason})
+	}
+	return results, nil
 }
 
 // diffDirs returns the sorted paths of regular files that differ, or exist

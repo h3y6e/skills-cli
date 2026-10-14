@@ -256,7 +256,7 @@ func partitionSupportedEntries(entries map[string]lock.Entry) (map[string]lock.E
 func groupEntriesBySource(entries map[string]lock.Entry) map[string]map[string]lock.Entry {
 	bySource := make(map[string]map[string]lock.Entry)
 	for name, entry := range entries {
-		sourceKey := FormatSourceInput(entry.Source, entry.Ref)
+		sourceKey := SourceInput(entry)
 		group, ok := bySource[sourceKey]
 		if !ok {
 			group = make(map[string]lock.Entry)

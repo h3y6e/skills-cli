@@ -2,7 +2,9 @@ package cmd_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -10,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/h3y6e/skolar/cmd"
+	"github.com/h3y6e/skolar/internal/lock"
+	"github.com/h3y6e/skolar/internal/skill"
 )
 
 type verifyRecord struct {
@@ -177,4 +181,102 @@ func metadataLine(t *testing.T, skillMD, key string) string {
 	}
 	t.Fatalf("no %s in:\n%s", key, skillMD)
 	return ""
+}
+
+func TestVerifyCoverage(t *testing.T) {
+	t.Parallel()
+
+	t.Run("when a skill directory has invalid frontmatter and no lockfile entry, verify reports it unverifiable and fails", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		dir := filepath.Join(t.TempDir(), "skills")
+		if err := os.MkdirAll(filepath.Join(dir, "broken"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "broken", "SKILL.md"), []byte("---\nmetadata: [\n---\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Act
+		rec, err := runVerifyJSON(t, dir)
+
+		// Assert
+		if err == nil || rec.Error.Code != "verify_failed" {
+			t.Fatalf("verify error = %v, code %q, want verify_failed", err, rec.Error.Code)
+		}
+		if len(rec.Results) != 1 || rec.Results[0].SkillName != "broken" || rec.Results[0].Status != "unverifiable" {
+			t.Errorf("results = %+v, want broken unverifiable", rec.Results)
+		}
+	})
+}
+
+func TestVerifySkillFilter(t *testing.T) {
+	// Not parallel: replaces NewUpstreamFuncs.
+	t.Run("when -s selects a lockfile skill, verify fetches no gh-format skill", func(t *testing.T) {
+		// Arrange
+		bareURL := initBareRepoWithTwoTags(t)
+		stubGitHubTransport(t, "h3y6e/fixture", bareURL)
+		dir := filepath.Join(t.TempDir(), ".agents", "skills")
+		addSkills(t, "-s", "beta", "-d", dir, "h3y6e/fixture")
+		if err := lock.WriteFile(lock.FilePath(dir), lock.File{Version: 1}); err != nil {
+			t.Fatal(err)
+		}
+		addSkills(t, "-s", "alpha", "-d", dir, bareURL)
+		orig := cmd.NewUpstreamFuncs
+		cmd.NewUpstreamFuncs = func(ctx context.Context, prefix string) (skill.UpstreamFuncs, func()) {
+			fns, cleanup := orig(ctx, prefix)
+			fns.FetchRef = func(string, string) (string, error) {
+				t.Error("verify fetched a skill that -s did not select")
+				return "", errors.New("unexpected fetch")
+			}
+			return fns, cleanup
+		}
+		t.Cleanup(func() { cmd.NewUpstreamFuncs = orig })
+
+		// Act
+		var out bytes.Buffer
+		root := cmd.NewRootCmd("test")
+		root.SetOut(&out)
+		root.SetArgs([]string{"verify", "-s", "alpha", "-d", dir})
+		err := root.Execute()
+
+		// Assert
+		if err != nil || out.String() != "alpha: verified\n" {
+			t.Errorf("verify = %v, %q, want alpha verified", err, out.String())
+		}
+	})
+}
+
+func TestVerifyFix(t *testing.T) {
+	// Not parallel: stubs the GitHub transport.
+	t.Run("when a pinned gh-format skill is modified, the fix reinstalls it at its pin", func(t *testing.T) {
+		// Arrange
+		bareURL := initBareRepoWithTwoTags(t)
+		stubGitHubTransport(t, "h3y6e/fixture", bareURL)
+		dir := filepath.Join(t.TempDir(), "skills")
+		addSkills(t, "-s", "alpha", "-d", dir, "h3y6e/fixture#v1.0.0")
+		if err := os.WriteFile(filepath.Join(dir, "alpha", "extra.md"), []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		root := cmd.NewRootCmd("test")
+		root.SetOut(&out)
+		root.SetArgs([]string{"verify", "--json", "-d", dir})
+
+		// Act
+		_ = root.Execute()
+
+		// Assert
+		var rec struct {
+			Error struct {
+				Fix string `json:"fix"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(out.Bytes(), &rec); err != nil {
+			t.Fatal(err)
+		}
+		if want := "skolar add h3y6e/fixture#v1.0.0 -s alpha --dir " + dir + " -y"; rec.Error.Fix != want {
+			t.Errorf("fix = %q, want %q", rec.Error.Fix, want)
+		}
+	})
 }

@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"cmp"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strings"
 
@@ -28,15 +30,28 @@ func runVerify(cmd *cobra.Command, skillsDir string, skillFilter []string, jsonF
 		return err
 	}
 
+	foreign := skill.UnmanagedSkills(installed, entries)
+	recorded := func(name string) bool {
+		_, inLock := entries[name]
+		return inLock || slices.ContainsFunc(foreign, func(s skill.InstalledSkill) bool { return s.Name == name })
+	}
+	unrecorded, err := skill.VerifyUnrecorded(layout.Dir, recorded)
+	if err != nil {
+		return err
+	}
+	if len(skillFilter) > 0 {
+		maps.DeleteFunc(entries, func(name string, _ lock.Entry) bool { return !slices.Contains(skillFilter, name) })
+		foreign = slices.DeleteFunc(foreign, func(s skill.InstalledSkill) bool { return !slices.Contains(skillFilter, s.Name) })
+		unrecorded = slices.DeleteFunc(unrecorded, func(r skill.VerifyResult) bool { return !slices.Contains(skillFilter, r.SkillName) })
+	}
+
 	fns, cleanup := NewUpstreamFuncs(cmd.Context(), "skolar-verify-*")
 	defer cleanup()
 
-	all := append(skill.VerifyLocked(layout, entries), skill.VerifyTracked(skill.UnmanagedSkills(installed, entries), fns)...)
+	all := slices.Concat(skill.VerifyLocked(layout, entries), skill.VerifyTracked(foreign, fns), unrecorded)
+	slices.SortFunc(all, func(a, b skill.VerifyResult) int { return cmp.Compare(a.SkillName, b.SkillName) })
 	var failed []skill.VerifyResult
 	for _, r := range all {
-		if len(skillFilter) > 0 && !slices.Contains(skillFilter, r.SkillName) {
-			continue
-		}
 		results = append(results, r)
 		if !jsonFlag {
 			renderVerifyResult(cmd.OutOrStdout(), r)
@@ -70,10 +85,13 @@ func verifyFailed(failed []skill.VerifyResult, dir string) error {
 	for i, r := range failed {
 		names[i] = r.SkillName
 	}
-	first := failed[0]
+	var fix string
+	if i := slices.IndexFunc(failed, func(r skill.VerifyResult) bool { return r.Reinstall != "" }); i >= 0 {
+		fix = fmt.Sprintf("skolar add %s -s %s --dir %s -y", failed[i].Reinstall, failed[i].SkillName, dir)
+	}
 	return &cliError{
 		code: codeVerifyFailed,
 		err:  fmt.Errorf("%s did not verify", strings.Join(names, ", ")),
-		fix:  fmt.Sprintf("skolar add %s -s %s --dir %s -y", first.Source, first.SkillName, dir),
+		fix:  fix,
 	}
 }
