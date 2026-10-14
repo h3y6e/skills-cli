@@ -35,7 +35,7 @@ func ParseSourceMetadata(content string) (SourceMetadata, error) {
 		return SourceMetadata{}, err
 	}
 
-	meta, _ := raw["metadata"].(map[string]interface{})
+	meta, _ := raw["metadata"].(map[string]any)
 	return SourceMetadata{
 		RepoURL:   stringValue(meta, "github-repo"),
 		Ref:       stringValue(meta, "github-ref"),
@@ -55,12 +55,12 @@ func InjectSourceMetadata(content string, m SourceMetadata) (string, error) {
 		return "", err
 	}
 	if raw == nil {
-		raw = make(map[string]interface{})
+		raw = make(map[string]any)
 	}
 
-	meta, _ := raw["metadata"].(map[string]interface{})
+	meta, _ := raw["metadata"].(map[string]any)
 	if meta == nil {
-		meta = make(map[string]interface{})
+		meta = make(map[string]any)
 	}
 
 	// Legacy keys written by older gh versions.
@@ -89,7 +89,7 @@ func InjectSourceMetadata(content string, m SourceMetadata) (string, error) {
 	return serializeFrontmatter(raw, body)
 }
 
-func stringValue(meta map[string]interface{}, key string) string {
+func stringValue(meta map[string]any, key string) string {
 	value, _ := meta[key].(string)
 	return value
 }
@@ -98,28 +98,28 @@ func stringValue(meta map[string]interface{}, key string) string {
 // body. Without a frontmatter block it returns a nil map and the full content
 // as body. The delimiter handling intentionally mirrors gh skill (cli/cli)
 // so injected files stay byte-compatible.
-func parseFrontmatter(content string) (map[string]interface{}, string, error) {
+func parseFrontmatter(content string) (map[string]any, string, error) {
 	trimmed := strings.TrimLeft(content, "\r\n")
 	if !strings.HasPrefix(trimmed, frontmatterDelimiter) {
 		return nil, content, nil
 	}
 
 	rest := strings.TrimLeft(trimmed[len(frontmatterDelimiter):], "\r\n")
-	endIndex := strings.Index(rest, "\n"+frontmatterDelimiter)
-	if endIndex == -1 {
+	before, after, ok := strings.Cut(rest, "\n"+frontmatterDelimiter)
+	if !ok {
 		return nil, content, nil
 	}
 
-	var raw map[string]interface{}
-	if err := yaml.Unmarshal([]byte(rest[:endIndex]), &raw); err != nil {
+	var raw map[string]any
+	if err := yaml.Unmarshal([]byte(before), &raw); err != nil {
 		return nil, "", fmt.Errorf("invalid frontmatter YAML: %w", err)
 	}
 
-	body := strings.TrimLeft(rest[endIndex+len("\n"+frontmatterDelimiter):], "\r\n")
+	body := strings.TrimLeft(after, "\r\n")
 	return raw, body, nil
 }
 
-func serializeFrontmatter(raw map[string]interface{}, body string) (string, error) {
+func serializeFrontmatter(raw map[string]any, body string) (string, error) {
 	yamlBytes, err := yaml.Marshal(raw)
 	if err != nil {
 		return "", fmt.Errorf("serialize frontmatter: %w", err)

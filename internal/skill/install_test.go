@@ -1,6 +1,7 @@
 package skill_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -194,7 +195,7 @@ func TestReplaceSkill(t *testing.T) {
 			t.Errorf("new-file = %q, want %q", string(data), "new content\n")
 		}
 
-		if _, err := os.Stat(filepath.Join(destDir, "my-skill", "old-file")); !os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(destDir, "my-skill", "old-file")); !errors.Is(err, os.ErrNotExist) {
 			t.Error("old-file should have been removed")
 		}
 	})

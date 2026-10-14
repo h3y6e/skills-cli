@@ -1,6 +1,7 @@
 package skill_test
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -102,7 +103,7 @@ func TestInstallTrackedSkills(t *testing.T) {
 		if meta.TreeSHA != wantTree {
 			t.Errorf("TreeSHA = %q, want %q", meta.TreeSHA, wantTree)
 		}
-		if _, err := os.Stat(lock.FilePath(destDir)); !os.IsNotExist(err) {
+		if _, err := os.Stat(lock.FilePath(destDir)); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("lockfile must not be written in gh format, stat err = %v", err)
 		}
 	})
