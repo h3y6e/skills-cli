@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/h3y6e/skills/internal/lock"
+	"github.com/h3y6e/skolar/internal/lock"
 )
 
 //go:embed testdata/skills-lock.json

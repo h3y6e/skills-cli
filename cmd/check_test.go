@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/h3y6e/skills/cmd"
-	"github.com/h3y6e/skills/internal/lock"
+	"github.com/h3y6e/skolar/cmd"
+	"github.com/h3y6e/skolar/internal/lock"
 )
 
 func TestCheckFlags(t *testing.T) {

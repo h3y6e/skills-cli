@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/h3y6e/skills/internal/git"
-	"github.com/h3y6e/skills/internal/lock"
+	"github.com/h3y6e/skolar/internal/git"
+	"github.com/h3y6e/skolar/internal/lock"
 )
 
 // InstalledSkill is a skill present in a destination directory whose SKILL.md

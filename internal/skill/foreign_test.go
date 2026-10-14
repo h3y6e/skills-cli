@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/h3y6e/skills/internal/git"
-	"github.com/h3y6e/skills/internal/lock"
-	"github.com/h3y6e/skills/internal/skill"
+	"github.com/h3y6e/skolar/internal/git"
+	"github.com/h3y6e/skolar/internal/lock"
+	"github.com/h3y6e/skolar/internal/skill"
 )
 
 func writeSkillWithMetadata(t *testing.T, destDir, name string, meta skill.SourceMetadata) {

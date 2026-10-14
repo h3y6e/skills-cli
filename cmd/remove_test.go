@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/h3y6e/skills/cmd"
-	"github.com/h3y6e/skills/internal/lock"
-	"github.com/h3y6e/skills/internal/skill"
+	"github.com/h3y6e/skolar/cmd"
+	"github.com/h3y6e/skolar/internal/lock"
+	"github.com/h3y6e/skolar/internal/skill"
 )
 
 func TestRemoveFlags(t *testing.T) {

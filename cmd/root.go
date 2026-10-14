@@ -7,9 +7,9 @@ import (
 	"os"
 	"runtime/debug"
 
-	"github.com/h3y6e/skills/internal/git"
-	"github.com/h3y6e/skills/internal/lock"
-	"github.com/h3y6e/skills/internal/skill"
+	"github.com/h3y6e/skolar/internal/git"
+	"github.com/h3y6e/skolar/internal/lock"
+	"github.com/h3y6e/skolar/internal/skill"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +22,7 @@ var (
 
 func NewRootCmd(version string) *cobra.Command {
 	root := &cobra.Command{
-		Use:           "skills",
+		Use:           "skolar",
 		Short:         "Manage local agent skills",
 		Version:       resolveVersion(version),
 		SilenceUsage:  true,
@@ -32,7 +32,6 @@ func NewRootCmd(version string) *cobra.Command {
 	root.AddCommand(newAddCmd())
 	root.AddCommand(newCheckCmd())
 	root.AddCommand(newUpdateCmd())
-	root.AddCommand(newSetupGitHubActionsCmd())
 	root.AddCommand(newListCmd())
 	root.AddCommand(newRemoveCmd())
 

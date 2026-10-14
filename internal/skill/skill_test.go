@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/h3y6e/skills/internal/skill"
+	"github.com/h3y6e/skolar/internal/skill"
 )
 
 // writeFiles creates files for testing.

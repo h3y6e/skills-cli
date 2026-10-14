@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/h3y6e/skills/cmd"
-	"github.com/h3y6e/skills/internal/skill"
+	"github.com/h3y6e/skolar/cmd"
+	"github.com/h3y6e/skolar/internal/skill"
 )
 
 func TestResolveApprovalMode(t *testing.T) {

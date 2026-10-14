@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/h3y6e/skills/internal/git"
+	"github.com/h3y6e/skolar/internal/git"
 )
 
 // initTaggedRepo creates a bare repo on branch main with:

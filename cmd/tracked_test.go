@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/h3y6e/skills/cmd"
-	"github.com/h3y6e/skills/internal/git"
-	"github.com/h3y6e/skills/internal/lock"
-	"github.com/h3y6e/skills/internal/skill"
+	"github.com/h3y6e/skolar/cmd"
+	"github.com/h3y6e/skolar/internal/git"
+	"github.com/h3y6e/skolar/internal/lock"
+	"github.com/h3y6e/skolar/internal/skill"
 )
 
 // initBareRepoWithTwoTags creates a bare repo where skills/alpha has v1.0.0
