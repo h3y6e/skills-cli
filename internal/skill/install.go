@@ -61,6 +61,7 @@ func InstallSkills(skills []DiscoveredSkill, ref SourceRef, layout lock.Layout) 
 			Source:       ref.CanonicalSource,
 			Ref:          ref.Ref,
 			SourceType:   ref.SourceType,
+			SkillPath:    s.SkillMDPath(),
 			ComputedHash: s.ComputedHash,
 		}
 	}
@@ -134,6 +135,7 @@ func ApplyCandidateUpdates(lf lock.File, candidates []UpdateCandidate, layout lo
 
 		entry := updated.Skills[c.SkillName]
 		entry.ComputedHash = c.LatestHash
+		entry.SkillPath = c.SkillPath
 		updated.Skills[c.SkillName] = entry
 		appliedNames = append(appliedNames, c.SkillName)
 	}

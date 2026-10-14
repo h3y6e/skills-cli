@@ -1,7 +1,6 @@
 package skill
 
 import (
-	"cmp"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -53,8 +52,8 @@ type skillDir struct {
 
 // DiscoverSkills finds every skill in a cloned repository that
 // vercel-labs/skills (with --full-depth) or gh skill (with hidden
-// directories) can install, sorted by name. When two directories declare the
-// same name, the one vercel-labs/skills searches first wins.
+// directories) can install, in vercel-labs/skills' search order. Names may
+// repeat across directories.
 func DiscoverSkills(repoRoot string) ([]DiscoveredSkill, error) {
 	all, err := findSkillDirs(repoRoot)
 	if err != nil {
@@ -79,15 +78,11 @@ func DiscoverSkills(repoRoot string) ([]DiscoveredSkill, error) {
 			}
 		}
 	}))
-	seen := map[string]bool{}
 	var picked []skillDir
-	for _, p := range ordered {
-		d := all[p]
-		if d.name == "" || seen[d.name] {
-			continue
+	for _, p := range slices.Compact(ordered) {
+		if d := all[p]; d.name != "" && !slices.ContainsFunc(picked, func(o skillDir) bool { return o.path == p }) {
+			picked = append(picked, d)
 		}
-		seen[d.name] = true
-		picked = append(picked, d)
 	}
 
 	skills := make([]DiscoveredSkill, len(picked))
@@ -105,8 +100,6 @@ func DiscoverSkills(repoRoot string) ([]DiscoveredSkill, error) {
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
-
-	slices.SortFunc(skills, func(a, b DiscoveredSkill) int { return cmp.Compare(a.Name, b.Name) })
 	return skills, nil
 }
 
@@ -197,16 +190,13 @@ func vercelDefaults(repoRoot string, all map[string]skillDir) []string {
 	if len(found) > 0 {
 		return found
 	}
-	for _, p := range slices.Sorted(func(yield func(string) bool) {
+	return slices.Sorted(func(yield func(string) bool) {
 		for p, d := range all {
 			if d.vercelValid && !yield(p) {
 				return
 			}
 		}
-	}) {
-		found = append(found, p)
-	}
-	return found
+	})
 }
 
 // pluginSkillDirs returns the directories a Claude plugin manifest declares

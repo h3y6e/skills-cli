@@ -136,7 +136,7 @@ func TestDiscoverSkills(t *testing.T) {
 		}
 	})
 
-	t.Run("when two namespaces contain the same leaf name, the first path wins", func(t *testing.T) {
+	t.Run("when two namespaces contain the same leaf name, both are found and selection takes the first", func(t *testing.T) {
 		t.Parallel()
 
 		// Arrange
@@ -153,8 +153,9 @@ func TestDiscoverSkills(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(skills) != 1 || skills[0].Path != "skills/a/code-review" {
-			t.Errorf("skills = %+v, want only skills/a/code-review", skills)
+		picked := skill.FilterDiscoveredSkills(skills, nil)
+		if len(skills) != 2 || len(picked) != 1 || picked[0].Path != "skills/a/code-review" {
+			t.Errorf("skills = %+v, picked = %+v, want both found and skills/a/code-review picked", skills, picked)
 		}
 	})
 
@@ -263,7 +264,7 @@ func TestDiscoverSkills(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(skills) != 2 || skills[0].Name != "nested" || !skills[0].Default || skills[1].Name != "top" || !skills[1].Default {
+		if len(skills) != 2 || skills[0].Name != "top" || !skills[0].Default || skills[1].Name != "nested" || !skills[1].Default {
 			t.Errorf("skills = %+v, want nested and top as defaults", skills)
 		}
 	})

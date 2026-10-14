@@ -134,8 +134,8 @@ func TestDiscoverSkillsLayouts(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := discoveredPaths(t, skills, false); !maps.Equal(got, map[string]string{"dup": "skills/dup"}) {
-			t.Errorf("DiscoverSkills() = %v", got)
+		if got := discoveredPaths(t, skill.FilterDiscoveredSkills(skills, []string{"dup"}), false); !maps.Equal(got, map[string]string{"dup": "skills/dup"}) {
+			t.Errorf("FilterDiscoveredSkills() = %v", got)
 		}
 	})
 
