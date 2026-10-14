@@ -2,6 +2,7 @@ package cmd_test
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,9 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if os.Getenv("RUN_SKOLAR_MAIN") == "1" {
+		os.Exit(cmd.Execute("test"))
+	}
 	os.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
 	os.Setenv("GIT_CONFIG_SYSTEM", "/dev/null")
 	os.Exit(m.Run())
@@ -178,7 +182,7 @@ func initBareRepoWithSplitRefSkills(t *testing.T) string {
 	return "file://" + bare
 }
 
-func TestAddList(t *testing.T) {
+func TestAddDryRun(t *testing.T) {
 	t.Parallel()
 
 	bareURL := initBareRepo(t, map[string]string{
@@ -192,7 +196,7 @@ func TestAddList(t *testing.T) {
 		var out bytes.Buffer
 		root := cmd.NewRootCmd("test")
 		root.SetOut(&out)
-		root.SetArgs([]string{"add", "--list", bareURL})
+		root.SetArgs([]string{"add", "--dry-run", bareURL})
 		if err := root.Execute(); err != nil {
 			t.Fatalf("execute error: %v", err)
 		}
@@ -210,7 +214,7 @@ func TestAddList(t *testing.T) {
 		t.Parallel()
 
 		root := cmd.NewRootCmd("test")
-		root.SetArgs([]string{"add", "--list"})
+		root.SetArgs([]string{"add", "--dry-run"})
 		err := root.Execute()
 		if err == nil {
 			t.Fatal("expected error when no source provided")
@@ -281,7 +285,7 @@ func TestAddInstall(t *testing.T) {
 		}
 
 		// Beta should NOT be installed.
-		if _, err := os.Stat(filepath.Join(destDir, "beta")); !os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(destDir, "beta")); !errors.Is(err, os.ErrNotExist) {
 			t.Error("beta should not be installed when --skill alpha is specified")
 		}
 
@@ -465,6 +469,70 @@ func TestAddInstall(t *testing.T) {
 		deltaEntry := updatedLF.Skills["delta"]
 		if deltaEntry.Dest == "" {
 			t.Error("delta.Dest should be set for newly added skill")
+		}
+	})
+}
+
+func TestAddOverwrite(t *testing.T) {
+	// Not parallel: overrides IsTTY.
+	origIsTTY := cmd.IsTTY
+	cmd.IsTTY = func() bool { return false }
+	t.Cleanup(func() { cmd.IsTTY = origIsTTY })
+
+	bareURL := initBareRepo(t, map[string]string{
+		"skills/alpha/SKILL.md": "# Alpha upstream\n",
+	})
+	setup := func(t *testing.T) string {
+		t.Helper()
+		destDir := filepath.Join(t.TempDir(), "skills")
+		if err := os.MkdirAll(filepath.Join(destDir, "alpha"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(destDir, "alpha", "SKILL.md"), []byte("# Alpha local\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return destDir
+	}
+
+	t.Run("when --dry-run is given over an existing skill, adding marks it as overwrite and keeps it", func(t *testing.T) {
+		// Arrange
+		destDir := setup(t)
+		var out bytes.Buffer
+		root := cmd.NewRootCmd("test")
+		root.SetOut(&out)
+		root.SetArgs([]string{"add", "--dry-run", "-d", destDir, bareURL})
+
+		// Act
+		err := root.Execute()
+
+		// Assert
+		if err != nil {
+			t.Fatalf("add: %v", err)
+		}
+		if want := "overwrite " + filepath.Join(destDir, "alpha"); !strings.Contains(out.String(), want) {
+			t.Errorf("output = %q, want %q", out.String(), want)
+		}
+		if data, _ := os.ReadFile(filepath.Join(destDir, "alpha", "SKILL.md")); string(data) != "# Alpha local\n" {
+			t.Error("alpha should be unchanged")
+		}
+	})
+
+	t.Run("when an existing skill would be overwritten without a TTY or --yes, adding fails and keeps it", func(t *testing.T) {
+		// Arrange
+		destDir := setup(t)
+		root := cmd.NewRootCmd("test")
+		root.SetOut(&bytes.Buffer{})
+		root.SetArgs([]string{"add", "-d", destDir, bareURL})
+
+		// Act
+		err := root.Execute()
+
+		// Assert
+		if err == nil || !strings.Contains(err.Error(), "confirmation required") {
+			t.Fatalf("err = %v, want confirmation required", err)
+		}
+		if data, _ := os.ReadFile(filepath.Join(destDir, "alpha", "SKILL.md")); string(data) != "# Alpha local\n" {
+			t.Error("alpha should be unchanged")
 		}
 	})
 }

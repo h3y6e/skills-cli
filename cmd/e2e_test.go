@@ -2,7 +2,7 @@ package cmd_test
 
 import (
 	"bytes"
-	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,21 +26,21 @@ func TestE2ELifecycle(t *testing.T) {
 		"skills/beta/SKILL.md":  "# Beta v1\n",
 	})
 
-	// --- Step 2: add --list (no install) ---
+	// --- Step 2: add --dry-run (no install) ---
 	var listOut bytes.Buffer
 	root := cmd.NewRootCmd("test")
 	root.SetOut(&listOut)
-	root.SetArgs([]string{"add", "--list", bareURL})
+	root.SetArgs([]string{"add", "--dry-run", bareURL})
 	if err := root.Execute(); err != nil {
-		t.Fatalf("add --list: %v", err)
+		t.Fatalf("add --dry-run: %v", err)
 	}
 	got := listOut.String()
 	if !strings.Contains(got, "alpha") || !strings.Contains(got, "beta") {
-		t.Fatalf("add --list should show alpha and beta, got: %q", got)
+		t.Fatalf("add --dry-run should show alpha and beta, got: %q", got)
 	}
 	// No lockfile should exist yet.
-	if _, err := os.Stat(lock.FilePath(destDir)); !os.IsNotExist(err) {
-		t.Fatal("add --list should not create lockfile")
+	if _, err := os.Stat(lock.FilePath(destDir)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("add --dry-run should not create lockfile")
 	}
 
 	// --- Step 3: add (install) ---
@@ -85,10 +85,7 @@ func TestE2ELifecycle(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("list --json: %v", err)
 	}
-	var listResults []map[string]any
-	if err := json.Unmarshal(jsonOut.Bytes(), &listResults); err != nil {
-		t.Fatalf("list --json invalid: %v", err)
-	}
+	listResults := decodeRecord(t, jsonOut.Bytes(), "skills")
 	if len(listResults) != 2 {
 		t.Fatalf("list --json expected 2 entries, got %d", len(listResults))
 	}
@@ -114,10 +111,7 @@ func TestE2ELifecycle(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("check --json: %v", err)
 	}
-	var checkResults []map[string]any
-	if err := json.Unmarshal(checkJSON.Bytes(), &checkResults); err != nil {
-		t.Fatalf("check --json invalid: %v", err)
-	}
+	checkResults := decodeRecord(t, checkJSON.Bytes(), "results")
 	for _, r := range checkResults {
 		if r["status"] != "up-to-date" {
 			t.Errorf("expected up-to-date status, got %v for %v", r["status"], r["skillName"])
@@ -133,12 +127,12 @@ func TestE2ELifecycle(t *testing.T) {
 
 	// --- Step 9: remove alpha ---
 	root = cmd.NewRootCmd("test")
-	root.SetArgs([]string{"remove", "-d", destDir, "alpha"})
+	root.SetArgs([]string{"remove", "-y", "-d", destDir, "alpha"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("remove alpha: %v", err)
 	}
 	// Alpha should be gone.
-	if _, err := os.Stat(filepath.Join(destDir, "alpha")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(destDir, "alpha")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("alpha directory should not exist after remove")
 	}
 	// Beta should remain.
@@ -159,12 +153,12 @@ func TestE2ELifecycle(t *testing.T) {
 
 	// --- Step 10: rm beta (alias) ---
 	root = cmd.NewRootCmd("test")
-	root.SetArgs([]string{"rm", "-d", destDir, "beta"})
+	root.SetArgs([]string{"rm", "-y", "-d", destDir, "beta"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("rm beta: %v", err)
 	}
 	// Beta should be gone.
-	if _, err := os.Stat(filepath.Join(destDir, "beta")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(destDir, "beta")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("beta directory should not exist after rm")
 	}
 	// Lockfile should be empty.

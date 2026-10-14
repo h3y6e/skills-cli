@@ -200,7 +200,7 @@ func TestCheckHuman(t *testing.T) {
 		// Act
 		var out bytes.Buffer
 		root := cmd.NewRootCmd("test")
-		root.SetOut(&out)
+		root.SetErr(&out)
 		root.SetArgs([]string{"check", "-d", destDir})
 		err := root.Execute()
 
@@ -250,10 +250,7 @@ func TestCheckJSON(t *testing.T) {
 			t.Fatalf("check --json error: %v", err)
 		}
 
-		var results []map[string]any
-		if err := json.Unmarshal(out.Bytes(), &results); err != nil {
-			t.Fatalf("invalid JSON: %v\nraw: %s", err, out.String())
-		}
+		results := decodeRecord(t, out.Bytes(), "results")
 
 		if len(results) != 2 {
 			t.Fatalf("expected 2 results, got %d", len(results))
@@ -336,10 +333,7 @@ func TestCheckNonMutating(t *testing.T) {
 	}
 
 	// Verify JSON is valid.
-	var results []map[string]any
-	if err := json.Unmarshal(out.Bytes(), &results); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
+	decodeRecord(t, out.Bytes(), "results")
 
 	// Verify files are unchanged.
 	lockAfter, _ := os.ReadFile(lockPath)
@@ -382,14 +376,77 @@ func TestCheckJSONIncludesRef(t *testing.T) {
 		t.Fatalf("check --json error: %v", err)
 	}
 
-	var results []map[string]any
-	if err := json.Unmarshal(out.Bytes(), &results); err != nil {
-		t.Fatalf("invalid JSON: %v\nraw: %s", err, out.String())
-	}
+	results := decodeRecord(t, out.Bytes(), "results")
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
 	if results[0]["ref"] != "feature/install" {
 		t.Errorf("ref = %v, want %q", results[0]["ref"], "feature/install")
+	}
+}
+
+func TestCheckJSONWithoutSkills(t *testing.T) {
+	t.Parallel()
+
+	// Arrange
+	destDir := filepath.Join(t.TempDir(), "skills")
+	var out bytes.Buffer
+	root := cmd.NewRootCmd("test")
+	root.SetOut(&out)
+	root.SetArgs([]string{"check", "--json", "-d", destDir})
+
+	// Act
+	err := root.Execute()
+
+	// Assert
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if got := decodeRecord(t, out.Bytes(), "results"); len(got) != 0 {
+		t.Errorf("results = %v, want empty", got)
+	}
+}
+
+func TestCheckJSONWithFailedSkill(t *testing.T) {
+	t.Parallel()
+
+	// Arrange: the lockfile references alpha, which upstream no longer has.
+	bareURL := initBareRepo(t, map[string]string{
+		"skills/beta/SKILL.md": "# Beta\n",
+	})
+	destDir := filepath.Join(t.TempDir(), "skills")
+	if err := os.MkdirAll(filepath.Join(destDir, "alpha"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lf := lock.File{Version: 1, Skills: map[string]lock.Entry{
+		"alpha": {Source: bareURL, SourceType: "git", ComputedHash: "h", Dest: destDir},
+	}}
+	if err := lock.WriteFile(lock.FilePath(destDir), lf); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	root := cmd.NewRootCmd("test")
+	root.SetOut(&out)
+	root.SetArgs([]string{"check", "--json", "-d", destDir})
+
+	// Act
+	err := root.Execute()
+
+	// Assert
+	if err == nil {
+		t.Fatal("expected an error for the failed check")
+	}
+	var record struct {
+		Results []map[string]any `json:"results"`
+		Error   struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &record); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out.String())
+	}
+	if len(record.Results) != 1 || record.Error.Code != "check_failed" || !strings.Contains(record.Error.Message, "alpha") {
+		t.Errorf("record = %+v, want one result and a check_failed error naming alpha", record)
 	}
 }

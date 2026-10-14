@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func runUpdate(cmd *cobra.Command, source string, skillFilter []string, destDir string, yesFlag bool) error {
+func runUpdate(cmd *cobra.Command, source string, skillFilter []string, destDir string, yes, dryRun bool) error {
 	layout := lock.NewLayout(destDir)
 	lf, err := loadLockFile(layout)
 	if err != nil {
@@ -51,38 +51,20 @@ func runUpdate(cmd *cobra.Command, source string, skillFilter []string, destDir 
 	candidates = skill.FilterCandidates(candidates, skillFilter)
 
 	if len(candidates) == 0 && len(skipped) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "no installed skills to update")
+		fmt.Fprintln(cmd.ErrOrStderr(), "no installed skills to update")
+		return nil
+	}
+
+	printSkippedEntries(cmd.ErrOrStderr(), skipped)
+
+	if len(candidates) == 0 {
+		fmt.Fprintln(cmd.ErrOrStderr(), "no matching skills to update")
 		return nil
 	}
 
 	w := cmd.OutOrStdout()
-	printSkippedEntries(w, skipped)
-
-	if len(candidates) == 0 {
-		fmt.Fprintln(w, "no matching skills to update")
-		return nil
-	}
-
-	mode := ResolveApprovalMode(yesFlag, IsTTY())
-
-	// Check if any updates are available.
-	hasUpdates := false
-	for _, c := range candidates {
-		if c.Status == skill.StatusUpdateAvailable {
-			hasUpdates = true
-			break
-		}
-	}
-
-	// Non-interactive: show preview and return an error.
-	if hasUpdates && mode == ApprovalModePreview {
-		for _, c := range candidates {
-			fmt.Fprintf(w, "%s: %s\n", c.SkillName, c.Status)
-		}
-		return fmt.Errorf("updates available; re-run with -y or in a TTY to apply")
-	}
-
 	var applicable, foreignApplicable []skill.UpdateCandidate
+	var failed []string
 
 	for _, c := range candidates {
 		switch c.Status {
@@ -93,6 +75,7 @@ func runUpdate(cmd *cobra.Command, source string, skillFilter []string, destDir 
 			diffOutput, hasDiff, diffErr := git.DiffNoIndex(cmd.Context(), layout.SkillDir(c.SkillName), c.StagedDir)
 			if diffErr != nil {
 				fmt.Fprintf(w, "%s: diff error: %v\n", c.SkillName, diffErr)
+				failed = append(failed, c.SkillName)
 				continue
 			}
 			if hasDiff {
@@ -107,6 +90,7 @@ func runUpdate(cmd *cobra.Command, source string, skillFilter []string, destDir 
 
 		case skill.StatusCheckFailed:
 			fmt.Fprintf(w, "%s: %s (%s)\n", c.SkillName, c.Status, c.Reason)
+			failed = append(failed, c.SkillName)
 
 		case skill.StatusPinned:
 			fmt.Fprintf(w, "%s: pinned to %s (skipped)\n", c.SkillName, c.Reason)
@@ -114,6 +98,13 @@ func runUpdate(cmd *cobra.Command, source string, skillFilter []string, destDir 
 		case skill.StatusLocal:
 			fmt.Fprintf(w, "%s: installed from local path (skipped)\n", c.SkillName)
 		}
+	}
+
+	if dryRun || len(applicable)+len(foreignApplicable) == 0 {
+		return checkFailed(failed)
+	}
+	if err := approve(cmd, yes, "Apply these updates?"); err != nil {
+		return err
 	}
 
 	_, appliedNames, err := skill.ApplyCandidateUpdates(lf, applicable, layout)
@@ -132,7 +123,7 @@ func runUpdate(cmd *cobra.Command, source string, skillFilter []string, destDir 
 		fmt.Fprintf(w, "%s: updated\n", c.SkillName)
 	}
 
-	return nil
+	return checkFailed(failed)
 }
 
 func filterEntriesBySource(entries map[string]lock.Entry, source string) (map[string]lock.Entry, error) {

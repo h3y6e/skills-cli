@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"cmp"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
@@ -20,7 +19,12 @@ type listEntryJSON struct {
 	ComputedHash string `json:"computedHash"`
 }
 
-func runList(cmd *cobra.Command, destDir string, jsonFlag bool) error {
+func runList(cmd *cobra.Command, destDir string, jsonFlag bool) (err error) {
+	payload := []listEntryJSON{}
+	if jsonFlag {
+		defer func() { err = writeRecord(cmd.OutOrStdout(), "skills", payload, err) }()
+	}
+
 	layout := lock.NewLayout(destDir)
 	lf, err := loadLockFile(layout)
 	if err != nil {
@@ -34,7 +38,6 @@ func runList(cmd *cobra.Command, destDir string, jsonFlag bool) error {
 	}
 	foreign := skill.UnmanagedSkills(installed, entries)
 
-	payload := make([]listEntryJSON, 0, len(entries)+len(foreign))
 	for _, name := range slices.Sorted(maps.Keys(entries)) {
 		entry := entries[name]
 		payload = append(payload, listEntryJSON{
@@ -59,16 +62,11 @@ func runList(cmd *cobra.Command, destDir string, jsonFlag bool) error {
 	})
 
 	if jsonFlag {
-		data, err := json.MarshalIndent(payload, "", "  ")
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(cmd.OutOrStdout(), string(data))
-		return err
+		return nil
 	}
 
 	if len(payload) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "no installed skills")
+		fmt.Fprintln(cmd.ErrOrStderr(), "no installed skills")
 		return nil
 	}
 

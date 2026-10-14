@@ -1,8 +1,7 @@
 # skolar
 
-A CLI tool to manage local [agent skills](https://agentskills.io), inspired by [vercel-labs/skills](https://github.com/vercel-labs/skills).
-
-Compatible with both [vercel-labs/skills](https://github.com/vercel-labs/skills) (`skills-lock.json`) and [`gh skill`](https://cli.github.com/manual/gh_skill) (SKILL.md frontmatter metadata).
+Manage local [agent skills](https://agentskills.io) from git repos.
+Reads and writes both [vercel-labs/skills](https://github.com/vercel-labs/skills) lockfiles and [`gh skill`](https://cli.github.com/manual/gh_skill) metadata.
 
 ## Why
 
@@ -21,43 +20,30 @@ Or download a binary from [Releases](https://github.com/h3y6e/skolar/releases).
 ## Usage
 
 ```sh
-skolar add h3y6e/spec-skills                               # Install skills from a repository
-skolar add h3y6e/spec-skills#main                          # Install from an explicit ref
-skolar add --list h3y6e/spec-skills                        # Preview available skills
-skolar add -s spec-plan h3y6e/spec-skills                  # Install specific skills only
-skolar add -d dot_agents/exact_skills h3y6e/spec-skills    # Custom destination (e.g. chezmoi)
-
-skolar list                                                # Show installed skills
-skolar check                                               # Check for upstream updates
-skolar update                                              # Review diffs and apply updates
-skolar update h3y6e/spec-skills#main                      # Update only entries installed from that ref
-skolar update -y                                           # Apply without confirmation (CI-safe)
-skolar remove spec-plan                                    # Remove a skill
+skolar add h3y6e/spec-skills                  # latest release, else default branch
+skolar add h3y6e/spec-skills#main             # pin a ref
+skolar add -s spec-plan h3y6e/spec-skills     # only some skills
+skolar add -d dot_agents/exact_skills ...     # other destination (default .agents/skills)
+skolar list
+skolar check
+skolar update                                 # show diffs, then confirm
+skolar remove spec-plan
 ```
 
-### Install formats
+- `add`, `update`, and `remove` take `--dry-run`, and confirm before overwriting or deleting; pass `-y` without a TTY.
+- `list --json` and `check --json` print `{"skills": [...]}` and `{"results": [...]}`, plus `"error": {"code", "message", "fix"}` on failure.
+- Any flag can be set as `SKOLAR_<FLAG>`, e.g. `SKOLAR_DEST`.
+- Exit status: 0 success, 1 failure (including a skill that could not be checked), 2 usage error or missing `-y`.
 
-Skills are installed to `.agents/skills/` by default (configurable with `-d`). `skolar` manages two install formats, chosen per destination:
+## Formats
 
-- **gh skill format**: used for GitHub sources when no `skills-lock.json` exists alongside the destination. Like `gh skill install`, source tracking metadata (`github-repo`, `github-ref`, `github-tree-sha`, `github-path`) is injected into each `SKILL.md` and no lockfile is written. Skills installed by `gh skill` are likewise recognized by `skolar list`, `check`, `update`, and `remove`. Skills nested one level under a namespace (`skills/<namespace>/<name>`) are discovered and installed flat under their leaf name, as `gh skill` does.
-- **Lockfile format**: used when a `skills-lock.json` already exists, and always for non-GitHub sources (GitLab, generic git, local paths), which gh skill metadata cannot track. The format is compatible with [vercel-labs/skills](https://github.com/vercel-labs/skills).
+A destination with a `skills-lock.json` beside it, or a non-GitHub source, uses the vercel-labs/skills lockfile. Otherwise skolar writes `gh skill` metadata into each `SKILL.md` and no lockfile, so skills installed by either tool are managed by both.
 
-In gh skill format, versioning follows `gh skill` semantics:
+In `gh skill` format:
 
-- Without `#ref`, the latest release tag is installed (falling back to the default branch), and `update` re-resolves the latest release. Since `skolar` is git-only, the "latest release" is approximated by the highest non-prerelease semver tag.
-- With `source#ref`, the skill is pinned (`github-pinned`) and `update` skips it. Re-add with a new ref to move the pin.
-- Skills recorded with a local path (`local-path` metadata, e.g. from `gh skill install --from-local`) can be listed and removed, but not updated.
-
-### Directory structure
-
-```
-.agents/skills/
-├── spec-plan/
-│   └── SKILL.md       # gh skill format: metadata injected into frontmatter
-└── spec-specify/
-    └── SKILL.md
-skills-lock.json       # lockfile format only
-```
+- Without `#ref`, `update` follows the highest non-prerelease semver tag.
+- With `#ref`, the skill is pinned and `update` skips it; re-add to move the pin.
+- Skills installed with `gh skill install --from-local` can be listed and removed, not updated.
 
 ## License
 

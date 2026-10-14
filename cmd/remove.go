@@ -3,14 +3,13 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
 	"github.com/spf13/cobra"
 )
 
-func runRemove(cmd *cobra.Command, skillNames []string, destDir string) error {
+func runRemove(cmd *cobra.Command, skillNames []string, destDir string, yes, dryRun bool) error {
 	layout := lock.NewLayout(destDir)
 	lf, err := loadLockFile(layout)
 	if err != nil {
@@ -31,14 +30,24 @@ func runRemove(cmd *cobra.Command, skillNames []string, destDir string) error {
 		_, inLock := entries[name]
 		_, isForeign := foreign[name]
 		if !inLock && !isForeign {
-			return fmt.Errorf("skill %q not found in %q", name, layout.DestDir)
+			return &cliError{codeSkillNotFound, fmt.Errorf("skill %q not found in %q", name, layout.DestDir), "skolar list --dest " + layout.DestDir}
 		}
+	}
+
+	plan := cmd.OutOrStdout()
+	for _, name := range skillNames {
+		fmt.Fprintf(plan, "remove %s\n", layout.SkillDir(name))
+	}
+	if dryRun {
+		return nil
+	}
+	if err := approve(cmd, yes, "Remove these skills?"); err != nil {
+		return err
 	}
 
 	lockDirty := false
 	for _, name := range skillNames {
-		skillDir := filepath.Join(layout.DestDir, name)
-		if err := os.RemoveAll(skillDir); err != nil {
+		if err := os.RemoveAll(layout.SkillDir(name)); err != nil {
 			return fmt.Errorf("remove skill directory %q: %w", name, err)
 		}
 
@@ -47,7 +56,6 @@ func runRemove(cmd *cobra.Command, skillNames []string, destDir string) error {
 			lockDirty = true
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "removed %s\n", name)
 	}
 
 	if lockDirty {

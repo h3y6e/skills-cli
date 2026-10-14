@@ -1,49 +1,51 @@
 package cmd
 
 import (
+	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/h3y6e/skolar/internal/skill"
-)
-
-type ApprovalMode uint8
-
-const (
-	ApprovalModeApply ApprovalMode = iota
-	ApprovalModePreview
-)
-
-type OutputMode uint8
-
-const (
-	OutputModeHuman OutputMode = iota
-	OutputModeJSON
+	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 // IsTTY reports whether stdin is a terminal. Replaceable for testing.
 var IsTTY = func() bool {
-	fi, err := os.Stdin.Stat()
+	return term.IsTerminal(int(os.Stdin.Fd()))
+}
+
+func approve(cmd *cobra.Command, yes bool, question string) error {
+	if yes {
+		return nil
+	}
+	if !IsTTY() {
+		return &cliError{codeConfirmationRequired, errors.New("confirmation required"), "re-run with --yes"}
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "%s [y/N] ", question)
+	answer, _ := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+	if a := strings.ToLower(strings.TrimSpace(answer)); a != "y" && a != "yes" {
+		return &cliError{code: codeDeclined, err: errors.New("declined")}
+	}
+	return nil
+}
+
+// writeRecord writes the --json result record, with err as its error field, and returns err.
+func writeRecord(w io.Writer, key string, value any, err error) error {
+	rec := map[string]any{key: value}
 	if err != nil {
-		return false
+		rec["error"] = newErrorRecord(err)
 	}
-	return fi.Mode()&os.ModeCharDevice != 0
-}
-
-func ResolveApprovalMode(yesFlag bool, isTTY bool) ApprovalMode {
-	if yesFlag || isTTY {
-		return ApprovalModeApply
+	data, marshalErr := json.MarshalIndent(rec, "", "  ")
+	if marshalErr != nil {
+		return errors.Join(err, marshalErr)
 	}
-	return ApprovalModePreview
-}
-
-func ResolveOutputMode(jsonFlag bool) OutputMode {
-	if jsonFlag {
-		return OutputModeJSON
-	}
-	return OutputModeHuman
+	_, writeErr := fmt.Fprintln(w, string(data))
+	return errors.Join(err, writeErr)
 }
 
 type CheckResult struct {
@@ -68,35 +70,20 @@ func NewCheckResult(candidate skill.UpdateCandidate) CheckResult {
 	}
 }
 
-type CheckRenderer struct {
-	mode    OutputMode
-	w       io.Writer
-	results []CheckResult
-}
-
-func NewCheckRenderer(mode OutputMode, w io.Writer) *CheckRenderer {
-	return &CheckRenderer{mode: mode, w: w}
-}
-
-func (r *CheckRenderer) Render(result CheckResult) {
-	if r.mode == OutputModeJSON {
-		r.results = append(r.results, result)
-		return
-	}
-
+func renderCheckResult(w io.Writer, result CheckResult) {
 	switch result.Status {
 	case skill.StatusUpToDate:
-		fmt.Fprintf(r.w, "%s: %s\n", result.SkillName, result.Status)
+		fmt.Fprintf(w, "%s: %s\n", result.SkillName, result.Status)
 	case skill.StatusUpdateAvailable:
-		fmt.Fprintf(r.w, "%s: update available (%s -> %s)\n", result.SkillName, ShortHash(result.CurrentHash), ShortHash(result.LatestHash))
+		fmt.Fprintf(w, "%s: update available (%s -> %s)\n", result.SkillName, ShortHash(result.CurrentHash), ShortHash(result.LatestHash))
 	case skill.StatusCheckFailed:
-		fmt.Fprintf(r.w, "%s: check failed (%s)\n", result.SkillName, result.Reason)
+		fmt.Fprintf(w, "%s: check failed (%s)\n", result.SkillName, result.Reason)
 	case skill.StatusPinned:
-		fmt.Fprintf(r.w, "%s: pinned (%s)\n", result.SkillName, result.Reason)
+		fmt.Fprintf(w, "%s: pinned (%s)\n", result.SkillName, result.Reason)
 	case skill.StatusLocal:
-		fmt.Fprintf(r.w, "%s: local (%s)\n", result.SkillName, result.Reason)
+		fmt.Fprintf(w, "%s: local (%s)\n", result.SkillName, result.Reason)
 	default:
-		fmt.Fprintf(r.w, "%s: %s\n", result.SkillName, result.Status)
+		fmt.Fprintf(w, "%s: %s\n", result.SkillName, result.Status)
 	}
 }
 
@@ -105,18 +92,4 @@ func ShortHash(h string) string {
 		return h
 	}
 	return h[:7]
-}
-
-func (r *CheckRenderer) Flush() error {
-	if r.mode != OutputModeJSON {
-		return nil
-	}
-
-	data, err := json.MarshalIndent(r.results, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	_, err = r.w.Write(append(data, '\n'))
-	return err
 }

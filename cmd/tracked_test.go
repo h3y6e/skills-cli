@@ -3,6 +3,7 @@ package cmd_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -158,8 +159,8 @@ func TestAddTrackedMode(t *testing.T) {
 		if err != nil {
 			t.Fatalf("add: %v", err)
 		}
-		if !strings.Contains(output, "installed alpha") {
-			t.Errorf("output = %q, want it to contain %q", output, "installed alpha")
+		if !strings.Contains(output, "install "+filepath.Join(destDir, "alpha")) {
+			t.Errorf("output = %q, want it to contain %q", output, "install "+filepath.Join(destDir, "alpha"))
 		}
 		meta := readMetadata(t, destDir, "alpha")
 		if meta.RepoURL != "https://github.com/h3y6e/spec-skills" {
@@ -171,7 +172,7 @@ func TestAddTrackedMode(t *testing.T) {
 		if meta.TreeSHA == "" || meta.Path != "skills/alpha" || meta.Pinned != "" {
 			t.Errorf("unexpected metadata: %+v", meta)
 		}
-		if _, err := os.Stat(lock.FilePath(destDir)); !os.IsNotExist(err) {
+		if _, err := os.Stat(lock.FilePath(destDir)); !errors.Is(err, os.ErrNotExist) {
 			t.Error("no lockfile should be created in gh skill format")
 		}
 	})
@@ -344,7 +345,7 @@ func TestE2ETrackedLifecycle(t *testing.T) {
 	if meta.TreeSHA == "stale-tree-sha" || meta.TreeSHA == "" {
 		t.Errorf("update should refresh github-tree-sha, got %q", meta.TreeSHA)
 	}
-	if _, err := os.Stat(lock.FilePath(destDir)); !os.IsNotExist(err) {
+	if _, err := os.Stat(lock.FilePath(destDir)); !errors.Is(err, os.ErrNotExist) {
 		t.Error("update must not create a lockfile for tracked skills")
 	}
 
@@ -358,13 +359,13 @@ func TestE2ETrackedLifecycle(t *testing.T) {
 	}
 
 	// --- remove deletes the skill without a lockfile ---
-	if _, err := runSkills(t, "remove", "-d", destDir, "alpha"); err != nil {
+	if _, err := runSkills(t, "remove", "-y", "-d", destDir, "alpha"); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(destDir, "alpha")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(destDir, "alpha")); !errors.Is(err, os.ErrNotExist) {
 		t.Error("alpha directory should not exist after remove")
 	}
-	if _, err := os.Stat(lock.FilePath(destDir)); !os.IsNotExist(err) {
+	if _, err := os.Stat(lock.FilePath(destDir)); !errors.Is(err, os.ErrNotExist) {
 		t.Error("remove must not create a lockfile for tracked skills")
 	}
 }

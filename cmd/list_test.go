@@ -2,7 +2,6 @@ package cmd_test
 
 import (
 	"bytes"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -153,7 +152,7 @@ func TestListHuman(t *testing.T) {
 
 		var out bytes.Buffer
 		root := cmd.NewRootCmd("test")
-		root.SetOut(&out)
+		root.SetErr(&out)
 		root.SetArgs([]string{"list", "-d", destDir})
 		if err := root.Execute(); err != nil {
 			t.Fatalf("list error: %v", err)
@@ -174,7 +173,7 @@ func TestListHuman(t *testing.T) {
 		// Act
 		var out bytes.Buffer
 		root := cmd.NewRootCmd("test")
-		root.SetOut(&out)
+		root.SetErr(&out)
 		root.SetArgs([]string{"list", "-d", destDir})
 		err := root.Execute()
 
@@ -211,10 +210,7 @@ func TestListJSON(t *testing.T) {
 		t.Fatalf("list --json error: %v", err)
 	}
 
-	var results []map[string]any
-	if err := json.Unmarshal(out.Bytes(), &results); err != nil {
-		t.Fatalf("invalid JSON: %v\nraw: %s", err, out.String())
-	}
+	results := decodeRecord(t, out.Bytes(), "skills")
 
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
@@ -248,10 +244,7 @@ func TestListJSONEmpty(t *testing.T) {
 		t.Fatalf("list --json error: %v", err)
 	}
 
-	var results []map[string]any
-	if err := json.Unmarshal(out.Bytes(), &results); err != nil {
-		t.Fatalf("invalid JSON: %v\nraw: %s", err, out.String())
-	}
+	results := decodeRecord(t, out.Bytes(), "skills")
 
 	if len(results) != 0 {
 		t.Errorf("expected empty array, got %d items", len(results))
@@ -286,10 +279,7 @@ func TestListJSONIncludesRef(t *testing.T) {
 		t.Fatalf("list --json error: %v", err)
 	}
 
-	var results []map[string]any
-	if err := json.Unmarshal(out.Bytes(), &results); err != nil {
-		t.Fatalf("invalid JSON: %v\nraw: %s", err, out.String())
-	}
+	results := decodeRecord(t, out.Bytes(), "skills")
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
