@@ -83,6 +83,31 @@ func FormatSourceInput(source, ref string) string {
 	return source + "#" + ref
 }
 
+// RepoURLForSource returns the canonical repository URL for a GitHub source
+// in "owner/repo" form, matching the URL gh skill records in skill metadata.
+func RepoURLForSource(canonicalSource string) string {
+	return "https://github.com/" + canonicalSource
+}
+
+// OwnerRepoFromURL extracts the "owner/repo" form from a GitHub repository
+// URL as recorded in skill metadata by gh-compatible tooling.
+func OwnerRepoFromURL(rawURL string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return "", fmt.Errorf("parse repo url %q: %w", rawURL, err)
+	}
+	if u.Scheme != "https" || !strings.EqualFold(u.Host, "github.com") {
+		return "", fmt.Errorf("parse repo url %q: only https://github.com is supported", rawURL)
+	}
+
+	path := strings.Trim(strings.TrimSuffix(u.EscapedPath(), ".git"), "/")
+	segments := splitPathSegments(path)
+	if len(segments) != 2 {
+		return "", fmt.Errorf("parse repo url %q: expected owner/repo path", rawURL)
+	}
+	return strings.Join(segments, "/"), nil
+}
+
 func splitSourceFragment(raw string) (string, string) {
 	hashIndex := strings.LastIndex(raw, "#")
 	if hashIndex <= 0 || hashIndex == len(raw)-1 {

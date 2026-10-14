@@ -191,15 +191,25 @@ func TestCheckHuman(t *testing.T) {
 		}
 	})
 
-	t.Run("errors when lockfile missing", func(t *testing.T) {
+	t.Run("reports nothing to check when lockfile is missing", func(t *testing.T) {
 		t.Parallel()
 
+		// Arrange: gh-managed destinations have no lockfile at all.
 		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+
+		// Act
+		var out bytes.Buffer
 		root := cmd.NewRootCmd("test")
+		root.SetOut(&out)
 		root.SetArgs([]string{"check", "-d", destDir})
 		err := root.Execute()
-		if err == nil {
-			t.Fatal("expected error when lockfile missing")
+
+		// Assert
+		if err != nil {
+			t.Fatalf("check: %v", err)
+		}
+		if !strings.Contains(out.String(), "no installed skills to check") {
+			t.Errorf("output = %q, want %q", out.String(), "no installed skills to check")
 		}
 	})
 }

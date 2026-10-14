@@ -9,6 +9,7 @@ import (
 
 	"github.com/h3y6e/skills/cmd"
 	"github.com/h3y6e/skills/internal/lock"
+	"github.com/h3y6e/skills/internal/skill"
 )
 
 func TestRemoveFlags(t *testing.T) {
@@ -181,6 +182,65 @@ func TestRemove(t *testing.T) {
 		err := root.Execute()
 		if err == nil {
 			t.Fatal("expected error when lockfile missing")
+		}
+	})
+
+	t.Run("when a tracked skill shares a name with a lock entry for a different dest, removing keeps the other entry", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange: beta is installed in destA in gh skill format, while the
+		// lockfile tracks a different beta in destB.
+		rootDir := t.TempDir()
+		destA := filepath.Join(rootDir, ".agents", "skills")
+		destB := filepath.Join(rootDir, ".config", "opencode", "skills")
+
+		content, err := skill.InjectSourceMetadata("# Beta\n", skill.SourceMetadata{
+			RepoURL: "https://github.com/h3y6e/spec-skills",
+			Ref:     "refs/tags/v1.0.0",
+			TreeSHA: "abc123",
+			Path:    "skills/beta",
+		})
+		if err != nil {
+			t.Fatalf("InjectSourceMetadata() error = %v", err)
+		}
+		if err := os.MkdirAll(filepath.Join(destA, "beta"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(destA, "beta", "SKILL.md"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		lf := lock.File{
+			Version: 1,
+			Skills: map[string]lock.Entry{
+				"beta": {Source: "h3y6e/spec-skills", SourceType: "github", ComputedHash: "abc123", Dest: destB},
+			},
+		}
+		if err := lock.WriteFile(lock.FilePath(destA), lf); err != nil {
+			t.Fatalf("write lockfile: %v", err)
+		}
+
+		// Act
+		root := cmd.NewRootCmd("test")
+		root.SetArgs([]string{"remove", "-d", destA, "beta"})
+		if err := root.Execute(); err != nil {
+			t.Fatalf("remove: %v", err)
+		}
+
+		// Assert
+		if _, err := os.Stat(filepath.Join(destA, "beta")); !os.IsNotExist(err) {
+			t.Error("expected beta directory in destA to be removed")
+		}
+		updated, err := lock.ReadFile(lock.FilePath(destA))
+		if err != nil {
+			t.Fatalf("read lockfile: %v", err)
+		}
+		entry, ok := updated.Skills["beta"]
+		if !ok {
+			t.Fatal("lock entry for destB must not be removed")
+		}
+		if entry.Dest != destB {
+			t.Errorf("entry.Dest = %q, want %q", entry.Dest, destB)
 		}
 	})
 }

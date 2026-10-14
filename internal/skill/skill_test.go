@@ -80,6 +80,113 @@ func TestDiscoverSkills(t *testing.T) {
 		}
 	})
 
+	t.Run("when skills are namespaced one level deep, discovery finds them by leaf name with full path", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		root := t.TempDir()
+		writeFiles(t, root, map[string]string{
+			"skills/engineering/codebase-design/SKILL.md": "# Codebase Design\n",
+			"skills/writing/writing-japanese/SKILL.md":    "# Writing Japanese\n",
+		})
+
+		// Act
+		skills, err := skill.DiscoverSkills(root)
+
+		// Assert
+		if err != nil {
+			t.Fatalf("DiscoverSkills() error = %v", err)
+		}
+		if len(skills) != 2 {
+			t.Fatalf("expected 2 skills, got %d", len(skills))
+		}
+		if skills[0].Name != "codebase-design" || skills[0].Path != "skills/engineering/codebase-design" {
+			t.Errorf("skills[0] = %q (%q)", skills[0].Name, skills[0].Path)
+		}
+		if skills[1].Name != "writing-japanese" || skills[1].Path != "skills/writing/writing-japanese" {
+			t.Errorf("skills[1] = %q (%q)", skills[1].Name, skills[1].Path)
+		}
+	})
+
+	t.Run("when flat and namespaced skills coexist, both are discovered", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		root := t.TempDir()
+		writeFiles(t, root, map[string]string{
+			"skills/cxg/SKILL.md":                         "# cxg\n",
+			"skills/engineering/diagnosing-bugs/SKILL.md": "# Diagnosing Bugs\n",
+		})
+
+		// Act
+		skills, err := skill.DiscoverSkills(root)
+
+		// Assert
+		if err != nil {
+			t.Fatalf("DiscoverSkills() error = %v", err)
+		}
+		if len(skills) != 2 {
+			t.Fatalf("expected 2 skills, got %d", len(skills))
+		}
+		if skills[0].Name != "cxg" || skills[0].Path != "skills/cxg" {
+			t.Errorf("skills[0] = %q (%q)", skills[0].Name, skills[0].Path)
+		}
+		if skills[1].Name != "diagnosing-bugs" || skills[1].Path != "skills/engineering/diagnosing-bugs" {
+			t.Errorf("skills[1] = %q (%q)", skills[1].Name, skills[1].Path)
+		}
+	})
+
+	t.Run("when two namespaces contain the same leaf name, discovery returns an error", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		root := t.TempDir()
+		writeFiles(t, root, map[string]string{
+			"skills/a/code-review/SKILL.md": "# A\n",
+			"skills/b/code-review/SKILL.md": "# B\n",
+		})
+
+		// Act
+		_, err := skill.DiscoverSkills(root)
+
+		// Assert
+		if err == nil {
+			t.Fatal("DiscoverSkills() expected error, got nil")
+		}
+	})
+
+	t.Run("when skills are discovered, Path records the repo-relative directory", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		skillsRoot := t.TempDir()
+		writeFiles(t, skillsRoot, map[string]string{
+			"skills/my-skill/SKILL.md": "# My Skill\n",
+		})
+		flatRoot := t.TempDir()
+		writeFiles(t, flatRoot, map[string]string{
+			"my-skill/SKILL.md": "# My Skill\n",
+		})
+
+		// Act
+		fromSkillsDir, err := skill.DiscoverSkills(skillsRoot)
+		if err != nil {
+			t.Fatalf("DiscoverSkills() error = %v", err)
+		}
+		fromFlat, err := skill.DiscoverSkills(flatRoot)
+		if err != nil {
+			t.Fatalf("DiscoverSkills() error = %v", err)
+		}
+
+		// Assert
+		if got := fromSkillsDir[0].Path; got != "skills/my-skill" {
+			t.Errorf("Path = %q, want %q", got, "skills/my-skill")
+		}
+		if got := fromFlat[0].Path; got != "my-skill" {
+			t.Errorf("Path = %q, want %q", got, "my-skill")
+		}
+	})
+
 	t.Run("skills/ takes priority over root-level", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()

@@ -19,6 +19,8 @@ const (
 	StatusUpToDate        Status = "up-to-date"
 	StatusUpdateAvailable Status = "update-available"
 	StatusCheckFailed     Status = "check-failed"
+	StatusPinned          Status = "pinned"
+	StatusLocal           Status = "local"
 )
 
 func (s Status) String() string { return string(s) }
@@ -27,6 +29,7 @@ func (s Status) String() string { return string(s) }
 type DiscoveredSkill struct {
 	Name         string
 	Dir          string
+	Path         string // repo-relative directory of the skill, e.g. "skills/foo"
 	ComputedHash string
 }
 
@@ -40,6 +43,10 @@ type UpdateCandidate struct {
 	Status      Status
 	StagedDir   string
 	Reason      string
+	// Foreign marks skills installed by gh-compatible tooling that have no
+	// lockfile entry. Applying them replaces the directory only; the lockfile
+	// is left untouched.
+	Foreign bool
 }
 
 // CloneFunc clones a source and returns the directory path. Caller must clean up.
