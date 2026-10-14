@@ -11,6 +11,9 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+
+	"golang.org/x/text/collate"
+	"golang.org/x/text/language"
 )
 
 // DiscoverSkills finds skills in a cloned repository.
@@ -164,8 +167,9 @@ func hasSkillFile(dir string) (bool, error) {
 	return true, nil
 }
 
-// ComputeHash returns a SHA256 hash of the directory contents.
-// Files are sorted by path before hashing.
+// ComputeHash returns the computedHash vercel-labs/skills records for dir:
+// SHA-256 over the paths and contents of regular files in locale order,
+// skipping .git and node_modules.
 func ComputeHash(dir string) (string, error) {
 	var files []string
 
@@ -174,6 +178,12 @@ func ComputeHash(dir string) (string, error) {
 			return err
 		}
 		if d.IsDir() {
+			if path != dir && (d.Name() == ".git" || d.Name() == "node_modules") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !d.Type().IsRegular() {
 			return nil
 		}
 		rel, err := filepath.Rel(dir, path)
@@ -187,7 +197,7 @@ func ComputeHash(dir string) (string, error) {
 		return "", fmt.Errorf("compute hash for %q: %w", dir, err)
 	}
 
-	slices.Sort(files)
+	slices.SortFunc(files, collate.New(language.Und).CompareString)
 
 	h := sha256.New()
 	for _, rel := range files {

@@ -19,20 +19,20 @@ type listEntryJSON struct {
 	ComputedHash string `json:"computedHash"`
 }
 
-func runList(cmd *cobra.Command, destDir string, jsonFlag bool) (err error) {
+func runList(cmd *cobra.Command, skillsDir string, jsonFlag bool) (err error) {
 	payload := []listEntryJSON{}
 	if jsonFlag {
 		defer func() { err = writeRecord(cmd.OutOrStdout(), cmd.Annotations[recordKey], payload, err) }()
 	}
 
-	layout := lock.NewLayout(destDir)
+	layout := lock.NewLayout(skillsDir)
 	lf, err := loadLockFile(layout)
 	if err != nil {
 		return err
 	}
-	entries := lock.FilterEntriesByDest(lf.Skills, layout.DestDir)
+	entries := layout.Entries(lf)
 
-	installed, err := skill.ScanInstalledSkills(layout.DestDir)
+	installed, err := skill.ScanInstalledSkills(layout.Dir)
 	if err != nil {
 		return err
 	}

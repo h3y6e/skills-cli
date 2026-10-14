@@ -321,3 +321,41 @@ func TestComputeHashIsDeterministicAndContentSensitive(t *testing.T) {
 		t.Fatalf("ComputeHash() after change = %q, want different from %q", third, first)
 	}
 }
+
+func TestComputeHashMatchesVercel(t *testing.T) {
+	t.Run("when a skill holds mixed-case names, .git, node_modules and a symlink, the hash equals vercel-labs/skills' computedHash", func(t *testing.T) {
+		// Arrange
+		dir := t.TempDir()
+		for name, content := range map[string]string{
+			"a.md":           "lower\n",
+			"B.md":           "upper\n",
+			"sub/c.md":       "c\n",
+			".git/x":         "x\n",
+			"node_modules/y": "y\n",
+			"SKILL.md":       "---\nname: s\n---\n",
+		} {
+			path := filepath.Join(dir, filepath.FromSlash(name))
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.Symlink("a.md", filepath.Join(dir, "link.md")); err != nil {
+			t.Fatal(err)
+		}
+
+		// Act
+		got, err := skill.ComputeHash(dir)
+
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+		// computeSkillFolderHash of vercel-labs/skills 1.7.1 over the same tree.
+		if want := "1e24b5bad76e4407e826d1f77a4fc083e12624207ac199d5a94efe24218e6959"; got != want {
+			t.Errorf("ComputeHash() = %s, want %s", got, want)
+		}
+	})
+}

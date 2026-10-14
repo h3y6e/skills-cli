@@ -3,6 +3,7 @@ package skill_test
 import (
 	"testing"
 
+	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
 )
 
@@ -198,6 +199,32 @@ func TestParseSource(t *testing.T) {
 
 			if got != tt.want {
 				t.Fatalf("ParseSource() = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSourceInput(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		entry lock.Entry
+		want  string
+	}{
+		{"when the entry is a GitLab source, the input names gitlab.com", lock.Entry{Source: "team/repo", SourceType: "gitlab", Ref: "v1"}, "https://gitlab.com/team/repo#v1"},
+		{"when the entry is a GitHub source, the input is its shorthand", lock.Entry{Source: "o/r", SourceType: "github"}, "o/r"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			// Act
+			got := skill.SourceInput(tc.entry)
+
+			// Assert
+			if got != tc.want {
+				t.Errorf("SourceInput() = %q, want %q", got, tc.want)
+			}
+			if ref, err := skill.ParseSource(got); err != nil || ref.SourceType != tc.entry.SourceType {
+				t.Errorf("ParseSource(%q) = %+v, %v; want source type %s", got, ref, err, tc.entry.SourceType)
 			}
 		})
 	}

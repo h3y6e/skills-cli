@@ -10,7 +10,7 @@ import (
 // FileName is the standard lockfile name (compatible with vercel-labs/skills).
 const FileName = "skills-lock.json"
 
-const DefaultDestDir = ".agents/skills"
+const DefaultDir = ".agents/skills"
 
 // File represents the lockfile contents.
 type File struct {
@@ -24,7 +24,6 @@ type Entry struct {
 	Ref          string `json:"ref,omitempty"`
 	SourceType   string `json:"sourceType"`
 	ComputedHash string `json:"computedHash"`
-	Dest         string `json:"dest,omitempty"`
 }
 
 func ReadFile(path string) (File, error) {
@@ -87,45 +86,40 @@ func WriteFile(path string, file File) error {
 
 // Layout describes the directory structure of installed skills and the lockfile.
 type Layout struct {
-	DestDir string
+	Dir string
 }
 
-func NewLayout(destDir string) Layout {
-	return Layout{DestDir: destDir}
+func NewLayout(skillsDir string) Layout {
+	return Layout{Dir: filepath.Clean(skillsDir)}
 }
 
 func (l Layout) LockPath() string {
-	if filepath.IsAbs(l.DestDir) {
-		return filepath.Join(filepath.Dir(filepath.Dir(l.DestDir)), FileName)
+	if filepath.IsAbs(l.Dir) {
+		return filepath.Join(filepath.Dir(filepath.Dir(l.Dir)), FileName)
 	}
 	return FileName
 }
 
 func (l Layout) SkillDir(name string) string {
-	return filepath.Join(l.DestDir, name)
+	return filepath.Join(l.Dir, name)
 }
 
-func FilePath(destDir string) string {
-	return NewLayout(destDir).LockPath()
+func FilePath(skillsDir string) string {
+	return NewLayout(skillsDir).LockPath()
 }
 
-// EffectiveDest returns the entry's dest directory, falling back to
-// DefaultDestDir when the entry has no explicit dest.
-func EffectiveDest(entry Entry) string {
-	if entry.Dest != "" {
-		return filepath.Clean(entry.Dest)
+// UsesLockfile reports whether the lockfile records this layout's
+// directory, which holds only for DefaultDir beside the lockfile.
+func (l Layout) UsesLockfile() bool {
+	rel, err := filepath.Rel(filepath.Dir(l.LockPath()), filepath.Clean(l.Dir))
+	return err == nil && rel == filepath.Clean(DefaultDir)
+}
+
+// Entries returns the lockfile's skills when the lockfile records this
+// layout's directory, and none otherwise.
+func (l Layout) Entries(f File) map[string]Entry {
+	if !l.UsesLockfile() {
+		return map[string]Entry{}
 	}
-	return filepath.Clean(DefaultDestDir)
-}
-
-// FilterEntriesByDest returns entries whose effective dest matches destDir.
-func FilterEntriesByDest(entries map[string]Entry, destDir string) map[string]Entry {
-	wantDest := filepath.Clean(destDir)
-	filtered := make(map[string]Entry)
-	for name, entry := range entries {
-		if EffectiveDest(entry) == wantDest {
-			filtered[name] = entry
-		}
-	}
-	return filtered
+	return f.Skills
 }

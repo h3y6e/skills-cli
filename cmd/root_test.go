@@ -77,13 +77,13 @@ func TestExitStatus(t *testing.T) {
 		t.Parallel()
 
 		// Arrange
-		destDir := filepath.Join(t.TempDir(), "skills")
+		skillsDir := filepath.Join(t.TempDir(), "skills")
 
 		// Act
-		_, stderr, code := runMain(t, nil, "remove", "-y", "-d", destDir, "missing")
+		_, stderr, code := runMain(t, nil, "remove", "-y", "-d", skillsDir, "missing")
 
 		// Assert
-		if code != 1 || !strings.Contains(stderr, `error: skill "missing" not found`) || !strings.Contains(stderr, "fix: skolar list --dest "+destDir) {
+		if code != 1 || !strings.Contains(stderr, `error: skill "missing" not found`) || !strings.Contains(stderr, "fix: skolar list --dir "+skillsDir) {
 			t.Errorf("exit = %d, stderr = %q, want 1, the cause, and a fix", code, stderr)
 		}
 	})
@@ -92,11 +92,11 @@ func TestExitStatus(t *testing.T) {
 		t.Parallel()
 
 		// Arrange
-		destDir := filepath.Join(t.TempDir(), "skills")
-		writeTrackedSkill(t, destDir, "alpha")
+		skillsDir := filepath.Join(t.TempDir(), "skills")
+		writeTrackedSkill(t, skillsDir, "alpha")
 
 		// Act
-		_, stderr, code := runMain(t, nil, "remove", "-d", destDir, "alpha")
+		_, stderr, code := runMain(t, nil, "remove", "-d", skillsDir, "alpha")
 
 		// Assert
 		if code != 2 || !strings.Contains(stderr, "fix: re-run with --yes") {
@@ -143,10 +143,10 @@ func TestFlagsFromEnv(t *testing.T) {
 	t.Parallel()
 
 	// Arrange
-	destDir := filepath.Join(t.TempDir(), "skills")
+	skillsDir := filepath.Join(t.TempDir(), "skills")
 
 	// Act
-	stdout, stderr, code := runMain(t, []string{"SKOLAR_DEST=" + destDir, "SKOLAR_JSON=true"}, "check")
+	stdout, stderr, code := runMain(t, []string{"SKOLAR_DIR=" + skillsDir, "SKOLAR_JSON=true"}, "check")
 
 	// Assert
 	if code != 0 {

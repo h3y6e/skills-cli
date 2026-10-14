@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/h3y6e/skolar/internal/lock"
 )
 
 var shorthandPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`)
@@ -74,6 +76,15 @@ func ParseSource(raw string) (SourceRef, error) {
 	}
 
 	return SourceRef{}, fmt.Errorf("parse source %q: unsupported format", rawWithoutFragment)
+}
+
+// SourceInput returns the add argument that reinstalls a lock entry.
+func SourceInput(entry lock.Entry) string {
+	source := entry.Source
+	if entry.SourceType == "gitlab" {
+		source = "https://gitlab.com/" + source
+	}
+	return FormatSourceInput(source, entry.Ref)
 }
 
 func FormatSourceInput(source, ref string) string {

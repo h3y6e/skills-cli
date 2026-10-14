@@ -8,20 +8,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func runCheck(cmd *cobra.Command, destDir string, jsonFlag bool) (err error) {
+func runCheck(cmd *cobra.Command, skillsDir string, jsonFlag bool) (err error) {
 	results := []CheckResult{}
 	if jsonFlag {
 		defer func() { err = writeRecord(cmd.OutOrStdout(), cmd.Annotations[recordKey], results, err) }()
 	}
 
-	layout := lock.NewLayout(destDir)
+	layout := lock.NewLayout(skillsDir)
 	lf, err := loadLockFile(layout)
 	if err != nil {
 		return err
 	}
-	entries := lock.FilterEntriesByDest(lf.Skills, layout.DestDir)
+	entries := layout.Entries(lf)
 
-	installed, err := skill.ScanInstalledSkills(layout.DestDir)
+	installed, err := skill.ScanInstalledSkills(layout.Dir)
 	if err != nil {
 		return err
 	}

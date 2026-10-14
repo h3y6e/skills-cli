@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -26,12 +25,11 @@ func TestListFlags(t *testing.T) {
 		}
 	})
 
-	t.Run("filters installed skills by dest", func(t *testing.T) {
+	t.Run("when the directory is custom, list shows none of the lockfile's skills", func(t *testing.T) {
 		t.Parallel()
 
 		rootDir := t.TempDir()
-		destA := filepath.Join(rootDir, ".agents", "skills")
-		destB := filepath.Join(rootDir, ".config", "opencode", "skills")
+		dirA := filepath.Join(rootDir, ".agents", "skills")
 
 		lockData := []byte(`{
 		  "version": 1,
@@ -39,38 +37,56 @@ func TestListFlags(t *testing.T) {
 		    "alpha": {
 		      "source": "h3y6e/spec-skills",
 		      "sourceType": "github",
-		      "computedHash": "abc123",
-		      "dest": ` + strconv.Quote(destA) + `
+		      "computedHash": "abc123"
 		    },
 		    "beta": {
 		      "source": "h3y6e/spec-skills",
 		      "sourceType": "github",
-		      "computedHash": "def456",
-		      "dest": ` + strconv.Quote(destB) + `
+		      "computedHash": "def456"
 		    }
 		  }
 		}`)
-		if err := os.MkdirAll(filepath.Dir(lock.FilePath(destA)), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(lock.FilePath(dirA)), 0o755); err != nil {
 			t.Fatalf("mkdir lockfile parent: %v", err)
 		}
-		if err := os.WriteFile(lock.FilePath(destA), lockData, 0o644); err != nil {
+		if err := os.WriteFile(lock.FilePath(dirA), lockData, 0o644); err != nil {
 			t.Fatalf("write lockfile: %v", err)
 		}
 
 		var out bytes.Buffer
 		root := cmd.NewRootCmd("test")
 		root.SetOut(&out)
-		root.SetArgs([]string{"list", "-d", destA})
+		root.SetArgs([]string{"list", "-d", filepath.Join(rootDir, "custom", "skills")})
 		if err := root.Execute(); err != nil {
 			t.Fatalf("list error: %v", err)
 		}
 
 		got := out.String()
-		if !strings.Contains(got, "alpha") {
-			t.Errorf("expected alpha in output, got: %q", got)
+		if strings.Contains(got, "alpha") || strings.Contains(got, "beta") {
+			t.Errorf("did not expect skills of another directory in output for %q, got: %q", dirA, got)
 		}
-		if strings.Contains(got, "beta") {
-			t.Errorf("did not expect beta in output for dest %q, got: %q", destA, got)
+	})
+}
+
+func TestListIgnoresUnrelatedLockfile(t *testing.T) {
+	t.Parallel()
+	t.Run("when the directory is custom, list ignores a malformed skills-lock.json", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		base := t.TempDir()
+		if err := os.WriteFile(filepath.Join(base, "skills-lock.json"), []byte("{"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		root := cmd.NewRootCmd("test")
+		root.SetOut(&bytes.Buffer{})
+		root.SetArgs([]string{"list", "-d", filepath.Join(base, "custom", "skills")})
+
+		// Act
+		err := root.Execute()
+
+		// Assert
+		if err != nil {
+			t.Fatalf("list: %v", err)
 		}
 	})
 }
@@ -82,11 +98,11 @@ func TestListAlias(t *testing.T) {
 		"skills/alpha/SKILL.md": "# Alpha\n",
 	})
 
-	destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+	skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 	// Install.
 	root1 := cmd.NewRootCmd("test")
-	root1.SetArgs([]string{"add", "-d", destDir, bareURL})
+	root1.SetArgs([]string{"add", "-d", skillsDir, bareURL})
 	if err := root1.Execute(); err != nil {
 		t.Fatalf("add error: %v", err)
 	}
@@ -95,7 +111,7 @@ func TestListAlias(t *testing.T) {
 	var out bytes.Buffer
 	root2 := cmd.NewRootCmd("test")
 	root2.SetOut(&out)
-	root2.SetArgs([]string{"ls", "-d", destDir})
+	root2.SetArgs([]string{"ls", "-d", skillsDir})
 	if err := root2.Execute(); err != nil {
 		t.Fatalf("ls error: %v", err)
 	}
@@ -117,10 +133,10 @@ func TestListHuman(t *testing.T) {
 			"skills/beta/SKILL.md":  "# Beta\n",
 		})
 
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 		root1 := cmd.NewRootCmd("test")
-		root1.SetArgs([]string{"add", "-d", destDir, bareURL})
+		root1.SetArgs([]string{"add", "-d", skillsDir, bareURL})
 		if err := root1.Execute(); err != nil {
 			t.Fatalf("add error: %v", err)
 		}
@@ -128,7 +144,7 @@ func TestListHuman(t *testing.T) {
 		var out bytes.Buffer
 		root2 := cmd.NewRootCmd("test")
 		root2.SetOut(&out)
-		root2.SetArgs([]string{"list", "-d", destDir})
+		root2.SetArgs([]string{"list", "-d", skillsDir})
 		if err := root2.Execute(); err != nil {
 			t.Fatalf("list error: %v", err)
 		}
@@ -145,15 +161,15 @@ func TestListHuman(t *testing.T) {
 	t.Run("empty lockfile shows no skills message", func(t *testing.T) {
 		t.Parallel()
 
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 		lf := lock.File{Version: 1, Skills: map[string]lock.Entry{}}
-		lock.WriteFile(lock.FilePath(destDir), lf)
+		lock.WriteFile(lock.FilePath(skillsDir), lf)
 
 		var out bytes.Buffer
 		root := cmd.NewRootCmd("test")
 		root.SetErr(&out)
-		root.SetArgs([]string{"list", "-d", destDir})
+		root.SetArgs([]string{"list", "-d", skillsDir})
 		if err := root.Execute(); err != nil {
 			t.Fatalf("list error: %v", err)
 		}
@@ -168,13 +184,13 @@ func TestListHuman(t *testing.T) {
 		t.Parallel()
 
 		// Arrange: gh-managed destinations have no lockfile at all.
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 		// Act
 		var out bytes.Buffer
 		root := cmd.NewRootCmd("test")
 		root.SetErr(&out)
-		root.SetArgs([]string{"list", "-d", destDir})
+		root.SetArgs([]string{"list", "-d", skillsDir})
 		err := root.Execute()
 
 		// Assert
@@ -194,10 +210,10 @@ func TestListJSON(t *testing.T) {
 		"skills/alpha/SKILL.md": "# Alpha\n",
 	})
 
-	destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+	skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 	root1 := cmd.NewRootCmd("test")
-	root1.SetArgs([]string{"add", "-d", destDir, bareURL})
+	root1.SetArgs([]string{"add", "-d", skillsDir, bareURL})
 	if err := root1.Execute(); err != nil {
 		t.Fatalf("add error: %v", err)
 	}
@@ -205,7 +221,7 @@ func TestListJSON(t *testing.T) {
 	var out bytes.Buffer
 	root2 := cmd.NewRootCmd("test")
 	root2.SetOut(&out)
-	root2.SetArgs([]string{"list", "--json", "-d", destDir})
+	root2.SetArgs([]string{"list", "--json", "-d", skillsDir})
 	if err := root2.Execute(); err != nil {
 		t.Fatalf("list --json error: %v", err)
 	}
@@ -232,14 +248,14 @@ func TestListJSON(t *testing.T) {
 func TestListJSONEmpty(t *testing.T) {
 	t.Parallel()
 
-	destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+	skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 	lf := lock.File{Version: 1, Skills: map[string]lock.Entry{}}
-	lock.WriteFile(lock.FilePath(destDir), lf)
+	lock.WriteFile(lock.FilePath(skillsDir), lf)
 
 	var out bytes.Buffer
 	root := cmd.NewRootCmd("test")
 	root.SetOut(&out)
-	root.SetArgs([]string{"list", "--json", "-d", destDir})
+	root.SetArgs([]string{"list", "--json", "-d", skillsDir})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("list --json error: %v", err)
 	}
@@ -254,7 +270,7 @@ func TestListJSONEmpty(t *testing.T) {
 func TestListJSONIncludesRef(t *testing.T) {
 	t.Parallel()
 
-	destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+	skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 	lf := lock.File{
 		Version: 1,
 		Skills: map[string]lock.Entry{
@@ -263,18 +279,17 @@ func TestListJSONIncludesRef(t *testing.T) {
 				Ref:          "feature/install",
 				SourceType:   "github",
 				ComputedHash: "abc123",
-				Dest:         destDir,
 			},
 		},
 	}
-	if err := lock.WriteFile(lock.FilePath(destDir), lf); err != nil {
+	if err := lock.WriteFile(lock.FilePath(skillsDir), lf); err != nil {
 		t.Fatalf("write lockfile: %v", err)
 	}
 
 	var out bytes.Buffer
 	root := cmd.NewRootCmd("test")
 	root.SetOut(&out)
-	root.SetArgs([]string{"list", "--json", "-d", destDir})
+	root.SetArgs([]string{"list", "--json", "-d", skillsDir})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("list --json error: %v", err)
 	}

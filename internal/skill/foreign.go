@@ -22,16 +22,16 @@ type InstalledSkill struct {
 	Meta SourceMetadata
 }
 
-// ScanInstalledSkills returns the skills in destDir that carry gh-compatible
+// ScanInstalledSkills returns the skills in skillsDir that carry gh-compatible
 // source metadata, sorted by name. Skills without metadata, with unreadable
 // SKILL.md, or with invalid frontmatter are skipped.
-func ScanInstalledSkills(destDir string) ([]InstalledSkill, error) {
-	entries, err := os.ReadDir(destDir)
+func ScanInstalledSkills(skillsDir string) ([]InstalledSkill, error) {
+	entries, err := os.ReadDir(skillsDir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read skills directory %q: %w", destDir, err)
+		return nil, fmt.Errorf("read skills directory %q: %w", skillsDir, err)
 	}
 
 	var installed []InstalledSkill
@@ -40,7 +40,7 @@ func ScanInstalledSkills(destDir string) ([]InstalledSkill, error) {
 			continue
 		}
 
-		dir := filepath.Join(destDir, entry.Name())
+		dir := filepath.Join(skillsDir, entry.Name())
 		data, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
 		if err != nil {
 			continue
@@ -119,6 +119,8 @@ type UpstreamFuncs struct {
 	// latest release, then default branch) and clones it into a new temp
 	// directory, returning the clone path and the resolved ref.
 	FetchLatest func(repoURL string) (cloneDir string, ref git.ResolvedRef, err error)
+	// FetchRef clones repoURL at ref into a new temp directory.
+	FetchRef func(repoURL, ref string) (cloneDir string, err error)
 	// TreeSHA returns the git tree SHA of path within a repository directory.
 	TreeSHA func(repoDir, path string) (string, error)
 }
@@ -144,6 +146,14 @@ func NewUpstreamFuncs(ctx context.Context, tmpPrefix string) (UpstreamFuncs, fun
 			}
 			dirs = append(dirs, tmpDir)
 			return tmpDir, resolved, nil
+		},
+		FetchRef: func(repoURL, ref string) (string, error) {
+			tmpDir, err := os.MkdirTemp("", tmpPrefix)
+			if err != nil {
+				return "", fmt.Errorf("create temp dir: %w", err)
+			}
+			dirs = append(dirs, tmpDir)
+			return tmpDir, git.ShallowClone(ctx, repoURL, ref, tmpDir)
 		},
 		TreeSHA: func(repoDir, path string) (string, error) {
 			return git.TreeSHA(ctx, repoDir, path)

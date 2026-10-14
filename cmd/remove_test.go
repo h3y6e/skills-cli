@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -22,11 +21,11 @@ func TestRemoveFlags(t *testing.T) {
 	root := cmd.NewRootCmd("test")
 	removeCmd, _, _ := root.Find([]string{"remove"})
 
-	t.Run("--dest flag is registered", func(t *testing.T) {
+	t.Run("--dir flag is registered", func(t *testing.T) {
 		t.Parallel()
-		flag := removeCmd.Flags().Lookup("dest")
+		flag := removeCmd.Flags().Lookup("dir")
 		if flag == nil {
-			t.Fatal("expected --dest flag on remove command")
+			t.Fatal("expected --dir flag on remove command")
 		}
 	})
 }
@@ -38,11 +37,11 @@ func TestRemoveAlias(t *testing.T) {
 		"skills/alpha/SKILL.md": "# Alpha\n",
 	})
 
-	destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+	skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 	// Install.
 	root1 := cmd.NewRootCmd("test")
-	root1.SetArgs([]string{"add", "-d", destDir, bareURL})
+	root1.SetArgs([]string{"add", "-d", skillsDir, bareURL})
 	if err := root1.Execute(); err != nil {
 		t.Fatalf("add error: %v", err)
 	}
@@ -51,18 +50,18 @@ func TestRemoveAlias(t *testing.T) {
 	var out bytes.Buffer
 	root2 := cmd.NewRootCmd("test")
 	root2.SetOut(&out)
-	root2.SetArgs([]string{"rm", "-y", "-d", destDir, "alpha"})
+	root2.SetArgs([]string{"rm", "-y", "-d", skillsDir, "alpha"})
 	if err := root2.Execute(); err != nil {
 		t.Fatalf("rm error: %v", err)
 	}
 
 	// Skill directory should be gone.
-	if _, err := os.Stat(filepath.Join(destDir, "alpha")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(skillsDir, "alpha")); !errors.Is(err, os.ErrNotExist) {
 		t.Error("expected alpha directory to be removed via rm alias")
 	}
 
 	// Lockfile should not contain alpha.
-	lf, err := lock.ReadFile(lock.FilePath(destDir))
+	lf, err := lock.ReadFile(lock.FilePath(skillsDir))
 	if err != nil {
 		t.Fatalf("read lockfile: %v", err)
 	}
@@ -82,34 +81,34 @@ func TestRemove(t *testing.T) {
 			"skills/beta/SKILL.md":  "# Beta\n",
 		})
 
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 		// Install both skills.
 		root1 := cmd.NewRootCmd("test")
-		root1.SetArgs([]string{"add", "-d", destDir, bareURL})
+		root1.SetArgs([]string{"add", "-d", skillsDir, bareURL})
 		if err := root1.Execute(); err != nil {
 			t.Fatalf("add error: %v", err)
 		}
 
 		// Remove only alpha.
 		root2 := cmd.NewRootCmd("test")
-		root2.SetArgs([]string{"remove", "-y", "-d", destDir, "alpha"})
+		root2.SetArgs([]string{"remove", "-y", "-d", skillsDir, "alpha"})
 		if err := root2.Execute(); err != nil {
 			t.Fatalf("remove error: %v", err)
 		}
 
 		// Alpha directory should be gone.
-		if _, err := os.Stat(filepath.Join(destDir, "alpha")); !errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Stat(filepath.Join(skillsDir, "alpha")); !errors.Is(err, os.ErrNotExist) {
 			t.Error("expected alpha directory to be removed")
 		}
 
 		// Beta directory should still exist.
-		if _, err := os.Stat(filepath.Join(destDir, "beta", "SKILL.md")); err != nil {
+		if _, err := os.Stat(filepath.Join(skillsDir, "beta", "SKILL.md")); err != nil {
 			t.Error("expected beta to remain after removing alpha")
 		}
 
 		// Lockfile should only have beta.
-		lf, err := lock.ReadFile(lock.FilePath(destDir))
+		lf, err := lock.ReadFile(lock.FilePath(skillsDir))
 		if err != nil {
 			t.Fatalf("read lockfile: %v", err)
 		}
@@ -121,12 +120,11 @@ func TestRemove(t *testing.T) {
 		}
 	})
 
-	t.Run("errors when skill exists in a different dest", func(t *testing.T) {
+	t.Run("when the directory is custom, removing a skill only the lockfile records fails", func(t *testing.T) {
 		t.Parallel()
 
 		rootDir := t.TempDir()
-		destA := filepath.Join(rootDir, ".agents", "skills")
-		destB := filepath.Join(rootDir, ".config", "opencode", "skills")
+		dirA := filepath.Join(rootDir, ".agents", "skills")
 
 		lockData := []byte(`{
 		  "version": 1,
@@ -134,30 +132,29 @@ func TestRemove(t *testing.T) {
 		    "beta": {
 		      "source": "h3y6e/spec-skills",
 		      "sourceType": "github",
-		      "computedHash": "abc123",
-		      "dest": ` + strconv.Quote(destB) + `
+		      "computedHash": "abc123"
 		    }
 		  }
 		}`)
-		if err := os.MkdirAll(filepath.Dir(lock.FilePath(destA)), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(lock.FilePath(dirA)), 0o755); err != nil {
 			t.Fatalf("mkdir lockfile parent: %v", err)
 		}
-		if err := os.WriteFile(lock.FilePath(destA), lockData, 0o644); err != nil {
+		if err := os.WriteFile(lock.FilePath(dirA), lockData, 0o644); err != nil {
 			t.Fatalf("write lockfile: %v", err)
 		}
 
 		root := cmd.NewRootCmd("test")
-		root.SetArgs([]string{"remove", "-d", destA, "beta"})
+		root.SetArgs([]string{"remove", "-d", filepath.Join(rootDir, "custom", "skills"), "beta"})
 		err := root.Execute()
 		if err == nil {
-			t.Fatal("expected error when removing skill installed in a different dest")
+			t.Fatal("expected error when removing skill installed in a different dir")
 		}
 	})
 
 	t.Run("errors when skill not in lockfile", func(t *testing.T) {
 		t.Parallel()
 
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 		// Create a lockfile with one skill.
 		lf := lock.File{
@@ -166,11 +163,11 @@ func TestRemove(t *testing.T) {
 				"alpha": {Source: "h3y6e/spec-skills", SourceType: "github", ComputedHash: "abc123"},
 			},
 		}
-		lock.WriteFile(lock.FilePath(destDir), lf)
+		lock.WriteFile(lock.FilePath(skillsDir), lf)
 
 		// Try to remove a skill that doesn't exist.
 		root := cmd.NewRootCmd("test")
-		root.SetArgs([]string{"remove", "-d", destDir, "nonexistent"})
+		root.SetArgs([]string{"remove", "-d", skillsDir, "nonexistent"})
 		err := root.Execute()
 		if err == nil {
 			t.Fatal("expected error when removing nonexistent skill")
@@ -180,23 +177,23 @@ func TestRemove(t *testing.T) {
 	t.Run("errors when lockfile missing", func(t *testing.T) {
 		t.Parallel()
 
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 		root := cmd.NewRootCmd("test")
-		root.SetArgs([]string{"remove", "-d", destDir, "alpha"})
+		root.SetArgs([]string{"remove", "-d", skillsDir, "alpha"})
 		err := root.Execute()
 		if err == nil {
 			t.Fatal("expected error when lockfile missing")
 		}
 	})
 
-	t.Run("when a tracked skill shares a name with a lock entry for a different dest, removing keeps the other entry", func(t *testing.T) {
+	t.Run("when a gh-format skill in a custom directory shares a name with a lockfile entry, removing it keeps the entry", func(t *testing.T) {
 		t.Parallel()
 
-		// Arrange: beta is installed in destA in gh skill format, while the
-		// lockfile tracks a different beta in destB.
+		// Arrange: beta is installed in a custom directory in gh skill format,
+		// while the lockfile tracks a different beta in the default directory.
 		rootDir := t.TempDir()
-		destA := filepath.Join(rootDir, ".agents", "skills")
-		destB := filepath.Join(rootDir, ".config", "opencode", "skills")
+		dirA := filepath.Join(rootDir, ".agents", "skills")
+		custom := filepath.Join(rootDir, "custom", "skills")
 
 		content, err := skill.InjectSourceMetadata("# Beta\n", skill.SourceMetadata{
 			RepoURL: "https://github.com/h3y6e/spec-skills",
@@ -207,44 +204,40 @@ func TestRemove(t *testing.T) {
 		if err != nil {
 			t.Fatalf("InjectSourceMetadata() error = %v", err)
 		}
-		if err := os.MkdirAll(filepath.Join(destA, "beta"), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(custom, "beta"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(destA, "beta", "SKILL.md"), []byte(content), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(custom, "beta", "SKILL.md"), []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
 		lf := lock.File{
 			Version: 1,
 			Skills: map[string]lock.Entry{
-				"beta": {Source: "h3y6e/spec-skills", SourceType: "github", ComputedHash: "abc123", Dest: destB},
+				"beta": {Source: "h3y6e/spec-skills", SourceType: "github", ComputedHash: "abc123"},
 			},
 		}
-		if err := lock.WriteFile(lock.FilePath(destA), lf); err != nil {
+		if err := lock.WriteFile(lock.FilePath(dirA), lf); err != nil {
 			t.Fatalf("write lockfile: %v", err)
 		}
 
 		// Act
 		root := cmd.NewRootCmd("test")
-		root.SetArgs([]string{"remove", "-y", "-d", destA, "beta"})
+		root.SetArgs([]string{"remove", "-y", "-d", custom, "beta"})
 		if err := root.Execute(); err != nil {
 			t.Fatalf("remove: %v", err)
 		}
 
 		// Assert
-		if _, err := os.Stat(filepath.Join(destA, "beta")); !errors.Is(err, os.ErrNotExist) {
-			t.Error("expected beta directory in destA to be removed")
+		if _, err := os.Stat(filepath.Join(custom, "beta")); !errors.Is(err, os.ErrNotExist) {
+			t.Error("expected beta directory in the custom directory to be removed")
 		}
-		updated, err := lock.ReadFile(lock.FilePath(destA))
+		updated, err := lock.ReadFile(lock.FilePath(dirA))
 		if err != nil {
 			t.Fatalf("read lockfile: %v", err)
 		}
-		entry, ok := updated.Skills["beta"]
-		if !ok {
-			t.Fatal("lock entry for destB must not be removed")
-		}
-		if entry.Dest != destB {
-			t.Errorf("entry.Dest = %q, want %q", entry.Dest, destB)
+		if _, ok := updated.Skills["beta"]; !ok {
+			t.Errorf("lockfile entry for the default directory must be kept, got %+v", updated)
 		}
 	})
 }
@@ -257,12 +250,12 @@ func TestRemoveConfirmation(t *testing.T) {
 	t.Run("when --dry-run is given, removing prints the directory and keeps it", func(t *testing.T) {
 		// Arrange
 		cmd.IsTTY = func() bool { return false }
-		destDir := filepath.Join(t.TempDir(), "skills")
-		writeTrackedSkill(t, destDir, "alpha")
+		skillsDir := filepath.Join(t.TempDir(), "skills")
+		writeTrackedSkill(t, skillsDir, "alpha")
 		var out bytes.Buffer
 		root := cmd.NewRootCmd("test")
 		root.SetOut(&out)
-		root.SetArgs([]string{"remove", "--dry-run", "-d", destDir, "alpha"})
+		root.SetArgs([]string{"remove", "--dry-run", "-d", skillsDir, "alpha"})
 
 		// Act
 		err := root.Execute()
@@ -271,10 +264,10 @@ func TestRemoveConfirmation(t *testing.T) {
 		if err != nil {
 			t.Fatalf("remove: %v", err)
 		}
-		if !strings.Contains(out.String(), filepath.Join(destDir, "alpha")) {
+		if !strings.Contains(out.String(), filepath.Join(skillsDir, "alpha")) {
 			t.Errorf("output = %q, want the directory to remove", out.String())
 		}
-		if _, err := os.Stat(filepath.Join(destDir, "alpha")); err != nil {
+		if _, err := os.Stat(filepath.Join(skillsDir, "alpha")); err != nil {
 			t.Error("alpha should remain")
 		}
 	})
@@ -282,11 +275,11 @@ func TestRemoveConfirmation(t *testing.T) {
 	t.Run("when there is no TTY and no --yes, removing fails and keeps the skill", func(t *testing.T) {
 		// Arrange
 		cmd.IsTTY = func() bool { return false }
-		destDir := filepath.Join(t.TempDir(), "skills")
-		writeTrackedSkill(t, destDir, "alpha")
+		skillsDir := filepath.Join(t.TempDir(), "skills")
+		writeTrackedSkill(t, skillsDir, "alpha")
 		root := cmd.NewRootCmd("test")
 		root.SetOut(&bytes.Buffer{})
-		root.SetArgs([]string{"remove", "-d", destDir, "alpha"})
+		root.SetArgs([]string{"remove", "-d", skillsDir, "alpha"})
 
 		// Act
 		err := root.Execute()
@@ -295,7 +288,7 @@ func TestRemoveConfirmation(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "confirmation required") {
 			t.Fatalf("err = %v, want confirmation required", err)
 		}
-		if _, err := os.Stat(filepath.Join(destDir, "alpha")); err != nil {
+		if _, err := os.Stat(filepath.Join(skillsDir, "alpha")); err != nil {
 			t.Error("alpha should remain")
 		}
 	})
@@ -303,13 +296,13 @@ func TestRemoveConfirmation(t *testing.T) {
 	t.Run("when the user declines on a TTY, removing fails and keeps the skill", func(t *testing.T) {
 		// Arrange
 		cmd.IsTTY = func() bool { return true }
-		destDir := filepath.Join(t.TempDir(), "skills")
-		writeTrackedSkill(t, destDir, "alpha")
+		skillsDir := filepath.Join(t.TempDir(), "skills")
+		writeTrackedSkill(t, skillsDir, "alpha")
 		root := cmd.NewRootCmd("test")
 		root.SetOut(&bytes.Buffer{})
 		root.SetErr(&bytes.Buffer{})
 		root.SetIn(strings.NewReader("n\n"))
-		root.SetArgs([]string{"remove", "-d", destDir, "alpha"})
+		root.SetArgs([]string{"remove", "-d", skillsDir, "alpha"})
 
 		// Act
 		err := root.Execute()
@@ -318,7 +311,7 @@ func TestRemoveConfirmation(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected an error when declined")
 		}
-		if _, err := os.Stat(filepath.Join(destDir, "alpha")); err != nil {
+		if _, err := os.Stat(filepath.Join(skillsDir, "alpha")); err != nil {
 			t.Error("alpha should remain")
 		}
 	})
@@ -326,15 +319,15 @@ func TestRemoveConfirmation(t *testing.T) {
 	t.Run("when canceled while waiting for an answer on a TTY, removing fails and keeps the skill", func(t *testing.T) {
 		// Arrange
 		cmd.IsTTY = func() bool { return true }
-		destDir := filepath.Join(t.TempDir(), "skills")
-		writeTrackedSkill(t, destDir, "alpha")
+		skillsDir := filepath.Join(t.TempDir(), "skills")
+		writeTrackedSkill(t, skillsDir, "alpha")
 		stdin, _ := io.Pipe()
 		ctx, cancel := context.WithCancel(context.Background())
 		root := cmd.NewRootCmd("test")
 		root.SetOut(&bytes.Buffer{})
 		root.SetErr(&bytes.Buffer{})
 		root.SetIn(stdin)
-		root.SetArgs([]string{"remove", "-d", destDir, "alpha"})
+		root.SetArgs([]string{"remove", "-d", skillsDir, "alpha"})
 		cancel()
 
 		// Act
@@ -344,7 +337,7 @@ func TestRemoveConfirmation(t *testing.T) {
 		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("err = %v, want context.Canceled", err)
 		}
-		if _, err := os.Stat(filepath.Join(destDir, "alpha")); err != nil {
+		if _, err := os.Stat(filepath.Join(skillsDir, "alpha")); err != nil {
 			t.Error("alpha should remain")
 		}
 	})
@@ -352,13 +345,13 @@ func TestRemoveConfirmation(t *testing.T) {
 	t.Run("when the user accepts on a TTY, removing deletes the skill", func(t *testing.T) {
 		// Arrange
 		cmd.IsTTY = func() bool { return true }
-		destDir := filepath.Join(t.TempDir(), "skills")
-		writeTrackedSkill(t, destDir, "alpha")
+		skillsDir := filepath.Join(t.TempDir(), "skills")
+		writeTrackedSkill(t, skillsDir, "alpha")
 		root := cmd.NewRootCmd("test")
 		root.SetOut(&bytes.Buffer{})
 		root.SetErr(&bytes.Buffer{})
 		root.SetIn(strings.NewReader("y\n"))
-		root.SetArgs([]string{"remove", "-d", destDir, "alpha"})
+		root.SetArgs([]string{"remove", "-d", skillsDir, "alpha"})
 
 		// Act
 		err := root.Execute()
@@ -367,13 +360,13 @@ func TestRemoveConfirmation(t *testing.T) {
 		if err != nil {
 			t.Fatalf("remove: %v", err)
 		}
-		if _, err := os.Stat(filepath.Join(destDir, "alpha")); !errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Stat(filepath.Join(skillsDir, "alpha")); !errors.Is(err, os.ErrNotExist) {
 			t.Error("alpha should be removed")
 		}
 	})
 }
 
-func writeTrackedSkill(t *testing.T, destDir, name string) {
+func writeTrackedSkill(t *testing.T, skillsDir, name string) {
 	t.Helper()
 	content, err := skill.InjectSourceMetadata("# "+name+"\n", skill.SourceMetadata{
 		RepoURL: "https://github.com/h3y6e/spec-skills",
@@ -384,10 +377,10 @@ func writeTrackedSkill(t *testing.T, destDir, name string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(destDir, name), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(skillsDir, name), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(destDir, name, "SKILL.md"), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, name, "SKILL.md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

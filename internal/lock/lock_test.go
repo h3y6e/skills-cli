@@ -20,17 +20,17 @@ func TestLockPathRelativeAlwaysAtCWD(t *testing.T) {
 		filepath.Join("a", "b", "c"),
 		filepath.Join("a", "b", "c", "d"),
 	}
-	for _, destDir := range cases {
-		l := lock.NewLayout(destDir)
+	for _, skillsDir := range cases {
+		l := lock.NewLayout(skillsDir)
 		if got := l.LockPath(); got != lock.FileName {
-			t.Errorf("LockPath(%q) = %q, want %q", destDir, got, lock.FileName)
+			t.Errorf("LockPath(%q) = %q, want %q", skillsDir, got, lock.FileName)
 		}
 	}
 }
 
 func TestReadWriteFileRoundTrip(t *testing.T) {
-	destDir := filepath.Join(t.TempDir(), ".agents", "skills")
-	path := lock.FilePath(destDir)
+	skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
+	path := lock.FilePath(skillsDir)
 
 	want := lock.File{
 		Version: 1,
@@ -39,7 +39,6 @@ func TestReadWriteFileRoundTrip(t *testing.T) {
 				Source:       "h3y6e/spec-skills",
 				SourceType:   "github",
 				ComputedHash: "abc123",
-				Dest:         destDir,
 			},
 		},
 	}
@@ -63,8 +62,8 @@ func TestReadWriteFileRoundTrip(t *testing.T) {
 }
 
 func TestReadFileFixture(t *testing.T) {
-	destDir := filepath.Join(t.TempDir(), ".agents", "skills")
-	path := lock.FilePath(destDir)
+	skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
+	path := lock.FilePath(skillsDir)
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
@@ -155,73 +154,30 @@ func TestReadFileFixture(t *testing.T) {
 	}
 }
 
-func TestEffectiveDest(t *testing.T) {
+func TestLayoutUsesLockfile(t *testing.T) {
 	t.Parallel()
 
-	t.Run("returns entry dest when set", func(t *testing.T) {
-		t.Parallel()
-		entry := lock.Entry{Dest: "custom/path"}
-		if got := lock.EffectiveDest(entry); got != "custom/path" {
-			t.Errorf("EffectiveDest() = %q, want %q", got, "custom/path")
-		}
-	})
+	for _, tc := range []struct {
+		name, dir string
+		want      bool
+	}{
+		{"when the directory is the default, the lockfile records it", lock.DefaultDir, true},
+		{"when the directory is absolute and ends in the default, the lockfile beside it records it", "/home/u/.agents/skills", true},
+		{"when the directory is custom, the lockfile does not record it", "dot_agents/exact_skills", false},
+		{"when the absolute default directory ends in a slash, the lockfile beside it records it", "/home/u/.agents/skills/", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			// Arrange
+			layout := lock.NewLayout(tc.dir)
 
-	t.Run("returns DefaultDestDir when dest is empty", func(t *testing.T) {
-		t.Parallel()
-		entry := lock.Entry{}
-		if got := lock.EffectiveDest(entry); got != lock.DefaultDestDir {
-			t.Errorf("EffectiveDest() = %q, want %q", got, lock.DefaultDestDir)
-		}
-	})
-}
+			// Act
+			got := layout.UsesLockfile()
 
-func TestFilterEntriesByDest(t *testing.T) {
-	t.Parallel()
-
-	entries := map[string]lock.Entry{
-		"alpha": {Source: "src-a", SourceType: "git", ComputedHash: "aaa", Dest: ".agents/skills"},
-		"beta":  {Source: "src-b", SourceType: "git", ComputedHash: "bbb", Dest: "custom/path"},
-		"gamma": {Source: "src-c", SourceType: "git", ComputedHash: "ccc"}, // empty dest → DefaultDestDir
+			// Assert
+			if got != tc.want {
+				t.Errorf("UsesLockfile() = %v, want %v", got, tc.want)
+			}
+		})
 	}
-
-	t.Run("matches entries with explicit default dest and empty dest", func(t *testing.T) {
-		t.Parallel()
-		got := lock.FilterEntriesByDest(entries, ".agents/skills")
-		if len(got) != 2 {
-			t.Fatalf("expected 2 entries, got %d: %v", len(got), got)
-		}
-		if _, ok := got["alpha"]; !ok {
-			t.Error("expected alpha (explicit default dest)")
-		}
-		if _, ok := got["gamma"]; !ok {
-			t.Error("expected gamma (empty dest → default)")
-		}
-	})
-
-	t.Run("matches entries with custom dest", func(t *testing.T) {
-		t.Parallel()
-		got := lock.FilterEntriesByDest(entries, "custom/path")
-		if len(got) != 1 {
-			t.Fatalf("expected 1 entry, got %d: %v", len(got), got)
-		}
-		if _, ok := got["beta"]; !ok {
-			t.Error("expected beta")
-		}
-	})
-
-	t.Run("does not match empty-dest entries against custom dest", func(t *testing.T) {
-		t.Parallel()
-		got := lock.FilterEntriesByDest(entries, "other/path")
-		if len(got) != 0 {
-			t.Fatalf("expected 0 entries, got %d: %v", len(got), got)
-		}
-	})
-
-	t.Run("preserves original entry without mutating dest", func(t *testing.T) {
-		t.Parallel()
-		got := lock.FilterEntriesByDest(entries, ".agents/skills")
-		if gamma, ok := got["gamma"]; ok && gamma.Dest != "" {
-			t.Errorf("gamma.Dest should remain empty, got %q", gamma.Dest)
-		}
-	})
 }

@@ -260,15 +260,15 @@ func TestAddInstall(t *testing.T) {
 	t.Run("installs selected skill with --skill flag", func(t *testing.T) {
 		t.Parallel()
 
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 		root := cmd.NewRootCmd("test")
-		root.SetArgs([]string{"add", "-s", "alpha", "-d", destDir, bareURL})
+		root.SetArgs([]string{"add", "-s", "alpha", "-d", skillsDir, bareURL})
 		if err := root.Execute(); err != nil {
 			t.Fatalf("execute error: %v", err)
 		}
 
 		// Verify skill files installed.
-		data, err := os.ReadFile(filepath.Join(destDir, "alpha", "SKILL.md"))
+		data, err := os.ReadFile(filepath.Join(skillsDir, "alpha", "SKILL.md"))
 		if err != nil {
 			t.Fatalf("expected alpha/SKILL.md: %v", err)
 		}
@@ -276,7 +276,7 @@ func TestAddInstall(t *testing.T) {
 			t.Errorf("content = %q, want %q", string(data), "# Alpha\n")
 		}
 
-		data, err = os.ReadFile(filepath.Join(destDir, "alpha", "ref.md"))
+		data, err = os.ReadFile(filepath.Join(skillsDir, "alpha", "ref.md"))
 		if err != nil {
 			t.Fatalf("expected alpha/ref.md: %v", err)
 		}
@@ -285,21 +285,18 @@ func TestAddInstall(t *testing.T) {
 		}
 
 		// Beta should NOT be installed.
-		if _, err := os.Stat(filepath.Join(destDir, "beta")); !errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Stat(filepath.Join(skillsDir, "beta")); !errors.Is(err, os.ErrNotExist) {
 			t.Error("beta should not be installed when --skill alpha is specified")
 		}
 
 		// Verify lockfile exists and has correct entry.
-		lockData, err := os.ReadFile(lock.FilePath(destDir))
+		lockData, err := os.ReadFile(lock.FilePath(skillsDir))
 		if err != nil {
 			t.Fatalf("expected skills-lock.json: %v", err)
 		}
 		lockStr := string(lockData)
 		if !strings.Contains(lockStr, `"alpha"`) {
 			t.Errorf("lockfile should contain alpha entry, got: %s", lockStr)
-		}
-		if !strings.Contains(lockStr, `"dest": `) {
-			t.Errorf("lockfile should persist dest for installed skills, got: %s", lockStr)
 		}
 		if strings.Contains(lockStr, `"beta"`) {
 			t.Errorf("lockfile should not contain beta entry, got: %s", lockStr)
@@ -309,22 +306,22 @@ func TestAddInstall(t *testing.T) {
 	t.Run("installs all skills without --skill flag", func(t *testing.T) {
 		t.Parallel()
 
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 		root := cmd.NewRootCmd("test")
-		root.SetArgs([]string{"add", "-d", destDir, bareURL})
+		root.SetArgs([]string{"add", "-d", skillsDir, bareURL})
 		if err := root.Execute(); err != nil {
 			t.Fatalf("execute error: %v", err)
 		}
 
 		// Both skills should be installed.
-		if _, err := os.Stat(filepath.Join(destDir, "alpha", "SKILL.md")); err != nil {
+		if _, err := os.Stat(filepath.Join(skillsDir, "alpha", "SKILL.md")); err != nil {
 			t.Errorf("expected alpha/SKILL.md: %v", err)
 		}
-		if _, err := os.Stat(filepath.Join(destDir, "beta", "SKILL.md")); err != nil {
+		if _, err := os.Stat(filepath.Join(skillsDir, "beta", "SKILL.md")); err != nil {
 			t.Errorf("expected beta/SKILL.md: %v", err)
 		}
 
-		lockData, err := os.ReadFile(lock.FilePath(destDir))
+		lockData, err := os.ReadFile(lock.FilePath(skillsDir))
 		if err != nil {
 			t.Fatalf("expected skills-lock.json: %v", err)
 		}
@@ -341,15 +338,15 @@ func TestAddInstall(t *testing.T) {
 		t.Parallel()
 
 		bareURLWithRefs := initBareRepoWithRefs(t)
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 		root := cmd.NewRootCmd("test")
-		root.SetArgs([]string{"add", "-d", destDir, bareURLWithRefs + "#feature/install"})
+		root.SetArgs([]string{"add", "-d", skillsDir, bareURLWithRefs + "#feature/install"})
 		if err := root.Execute(); err != nil {
 			t.Fatalf("execute error: %v", err)
 		}
 
-		data, err := os.ReadFile(filepath.Join(destDir, "alpha", "SKILL.md"))
+		data, err := os.ReadFile(filepath.Join(skillsDir, "alpha", "SKILL.md"))
 		if err != nil {
 			t.Fatalf("expected alpha/SKILL.md: %v", err)
 		}
@@ -357,7 +354,7 @@ func TestAddInstall(t *testing.T) {
 			t.Errorf("content = %q, want %q", string(data), "# Alpha feature\n")
 		}
 
-		lf, err := lock.ReadFile(lock.FilePath(destDir))
+		lf, err := lock.ReadFile(lock.FilePath(skillsDir))
 		if err != nil {
 			t.Fatalf("read lockfile: %v", err)
 		}
@@ -373,31 +370,31 @@ func TestAddInstall(t *testing.T) {
 			"skills/gamma/SKILL.md": "# Gamma\n",
 		})
 
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 		// First add.
 		root1 := cmd.NewRootCmd("test")
-		root1.SetArgs([]string{"add", "-s", "alpha", "-d", destDir, bareURL})
+		root1.SetArgs([]string{"add", "-s", "alpha", "-d", skillsDir, bareURL})
 		if err := root1.Execute(); err != nil {
 			t.Fatalf("first add error: %v", err)
 		}
 
 		// Second add from different source.
 		root2 := cmd.NewRootCmd("test")
-		root2.SetArgs([]string{"add", "-d", destDir, bareURL2})
+		root2.SetArgs([]string{"add", "-d", skillsDir, bareURL2})
 		if err := root2.Execute(); err != nil {
 			t.Fatalf("second add error: %v", err)
 		}
 
 		// Both alpha and gamma should exist.
-		if _, err := os.Stat(filepath.Join(destDir, "alpha", "SKILL.md")); err != nil {
+		if _, err := os.Stat(filepath.Join(skillsDir, "alpha", "SKILL.md")); err != nil {
 			t.Error("expected alpha to still be installed")
 		}
-		if _, err := os.Stat(filepath.Join(destDir, "gamma", "SKILL.md")); err != nil {
+		if _, err := os.Stat(filepath.Join(skillsDir, "gamma", "SKILL.md")); err != nil {
 			t.Error("expected gamma to be installed")
 		}
 
-		lockData, err := os.ReadFile(lock.FilePath(destDir))
+		lockData, err := os.ReadFile(lock.FilePath(skillsDir))
 		if err != nil {
 			t.Fatalf("expected skills-lock.json: %v", err)
 		}
@@ -413,9 +410,9 @@ func TestAddInstall(t *testing.T) {
 	t.Run("errors when --skill specifies nonexistent skill", func(t *testing.T) {
 		t.Parallel()
 
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 		root := cmd.NewRootCmd("test")
-		root.SetArgs([]string{"add", "-s", "nonexistent", "-d", destDir, bareURL})
+		root.SetArgs([]string{"add", "-s", "nonexistent", "-d", skillsDir, bareURL})
 		err := root.Execute()
 		if err == nil {
 			t.Fatal("expected error for nonexistent skill")
@@ -425,50 +422,23 @@ func TestAddInstall(t *testing.T) {
 		}
 	})
 
-	t.Run("does not add dest to existing entries that lack it", func(t *testing.T) {
+	t.Run("when the directory is custom, a dry run of a source gh skill metadata can't record fails before printing a plan", func(t *testing.T) {
 		t.Parallel()
-
-		bareURL2 := initBareRepo(t, map[string]string{
-			"skills/delta/SKILL.md": "# Delta\n",
-		})
-
-		destDir := filepath.Join(t.TempDir(), ".agents", "skills")
-
-		// Seed a lockfile with an entry that has no dest field.
-		seedLF := lock.File{
-			Version: 1,
-			Skills: map[string]lock.Entry{
-				"alpha": {Source: bareURL, SourceType: "git", ComputedHash: "abc123"},
-			},
-		}
-		if err := lock.WriteFile(lock.FilePath(destDir), seedLF); err != nil {
-			t.Fatalf("write seed lockfile: %v", err)
-		}
-		// Pre-install alpha directory so the lockfile is consistent.
-		os.MkdirAll(filepath.Join(destDir, "alpha"), 0o755)
-		os.WriteFile(filepath.Join(destDir, "alpha", "SKILL.md"), []byte("# Alpha\n"), 0o644)
-
-		// Add delta from a different source.
+		// Arrange
+		var out bytes.Buffer
 		root := cmd.NewRootCmd("test")
-		root.SetArgs([]string{"add", "-d", destDir, bareURL2})
-		if err := root.Execute(); err != nil {
-			t.Fatalf("add error: %v", err)
-		}
+		root.SetOut(&out)
+		root.SetArgs([]string{"add", "--dry-run", "-d", filepath.Join(t.TempDir(), "custom", "skills"), bareURL})
 
-		// Read back lockfile and verify alpha still has no dest.
-		updatedLF, err := lock.ReadFile(lock.FilePath(destDir))
-		if err != nil {
-			t.Fatalf("read lockfile: %v", err)
-		}
-		alphaEntry := updatedLF.Skills["alpha"]
-		if alphaEntry.Dest != "" {
-			t.Errorf("alpha.Dest should remain empty after adding unrelated skill, got %q", alphaEntry.Dest)
-		}
+		// Act
+		err := root.Execute()
 
-		// delta should have dest set.
-		deltaEntry := updatedLF.Skills["delta"]
-		if deltaEntry.Dest == "" {
-			t.Error("delta.Dest should be set for newly added skill")
+		// Assert
+		if err == nil || !strings.Contains(err.Error(), "skills-lock.json records only") {
+			t.Fatalf("add error = %v, want an error about the lockfile's directory", err)
+		}
+		if out.Len() != 0 {
+			t.Errorf("add printed a plan: %q", out.String())
 		}
 	})
 }
@@ -484,23 +454,23 @@ func TestAddOverwrite(t *testing.T) {
 	})
 	setup := func(t *testing.T) string {
 		t.Helper()
-		destDir := filepath.Join(t.TempDir(), "skills")
-		if err := os.MkdirAll(filepath.Join(destDir, "alpha"), 0o755); err != nil {
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(destDir, "alpha", "SKILL.md"), []byte("# Alpha local\n"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("# Alpha local\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		return destDir
+		return skillsDir
 	}
 
 	t.Run("when --dry-run is given over an existing skill, adding marks it as overwrite and keeps it", func(t *testing.T) {
 		// Arrange
-		destDir := setup(t)
+		skillsDir := setup(t)
 		var out bytes.Buffer
 		root := cmd.NewRootCmd("test")
 		root.SetOut(&out)
-		root.SetArgs([]string{"add", "--dry-run", "-d", destDir, bareURL})
+		root.SetArgs([]string{"add", "--dry-run", "-d", skillsDir, bareURL})
 
 		// Act
 		err := root.Execute()
@@ -509,20 +479,20 @@ func TestAddOverwrite(t *testing.T) {
 		if err != nil {
 			t.Fatalf("add: %v", err)
 		}
-		if want := "overwrite " + filepath.Join(destDir, "alpha"); !strings.Contains(out.String(), want) {
+		if want := "overwrite " + filepath.Join(skillsDir, "alpha"); !strings.Contains(out.String(), want) {
 			t.Errorf("output = %q, want %q", out.String(), want)
 		}
-		if data, _ := os.ReadFile(filepath.Join(destDir, "alpha", "SKILL.md")); string(data) != "# Alpha local\n" {
+		if data, _ := os.ReadFile(filepath.Join(skillsDir, "alpha", "SKILL.md")); string(data) != "# Alpha local\n" {
 			t.Error("alpha should be unchanged")
 		}
 	})
 
 	t.Run("when an existing skill would be overwritten without a TTY or --yes, adding fails and keeps it", func(t *testing.T) {
 		// Arrange
-		destDir := setup(t)
+		skillsDir := setup(t)
 		root := cmd.NewRootCmd("test")
 		root.SetOut(&bytes.Buffer{})
-		root.SetArgs([]string{"add", "-d", destDir, bareURL})
+		root.SetArgs([]string{"add", "-d", skillsDir, bareURL})
 
 		// Act
 		err := root.Execute()
@@ -531,7 +501,7 @@ func TestAddOverwrite(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "confirmation required") {
 			t.Fatalf("err = %v, want confirmation required", err)
 		}
-		if data, _ := os.ReadFile(filepath.Join(destDir, "alpha", "SKILL.md")); string(data) != "# Alpha local\n" {
+		if data, _ := os.ReadFile(filepath.Join(skillsDir, "alpha", "SKILL.md")); string(data) != "# Alpha local\n" {
 			t.Error("alpha should be unchanged")
 		}
 	})
