@@ -68,6 +68,29 @@ func TestListFlags(t *testing.T) {
 	})
 }
 
+func TestListIgnoresUnrelatedLockfile(t *testing.T) {
+	t.Parallel()
+	t.Run("when the directory is custom, list ignores a malformed skills-lock.json", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		base := t.TempDir()
+		if err := os.WriteFile(filepath.Join(base, "skills-lock.json"), []byte("{"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		root := cmd.NewRootCmd("test")
+		root.SetOut(&bytes.Buffer{})
+		root.SetArgs([]string{"list", "-d", filepath.Join(base, "custom", "skills")})
+
+		// Act
+		err := root.Execute()
+
+		// Assert
+		if err != nil {
+			t.Fatalf("list: %v", err)
+		}
+	})
+}
+
 func TestListAlias(t *testing.T) {
 	t.Parallel()
 

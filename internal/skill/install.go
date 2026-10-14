@@ -51,9 +51,6 @@ func InstallSkills(skills []DiscoveredSkill, ref SourceRef, layout lock.Layout) 
 	if err != nil {
 		return err
 	}
-	if !layout.UsesLockfile() {
-		return fmt.Errorf("%s sources can't be added to %q: skills-lock.json records only %s", ref.SourceType, layout.Dir, lock.DefaultDir)
-	}
 
 	if err := tx.Apply(); err != nil {
 		return err

@@ -217,6 +217,9 @@ func applyEnv(root *cobra.Command) error {
 // loadLockFile reads the lockfile, returning an empty file when it does not
 // exist (e.g. directories managed purely in gh skill format).
 func loadLockFile(layout lock.Layout) (lock.File, error) {
+	if !layout.UsesLockfile() {
+		return lock.File{Version: 1, Skills: map[string]lock.Entry{}}, nil
+	}
 	lf, err := lock.ReadFile(layout.LockPath())
 	if errors.Is(err, os.ErrNotExist) {
 		return lock.File{Version: 1, Skills: map[string]lock.Entry{}}, nil

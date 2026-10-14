@@ -164,6 +164,7 @@ func TestLayoutUsesLockfile(t *testing.T) {
 		{"when the directory is the default, the lockfile records it", lock.DefaultDir, true},
 		{"when the directory is absolute and ends in the default, the lockfile beside it records it", "/home/u/.agents/skills", true},
 		{"when the directory is custom, the lockfile does not record it", "dot_agents/exact_skills", false},
+		{"when the absolute default directory ends in a slash, the lockfile beside it records it", "/home/u/.agents/skills/", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

@@ -422,22 +422,23 @@ func TestAddInstall(t *testing.T) {
 		}
 	})
 
-	t.Run("when the directory is custom, adding a source gh skill metadata can't record fails", func(t *testing.T) {
+	t.Run("when the directory is custom, a dry run of a source gh skill metadata can't record fails before printing a plan", func(t *testing.T) {
 		t.Parallel()
 		// Arrange
-		base := t.TempDir()
-		if err := lock.WriteFile(lock.FilePath(filepath.Join(base, ".agents", "skills")), lock.File{Version: 1}); err != nil {
-			t.Fatal(err)
-		}
+		var out bytes.Buffer
+		root := cmd.NewRootCmd("test")
+		root.SetOut(&out)
+		root.SetArgs([]string{"add", "--dry-run", "-d", filepath.Join(t.TempDir(), "custom", "skills"), bareURL})
 
 		// Act
-		root := cmd.NewRootCmd("test")
-		root.SetArgs([]string{"add", "-d", filepath.Join(base, "custom", "skills"), bareURL})
 		err := root.Execute()
 
 		// Assert
 		if err == nil || !strings.Contains(err.Error(), "skills-lock.json records only") {
 			t.Fatalf("add error = %v, want an error about the lockfile's directory", err)
+		}
+		if out.Len() != 0 {
+			t.Errorf("add printed a plan: %q", out.String())
 		}
 	})
 }
@@ -453,7 +454,7 @@ func TestAddOverwrite(t *testing.T) {
 	})
 	setup := func(t *testing.T) string {
 		t.Helper()
-		skillsDir := filepath.Join(t.TempDir(), "skills")
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 		if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755); err != nil {
 			t.Fatal(err)
 		}

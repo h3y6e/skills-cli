@@ -90,7 +90,7 @@ type Layout struct {
 }
 
 func NewLayout(skillsDir string) Layout {
-	return Layout{Dir: skillsDir}
+	return Layout{Dir: filepath.Clean(skillsDir)}
 }
 
 func (l Layout) LockPath() string {

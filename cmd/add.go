@@ -20,12 +20,18 @@ func runAdd(cmd *cobra.Command, source string, dryRun, yes bool, skillFilter []s
 		return err
 	}
 
-	_, err = lock.ReadFile(layout.LockPath())
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+	lockfileForDir := false
+	if layout.UsesLockfile() {
+		_, err := lock.ReadFile(layout.LockPath())
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		lockfileForDir = err == nil
 	}
-	lockfileForDir := err == nil && layout.UsesLockfile()
 	tracked := skill.PreferTrackedInstall(lockfileForDir, ref.SourceType)
+	if !tracked && !layout.UsesLockfile() {
+		return fmt.Errorf("%s sources can't be added to %q: skills-lock.json records only %s", ref.SourceType, layout.Dir, lock.DefaultDir)
+	}
 
 	// gh skill format resolves the ref like gh skill install: explicit ref,
 	// else latest release, else default branch.
