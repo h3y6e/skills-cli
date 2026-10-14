@@ -21,4 +21,6 @@ changelog:
   use: github-native
 
 release:
+  draft: true
   use_existing_draft: true
+  replace_existing_artifacts: true

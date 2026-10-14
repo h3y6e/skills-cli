@@ -11,6 +11,14 @@ Reads and writes both [vercel-labs/skills](https://github.com/vercel-labs/skills
 
 ## Install
 
+Install with [mise](https://mise.en.dev):
+
+```sh
+mise use -g packslip:github.com/h3y6e/skolar
+```
+
+Or with `go install`:
+
 ```sh
 go install github.com/h3y6e/skolar@latest
 ```
