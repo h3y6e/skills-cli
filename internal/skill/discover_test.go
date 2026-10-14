@@ -1,0 +1,158 @@
+package skill_test
+
+import (
+	"maps"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/h3y6e/skolar/internal/skill"
+)
+
+func writeRepo(t *testing.T, files map[string]string) string {
+	t.Helper()
+	root := t.TempDir()
+	for name, content := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+func fm(name string) string { return "---\nname: " + name + "\ndescription: d\n---\n" }
+
+var mixedLayouts = map[string]string{
+	"skills/alpha/SKILL.md":           fm("alpha"),
+	"skills/team/beta/SKILL.md":       fm("beta"),
+	"skills/.curated/gamma/SKILL.md":  fm("gamma"),
+	".claude/skills/delta/SKILL.md":   fm("delta"),
+	"zeta/SKILL.md":                   fm("zeta"),
+	"plugins/p/skills/eta/SKILL.md":   fm("eta"),
+	"extras/theta/SKILL.md":           fm("theta"),
+	".claude-plugin/marketplace.json": `{"plugins": [{"name": "p", "source": "./plugins/p", "skills": ["./skills/eta"]}]}`,
+}
+
+func discoveredPaths(t *testing.T, skills []skill.DiscoveredSkill, defaultOnly bool) map[string]string {
+	t.Helper()
+	got := map[string]string{}
+	for _, s := range skills {
+		if !defaultOnly || s.Default {
+			got[s.Name] = s.Path
+		}
+	}
+	return got
+}
+
+func TestDiscoverSkillsLayouts(t *testing.T) {
+	t.Parallel()
+
+	t.Run("when a repository mixes the layouts either tool supports, every skill is found at its repository path", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		files := map[string]string{"SKILL.md": fm("root-skill")}
+		for k, v := range mixedLayouts {
+			files[k] = v
+		}
+		root := writeRepo(t, files)
+
+		// Act
+		skills, err := skill.DiscoverSkills(root)
+
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]string{
+			"root-skill": ".", "alpha": "skills/alpha", "beta": "skills/team/beta", "gamma": "skills/.curated/gamma",
+			"delta": ".claude/skills/delta", "zeta": "zeta", "eta": "plugins/p/skills/eta", "theta": "extras/theta",
+		}
+		if got := discoveredPaths(t, skills, false); !maps.Equal(got, want) {
+			t.Errorf("DiscoverSkills() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("when the root holds a SKILL.md, the defaults are the root skill and gh skill's layouts", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		files := map[string]string{"SKILL.md": fm("root-skill")}
+		for k, v := range mixedLayouts {
+			files[k] = v
+		}
+		root := writeRepo(t, files)
+
+		// Act
+		skills, err := skill.DiscoverSkills(root)
+
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]string{"root-skill": ".", "alpha": "skills/alpha", "beta": "skills/team/beta", "zeta": "zeta", "eta": "plugins/p/skills/eta"}
+		if got := discoveredPaths(t, skills, true); !maps.Equal(got, want) {
+			t.Errorf("defaults = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("when the root holds no SKILL.md, the defaults follow vercel-labs/skills' search directories", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		root := writeRepo(t, mixedLayouts)
+
+		// Act
+		skills, err := skill.DiscoverSkills(root)
+
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]string{
+			"alpha": "skills/alpha", "beta": "skills/team/beta", "gamma": "skills/.curated/gamma",
+			"delta": ".claude/skills/delta", "zeta": "zeta", "eta": "plugins/p/skills/eta",
+		}
+		if got := discoveredPaths(t, skills, true); !maps.Equal(got, want) {
+			t.Errorf("defaults = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("when two directories declare the same name, the one vercel-labs/skills searches first wins", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		root := writeRepo(t, map[string]string{
+			"skills/dup/SKILL.md":         fm("dup"),
+			".claude/skills/dup/SKILL.md": fm("dup"),
+		})
+
+		// Act
+		skills, err := skill.DiscoverSkills(root)
+
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := discoveredPaths(t, skills, false); !maps.Equal(got, map[string]string{"dup": "skills/dup"}) {
+			t.Errorf("DiscoverSkills() = %v", got)
+		}
+	})
+
+	t.Run("when a SKILL.md has no frontmatter name, the skill is named after its directory", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		root := writeRepo(t, map[string]string{"skills/plain/SKILL.md": "# Plain\n"})
+
+		// Act
+		skills, err := skill.DiscoverSkills(root)
+
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := discoveredPaths(t, skills, true); !maps.Equal(got, map[string]string{"plain": "skills/plain"}) {
+			t.Errorf("DiscoverSkills() = %v", got)
+		}
+	})
+}

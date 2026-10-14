@@ -25,14 +25,6 @@ const (
 
 func (s Status) String() string { return string(s) }
 
-// DiscoveredSkill represents a skill found in an upstream repository.
-type DiscoveredSkill struct {
-	Name         string
-	Dir          string
-	Path         string // repo-relative directory of the skill, e.g. "skills/foo"
-	ComputedHash string
-}
-
 // UpdateCandidate represents the update status of an installed skill.
 type UpdateCandidate struct {
 	SkillName   string
@@ -115,14 +107,12 @@ func FilterCandidates(candidates []UpdateCandidate, filter []string) []UpdateCan
 	return result
 }
 
-// FilterDiscoveredSkills returns only skills whose names are in filter. Empty filter returns all.
+// FilterDiscoveredSkills returns the skills named in filter, or the default
+// skills when filter is empty.
 func FilterDiscoveredSkills(skills []DiscoveredSkill, filter []string) []DiscoveredSkill {
-	if len(filter) == 0 {
-		return skills
-	}
 	var result []DiscoveredSkill
 	for _, s := range skills {
-		if slices.Contains(filter, s.Name) {
+		if len(filter) == 0 && s.Default || slices.Contains(filter, s.Name) {
 			result = append(result, s)
 		}
 	}
