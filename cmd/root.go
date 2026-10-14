@@ -18,7 +18,6 @@ import (
 	cobra_usage "github.com/jdx/usage/integrations/cobra"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"github.com/spf13/viper"
 )
 
 // Git operations as variables, replaceable for testing (same pattern as IsTTY).
@@ -185,11 +184,6 @@ func reraise(sig os.Signal) {
 // applyEnv makes each SKOLAR_<FLAG> the default of its flag, before parsing lets the command line override it.
 // Cobra adds --help and --version during execution, so they have no variable.
 func applyEnv(root *cobra.Command) error {
-	v := viper.New()
-	v.SetEnvPrefix("skolar")
-	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
-	v.AutomaticEnv()
-
 	commands := []*cobra.Command{root}
 	for len(commands) > 0 {
 		c := commands[0]
@@ -197,17 +191,18 @@ func applyEnv(root *cobra.Command) error {
 
 		var err error
 		c.Flags().VisitAll(func(f *pflag.Flag) {
-			if err != nil || !v.IsSet(f.Name) {
+			name := "SKOLAR_" + strings.ToUpper(strings.ReplaceAll(f.Name, "-", "_"))
+			value := os.Getenv(name)
+			if err != nil || value == "" {
 				return
 			}
-			value := v.GetString(f.Name)
 			if slice, ok := f.Value.(pflag.SliceValue); ok {
 				err = slice.Replace(strings.Split(value, ","))
 			} else {
 				err = f.Value.Set(value)
 			}
 			if err != nil {
-				err = usageError(root, fmt.Errorf("SKOLAR_%s: %w", strings.ToUpper(strings.ReplaceAll(f.Name, "-", "_")), err))
+				err = usageError(root, fmt.Errorf("%s: %w", name, err))
 				return
 			}
 			f.DefValue = f.Value.String()
