@@ -189,7 +189,7 @@ func TestVercelFormat(t *testing.T) {
 		assertAllUpToDate(t, filepath.Join(project, ".agents", "skills"))
 	})
 
-	t.Run("when skolar installs into a lockfile project, files and lock entries match a vercel install and vercel update changes nothing", func(t *testing.T) {
+	t.Run("when skolar installs every skill vercel installs into a lockfile project, files and lock entries match and vercel update changes nothing", func(t *testing.T) {
 		// Arrange
 		vercel, own := t.TempDir(), t.TempDir()
 		vercelAdd(t, vercel)
@@ -197,8 +197,13 @@ func TestVercelFormat(t *testing.T) {
 			t.Fatal(err)
 		}
 
+		args := []string{"add", fixtureURL, "-y"}
+		for _, name := range skillNames(t, filepath.Join(vercel, ".agents", "skills")) {
+			args = append(args, "-s", name)
+		}
+
 		// Act
-		run(t, own, skolar, "add", fixtureURL, "-y")
+		run(t, own, skolar, args...)
 		installed := snapshot(t, own)
 		run(t, own, "skills", "update", "-p", "-y")
 
