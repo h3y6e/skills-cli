@@ -1,4 +1,4 @@
-module github.com/h3y6e/skills
+module github.com/h3y6e/skolar
 
 go 1.26
 

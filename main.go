@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/h3y6e/skills/cmd"
+	"github.com/h3y6e/skolar/cmd"
 )
 
 var version = "dev"

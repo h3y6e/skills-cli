@@ -3,9 +3,9 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/h3y6e/skills/internal/git"
-	"github.com/h3y6e/skills/internal/lock"
-	"github.com/h3y6e/skills/internal/skill"
+	"github.com/h3y6e/skolar/internal/git"
+	"github.com/h3y6e/skolar/internal/lock"
+	"github.com/h3y6e/skolar/internal/skill"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +31,7 @@ func runUpdate(cmd *cobra.Command, source string, skillFilter []string, destDir 
 		return err
 	}
 
-	cloneFn, cleanup := skill.NewCloneFunc(cmd.Context(), "skills-update-*")
+	cloneFn, cleanup := skill.NewCloneFunc(cmd.Context(), "skolar-update-*")
 	defer cleanup()
 
 	candidates, skipped, err := skill.AggregateUpdateCandidates(entries, cloneFn)
@@ -39,7 +39,7 @@ func runUpdate(cmd *cobra.Command, source string, skillFilter []string, destDir 
 		return err
 	}
 
-	fns, foreignCleanup := NewUpstreamFuncs(cmd.Context(), "skills-update-foreign-*")
+	fns, foreignCleanup := NewUpstreamFuncs(cmd.Context(), "skolar-update-foreign-*")
 	defer foreignCleanup()
 
 	foreignCandidates, err := skill.AggregateForeignUpdateCandidates(foreign, fns)

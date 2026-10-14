@@ -7,8 +7,8 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/h3y6e/skills/internal/lock"
-	"github.com/h3y6e/skills/internal/skill"
+	"github.com/h3y6e/skolar/internal/lock"
+	"github.com/h3y6e/skolar/internal/skill"
 	"github.com/spf13/cobra"
 )
 

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/h3y6e/skills/internal/git"
+	"github.com/h3y6e/skolar/internal/git"
 )
 
 func TestMain(m *testing.M) {

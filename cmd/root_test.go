@@ -3,13 +3,13 @@ package cmd_test
 import (
 	"testing"
 
-	"github.com/h3y6e/skills/cmd"
+	"github.com/h3y6e/skolar/cmd"
 )
 
 func TestNewRootCmdRegistersCoreCommands(t *testing.T) {
 	root := cmd.NewRootCmd("test")
 
-	if got, want := root.Use, "skills"; got != want {
+	if got, want := root.Use, "skolar"; got != want {
 		t.Fatalf("Use = %q, want %q", got, want)
 	}
 
@@ -24,7 +24,6 @@ func TestNewRootCmdRegistersCoreCommands(t *testing.T) {
 		{name: "add"},
 		{name: "check"},
 		{name: "update"},
-		{name: "setup-github-actions"},
 		{name: "list", alias: "ls"},
 		{name: "remove", alias: "rm"},
 	}

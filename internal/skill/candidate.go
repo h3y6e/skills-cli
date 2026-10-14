@@ -9,8 +9,8 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/h3y6e/skills/internal/git"
-	"github.com/h3y6e/skills/internal/lock"
+	"github.com/h3y6e/skolar/internal/git"
+	"github.com/h3y6e/skolar/internal/lock"
 )
 
 type Status string

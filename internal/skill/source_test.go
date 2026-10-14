@@ -3,7 +3,7 @@ package skill_test
 import (
 	"testing"
 
-	"github.com/h3y6e/skills/internal/skill"
+	"github.com/h3y6e/skolar/internal/skill"
 )
 
 func TestParseSource(t *testing.T) {
