@@ -89,7 +89,7 @@ func resolveLatestRef(ctx context.Context, cloneURL string) (ResolvedRef, error)
 }
 
 func defaultBranch(ctx context.Context, cloneURL string) (string, error) {
-	out, err := runGit(ctx, "ls-remote", "--symref", cloneURL, "HEAD")
+	out, err := runGit(ctx, "ls-remote", "--symref", "--", cloneURL, "HEAD")
 	if err != nil {
 		return "", err
 	}
@@ -104,7 +104,7 @@ func defaultBranch(ctx context.Context, cloneURL string) (string, error) {
 
 // lsRemote returns the ref names advertised by the remote matching patterns.
 func lsRemote(ctx context.Context, cloneURL string, patterns ...string) ([]string, error) {
-	args := append([]string{"ls-remote", cloneURL}, patterns...)
+	args := append([]string{"ls-remote", "--", cloneURL}, patterns...)
 	out, err := runGit(ctx, args...)
 	if err != nil {
 		return nil, err

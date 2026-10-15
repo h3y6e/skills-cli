@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 )
 
@@ -11,7 +12,9 @@ func gitCommand(ctx context.Context, args ...string) (*exec.Cmd, error) {
 	if err != nil {
 		return nil, fmt.Errorf("git not found: %w", err)
 	}
-	return exec.CommandContext(ctx, gitPath, args...), nil
+	cmd := exec.CommandContext(ctx, gitPath, args...)
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	return cmd, nil
 }
 
 func runGit(ctx context.Context, args ...string) ([]byte, error) {
@@ -36,7 +39,7 @@ func ShallowClone(ctx context.Context, cloneURL, ref, destDir string) error {
 }
 
 func shallowCloneDefault(ctx context.Context, cloneURL, destDir string) error {
-	cmd, err := gitCommand(ctx, "clone", "--depth", "1", cloneURL, destDir)
+	cmd, err := gitCommand(ctx, "clone", "--depth", "1", "--", cloneURL, destDir)
 	if err != nil {
 		return err
 	}
@@ -51,10 +54,10 @@ func shallowCloneRef(ctx context.Context, cloneURL, ref, destDir string) error {
 	if _, err := runGit(ctx, "init", destDir); err != nil {
 		return err
 	}
-	if _, err := runGit(ctx, "-C", destDir, "remote", "add", "origin", cloneURL); err != nil {
+	if _, err := runGit(ctx, "-C", destDir, "remote", "add", "--", "origin", cloneURL); err != nil {
 		return err
 	}
-	if _, err := runGit(ctx, "-C", destDir, "fetch", "--depth", "1", "origin", ref); err != nil {
+	if _, err := runGit(ctx, "-C", destDir, "fetch", "--depth", "1", "--", "origin", ref); err != nil {
 		return err
 	}
 	if _, err := runGit(ctx, "-C", destDir, "checkout", "--detach", "FETCH_HEAD"); err != nil {

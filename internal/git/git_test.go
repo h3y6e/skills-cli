@@ -2,6 +2,8 @@ package git_test
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -307,6 +309,43 @@ func TestDiffNoIndex(t *testing.T) {
 		_, _, err := git.DiffNoIndex(ctx, a, b)
 		if err == nil {
 			t.Fatal("expected error for cancelled context, got nil")
+		}
+	})
+}
+
+func TestShallowCloneUntrustedInput(t *testing.T) {
+	t.Parallel()
+
+	t.Run("when the ref looks like an option, git does not run it as one", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		bare := initBareRepo(t, map[string]string{"SKILL.md": "# S\n"})
+		marker := filepath.Join(t.TempDir(), "pwned")
+
+		// Act
+		_ = git.ShallowClone(t.Context(), bare, "--upload-pack=touch "+marker, filepath.Join(t.TempDir(), "dest"))
+
+		// Assert
+		if _, err := os.Stat(marker); !os.IsNotExist(err) {
+			t.Errorf("--upload-pack ran: stat %s = %v", marker, err)
+		}
+	})
+
+	t.Run("when the remote asks for credentials, cloning fails instead of prompting", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("WWW-Authenticate", `Basic realm="x"`)
+			w.WriteHeader(http.StatusUnauthorized)
+		}))
+		t.Cleanup(srv.Close)
+
+		// Act
+		err := git.ShallowClone(t.Context(), srv.URL+"/o/r.git", "", filepath.Join(t.TempDir(), "dest"))
+
+		// Assert
+		if err == nil || !strings.Contains(err.Error(), "terminal prompts disabled") {
+			t.Errorf("ShallowClone() error = %v, want terminal prompts disabled", err)
 		}
 	})
 }
