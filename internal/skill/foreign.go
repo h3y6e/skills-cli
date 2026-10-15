@@ -128,14 +128,18 @@ type UpstreamFuncs struct {
 	// FetchLatest fetches the latest ref of repoURL (gh skill semantics:
 	// latest release, then default branch).
 	FetchLatest func(repoURL string) (git.Snapshot, error)
-	// FetchRef fetches repoURL at ref.
-	FetchRef func(repoURL, ref string) (git.Snapshot, error)
+	// FetchTree reads the tree treeSHA of repoURL, fetching ref when the
+	// tree is not cached. Close the snapshot when done.
+	FetchTree func(repoURL, ref, treeSHA string) (git.Snapshot, error)
 }
 
 // NewUpstreamFuncs returns the production UpstreamFuncs along with a cleanup
 // function releasing what they fetched.
 func NewUpstreamFuncs(ctx context.Context) (UpstreamFuncs, func()) {
-	var snaps snapshots
+	var (
+		snaps      snapshots
+		prefetched onceMap[[2]string, struct{}]
+	)
 
 	fns := UpstreamFuncs{
 		FetchLatest: func(repoURL string) (git.Snapshot, error) {
@@ -146,13 +150,29 @@ func NewUpstreamFuncs(ctx context.Context) (UpstreamFuncs, func()) {
 
 			return snaps.add(git.Fetch(ctx, repoURL, resolved))
 		},
-		FetchRef: func(repoURL, ref string) (git.Snapshot, error) {
-			resolved, err := git.ResolveDefault(ctx, repoURL, ref)
-			if err != nil {
-				return git.Snapshot{}, err
+		FetchTree: func(repoURL, ref, treeSHA string) (git.Snapshot, error) {
+			snap, err := git.ReadTree(ctx, repoURL, treeSHA)
+			if !errors.Is(err, git.ErrNotCached) {
+				return snap, err
 			}
 
-			return snaps.add(git.Fetch(ctx, repoURL, resolved))
+			if err := prefetched.doErr([2]string{repoURL, ref}, func() error {
+				resolved, err := git.ResolveDefault(ctx, repoURL, ref)
+				if err != nil {
+					return err
+				}
+
+				return git.Prefetch(ctx, repoURL, resolved)
+			}); err != nil {
+				return git.Snapshot{}, fmt.Errorf("fetch %s: %w", ref, err)
+			}
+
+			snap, err = git.ReadTree(ctx, repoURL, treeSHA)
+			if errors.Is(err, git.ErrNotCached) {
+				return snap, fmt.Errorf("%s no longer holds tree %s", ref, treeSHA)
+			}
+
+			return snap, err
 		},
 	}
 

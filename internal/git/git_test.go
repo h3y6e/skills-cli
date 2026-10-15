@@ -2,6 +2,7 @@ package git_test
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -276,6 +277,73 @@ func TestFetch(t *testing.T) {
 		// Assert
 		if err == nil {
 			t.Fatal("fetch succeeded with a cancelled context")
+		}
+	})
+}
+
+func TestReadTree(t *testing.T) {
+	t.Parallel()
+
+	t.Run("when a fetched commit holds the tree, reading it lists the tree's files", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		repo := initTaggedRepo(t)
+		s, err := fetch(t, repo, "v1.0.0")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Act
+		tree, err := git.ReadTree(t.Context(), repo, s.Trees["skills/my-skill"])
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		t.Cleanup(func() { _ = tree.Close() })
+
+		if data, err := fs.ReadFile(tree.FS, "SKILL.md"); string(data) != "# v1.0.0\n" {
+			t.Errorf("SKILL.md = %q, %v, want the v1.0.0 content", data, err)
+		}
+	})
+
+	t.Run("when nothing fetched holds the tree, reading it reports it is not cached", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		repo := initTaggedRepo(t)
+		if _, err := fetch(t, repo, "v1.0.0"); err != nil {
+			t.Fatal(err)
+		}
+
+		bare := strings.TrimPrefix(repo, "file://")
+		feature := strings.TrimSpace(testutil.Git(t, bare, "rev-parse", "feature/install:skills/my-skill"))
+
+		// Act
+		_, err := git.ReadTree(t.Context(), repo, feature)
+
+		// Assert
+		if !errors.Is(err, git.ErrNotCached) {
+			t.Errorf("ReadTree() error = %v, want ErrNotCached", err)
+		}
+	})
+
+	t.Run("when the tree SHA is a ref name, reading it fails without resolving the name", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		repo := initTaggedRepo(t)
+		if _, err := fetch(t, repo, "v1.0.0"); err != nil {
+			t.Fatal(err)
+		}
+
+		// Act
+		_, err := git.ReadTree(t.Context(), repo, "refs/tags/v1.0.0")
+
+		// Assert
+		if err == nil || errors.Is(err, git.ErrNotCached) {
+			t.Errorf("ReadTree() error = %v, want an invalid tree SHA", err)
 		}
 	})
 }

@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/h3y6e/skolar/internal/git"
 	"github.com/h3y6e/skolar/internal/lock"
 )
 
@@ -43,10 +42,9 @@ type VerifyResult struct {
 // still has the recorded hash, the install is compared file by file with it,
 // minus what vercel-labs/skills leaves out when it installs a skill.
 func VerifyLocked(layout lock.Layout, entries map[string]lock.Entry, cloneFn CloneFunc) []VerifyResult {
-	clones := map[string]fs.FS{}
+	var sources onceMap[string, []DiscoveredSkill]
 
-	results := make([]VerifyResult, 0, len(entries))
-	for _, name := range slices.Sorted(maps.Keys(entries)) {
+	return parallelMap(slices.Sorted(maps.Keys(entries)), func(name string) VerifyResult {
 		entry := entries[name]
 		result := VerifyResult{SkillName: name, Source: entry.Source, Status: VerifyVerified, Reinstall: SourceInput(entry)}
 
@@ -55,33 +53,23 @@ func VerifyLocked(layout lock.Layout, entries map[string]lock.Entry, cloneFn Clo
 		case err != nil:
 			result.Status, result.Reason = VerifyUnverifiable, err.Error()
 		case hash != entry.ComputedHash:
-			result.Status, result.Files, result.Reason = verifyLockedOnline(name, entry, layout.SkillDir(name), cloneFn, clones)
+			upstream, err := sources.do(SourceInput(entry), func() ([]DiscoveredSkill, error) {
+				_, upstream, err := cloneAndDiscover(SourceInput(entry), cloneFn)
+				return upstream, err
+			})
+			if err != nil {
+				result.Status, result.Reason = VerifyUnverifiable, err.Error()
+				break
+			}
+
+			result.Status, result.Files, result.Reason = verifyLockedOnline(name, entry, layout.SkillDir(name), upstream)
 		}
 
-		results = append(results, result)
-	}
-
-	return results
+		return result
+	})
 }
 
-func verifyLockedOnline(name string, entry lock.Entry, installed string, cloneFn CloneFunc, clones map[string]fs.FS) (VerifyStatus, []string, string) {
-	source := SourceInput(entry)
-
-	repo, ok := clones[source]
-	if !ok {
-		var err error
-		if repo, err = cloneFn(source); err != nil {
-			return VerifyUnverifiable, nil, fmt.Sprintf("fetch %s: %v", source, err)
-		}
-
-		clones[source] = repo
-	}
-
-	upstream, err := DiscoverSkills(repo)
-	if err != nil {
-		return VerifyUnverifiable, nil, err.Error()
-	}
-
+func verifyLockedOnline(name string, entry lock.Entry, installed string, upstream []DiscoveredSkill) (VerifyStatus, []string, string) {
 	up, err := resolveUpstream(name, recordedDir(entry), upstream)
 	if err != nil {
 		return VerifyUnverifiable, nil, err.Error()
@@ -109,12 +97,9 @@ func verifyLockedOnline(name string, entry lock.Entry, installed string, cloneFn
 }
 
 // VerifyTracked compares each gh-format skill with the upstream tree its
-// metadata records, fetched at github-ref.
+// metadata records, fetched at github-ref unless cached.
 func VerifyTracked(installed []InstalledSkill, fns UpstreamFuncs) []VerifyResult {
-	clones := map[[2]string]git.Snapshot{}
-
-	results := make([]VerifyResult, 0, len(installed))
-	for _, s := range installed {
+	return parallelMap(installed, func(s InstalledSkill) VerifyResult {
 		source, _ := OwnerRepoFromURL(s.Meta.RepoURL)
 
 		result := VerifyResult{SkillName: s.Name, Source: source, Reinstall: FormatSourceInput(source, s.Meta.Pinned)}
@@ -124,40 +109,21 @@ func VerifyTracked(installed []InstalledSkill, fns UpstreamFuncs) []VerifyResult
 		case s.Meta.Path == "":
 			result.Status, result.Reason = VerifyUnverifiable, "missing github-path in skill metadata"
 		default:
-			result.Status, result.Files, result.Reason = verifyTracked(s, fns, clones)
+			result.Status, result.Files, result.Reason = verifyTracked(s, fns)
 		}
 
-		results = append(results, result)
-	}
-
-	return results
+		return result
+	})
 }
 
-func verifyTracked(s InstalledSkill, fns UpstreamFuncs, clones map[[2]string]git.Snapshot) (VerifyStatus, []string, string) {
-	key := [2]string{s.Meta.RepoURL, s.Meta.Ref}
-
-	snap, ok := clones[key]
-	if !ok {
-		var err error
-
-		snap, err = fns.FetchRef(s.Meta.RepoURL, s.Meta.Ref)
-		if err != nil {
-			return VerifyUnverifiable, nil, fmt.Sprintf("fetch %s: %v", s.Meta.Ref, err)
-		}
-
-		clones[key] = snap
-	}
-
-	treeSHA, err := snap.Tree(s.Meta.Path)
+func verifyTracked(s InstalledSkill, fns UpstreamFuncs) (VerifyStatus, []string, string) {
+	snap, err := fns.FetchTree(s.Meta.RepoURL, s.Meta.Ref, s.Meta.TreeSHA)
 	if err != nil {
 		return VerifyUnverifiable, nil, err.Error()
 	}
+	defer snap.Close()
 
-	if treeSHA != s.Meta.TreeSHA {
-		return VerifyUnverifiable, nil, fmt.Sprintf("%s no longer holds tree %s", s.Meta.Ref, s.Meta.TreeSHA)
-	}
-
-	want, err := withMetadata(subFS(snap.FS, s.Meta.Path), s.Meta)
+	want, err := withMetadata(snap.FS, s.Meta)
 	if err != nil {
 		return VerifyUnverifiable, nil, err.Error()
 	}

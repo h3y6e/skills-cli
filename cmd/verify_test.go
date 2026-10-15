@@ -250,7 +250,7 @@ func TestVerifySkillFilter(t *testing.T) {
 		orig := cmd.NewUpstreamFuncs
 		cmd.NewUpstreamFuncs = func(ctx context.Context) (skill.UpstreamFuncs, func()) {
 			fns, cleanup := orig(ctx)
-			fns.FetchRef = func(string, string) (git.Snapshot, error) {
+			fns.FetchTree = func(string, string, string) (git.Snapshot, error) {
 				t.Error("verify fetched a skill that -s did not select")
 				return git.Snapshot{}, errors.New("unexpected fetch")
 			}

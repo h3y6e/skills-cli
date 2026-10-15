@@ -28,8 +28,8 @@ func TestVerifyTrackedRootSkill(t *testing.T) {
 		}
 
 		fns := skill.UpstreamFuncs{
-			FetchRef: func(string, string) (git.Snapshot, error) {
-				return checkoutRepo(t, repo), nil
+			FetchTree: func(_, _, tree string) (git.Snapshot, error) {
+				return git.ReadTree(t.Context(), repo, tree)
 			},
 		}
 

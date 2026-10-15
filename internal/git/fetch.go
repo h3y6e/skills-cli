@@ -53,6 +53,71 @@ func Fetch(ctx context.Context, cloneURL string, ref ResolvedRef) (Snapshot, err
 	return Snapshot{Ref: ref, FS: t, Trees: trees}, nil
 }
 
+// ErrNotCached reports that the cache lacks an object.
+var ErrNotCached = errors.New("not in the cache")
+
+// ReadTree reads the tree treeSHA of cloneURL from the cache, offline.
+// Close the snapshot when done.
+func ReadTree(ctx context.Context, cloneURL, treeSHA string) (Snapshot, error) {
+	gitDir, err := cacheRepo(cloneURL)
+	if err != nil {
+		return Snapshot{}, err
+	}
+
+	if !isObjectID(treeSHA) {
+		return Snapshot{}, fmt.Errorf("invalid tree SHA %q", treeSHA)
+	}
+
+	if !hasTree(ctx, gitDir, treeSHA) {
+		return Snapshot{}, fmt.Errorf("tree %s: %w", treeSHA, ErrNotCached)
+	}
+
+	t, err := openTree(ctx, gitDir, treeSHA)
+	if err != nil {
+		return Snapshot{}, err
+	}
+
+	return Snapshot{FS: t, Trees: map[string]string{".": treeSHA}}, nil
+}
+
+// Prefetch fetches ref of cloneURL into the cache unless it is there.
+func Prefetch(ctx context.Context, cloneURL string, ref ResolvedRef) error {
+	gitDir, err := cacheRepo(cloneURL)
+	if err != nil {
+		return err
+	}
+
+	_, _, err = fetchCached(ctx, gitDir, cloneURL, ref)
+
+	return err
+}
+
+func isObjectID(s string) bool {
+	if len(s) != 40 && len(s) != 64 {
+		return false
+	}
+
+	for _, c := range s {
+		if !strings.ContainsRune("0123456789abcdef", c) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func hasTree(ctx context.Context, gitDir, treeSHA string) bool {
+	cmd, err := gitCommand(ctx, "--git-dir", gitDir, "cat-file", "--batch-check")
+	if err != nil {
+		return false
+	}
+
+	cmd.Stdin = strings.NewReader(treeSHA + "\n")
+	out, err := cmd.Output()
+
+	return err == nil && strings.Fields(string(out))[1] == "tree"
+}
+
 // Close releases the snapshot's files.
 func (s Snapshot) Close() error {
 	if c, ok := s.FS.(io.Closer); ok {
