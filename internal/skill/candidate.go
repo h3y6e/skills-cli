@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -46,7 +47,9 @@ type UpdateCandidate struct {
 	// PreviousPath is the directory recorded at install, for a skill that
 	// moved or was removed upstream.
 	PreviousPath string
-	Reason       string
+	// Reinstall is the add argument that installs a StatusNew skill.
+	Reinstall string
+	Reason    string
 	// Foreign marks skills installed by gh-compatible tooling that have no
 	// lockfile entry. Applying them replaces the directory only; the lockfile
 	// is left untouched.
@@ -76,7 +79,10 @@ var errRemoved = errors.New("removed upstream")
 // unrecorded, to the only upstream skill with its name.
 func ResolveUpdateCandidates(entries map[string]lock.Entry, upstream []DiscoveredSkill) []UpdateCandidate {
 	candidates := make([]UpdateCandidate, 0, len(entries))
+	reinstall := ""
+
 	for name, entry := range entries {
+		reinstall = SourceInput(entry)
 		candidate := UpdateCandidate{
 			SkillName:   name,
 			Source:      entry.Source,
@@ -102,7 +108,7 @@ func ResolveUpdateCandidates(entries map[string]lock.Entry, upstream []Discovere
 
 	sortCandidates(candidates)
 
-	return append(candidates, newCandidates(candidates, upstream)...)
+	return append(candidates, newCandidates(candidates, upstream, reinstall)...)
 }
 
 // recordedDir returns the upstream directory an entry's skillPath records,
@@ -130,26 +136,27 @@ func changeStatus(recorded, current string, changed bool) (Status, string) {
 
 // newCandidates returns the upstream skills installed by default that none
 // of the installed candidates of the source resolved to or is named after.
-func newCandidates(installed []UpdateCandidate, upstream []DiscoveredSkill) []UpdateCandidate {
-	taken := map[string]bool{}
+func newCandidates(installed []UpdateCandidate, upstream []DiscoveredSkill, reinstall string) []UpdateCandidate {
+	names, paths := map[string]bool{}, map[string]bool{}
 	for _, c := range installed {
-		taken[c.SkillName], taken[c.Path] = true, true
+		names[c.SkillName], paths[c.Path] = true, true
 	}
 
 	var news []UpdateCandidate
 
 	for _, s := range upstream {
-		if !s.Default || taken[s.Name] || taken[s.Path] {
+		if !s.Default || names[s.Name] || paths[s.Path] {
 			continue
 		}
 
-		taken[s.Name] = true
+		names[s.Name] = true
 		news = append(news, UpdateCandidate{
 			SkillName: s.Name,
 			Source:    installed[0].Source,
 			Ref:       installed[0].Ref,
 			Status:    StatusNew,
 			Path:      s.Path,
+			Reinstall: reinstall,
 			Foreign:   installed[0].Foreign,
 		})
 	}
@@ -257,13 +264,44 @@ func CollectUpdateCandidates(
 	wg.Wait()
 	sortCandidates(candidates)
 
-	return candidates, skipped
+	return dropInstalledNews(candidates), skipped
+}
+
+// dropInstalledNews keeps one StatusNew candidate per source and name, and
+// none for a name installed from any source: a source can hold both lockfile
+// and gh skill installs, each listing the other's skills as new.
+func dropInstalledNews(candidates []UpdateCandidate) []UpdateCandidate {
+	installed := map[string]bool{}
+
+	for _, c := range candidates {
+		if c.Status != StatusNew {
+			installed[c.SkillName] = true
+		}
+	}
+
+	listed := map[[2]string]bool{}
+
+	return slices.DeleteFunc(candidates, func(c UpdateCandidate) bool {
+		key := [2]string{c.Source, c.SkillName}
+		drop := c.Status == StatusNew && (installed[c.SkillName] || listed[key])
+		listed[key] = listed[key] || c.Status == StatusNew
+
+		return drop
+	})
 }
 
 func resolveSourceCandidates(source string, group map[string]lock.Entry, cloneFn CloneFunc) []UpdateCandidate {
-	upstream, err := cloneAndDiscover(source, cloneFn)
+	cloneDir, upstream, err := cloneAndDiscover(source, cloneFn)
 	if err == nil {
-		return ResolveUpdateCandidates(group, upstream)
+		candidates := ResolveUpdateCandidates(group, upstream)
+		for i, c := range candidates {
+			if c.Status == StatusRemoved && c.PreviousPath != "" && hasSkillMD(cloneDir, c.PreviousPath) {
+				candidates[i].Status = StatusCheckFailed
+				candidates[i].Reason = fmt.Sprintf("upstream %s/SKILL.md is not a valid skill", c.PreviousPath)
+			}
+		}
+
+		return candidates
 	}
 
 	candidates := make([]UpdateCandidate, 0, len(group))
@@ -281,18 +319,24 @@ func resolveSourceCandidates(source string, group map[string]lock.Entry, cloneFn
 	return candidates
 }
 
-func cloneAndDiscover(source string, cloneFn CloneFunc) ([]DiscoveredSkill, error) {
+func cloneAndDiscover(source string, cloneFn CloneFunc) (string, []DiscoveredSkill, error) {
 	cloneDir, err := cloneFn(source)
 	if err != nil {
-		return nil, fmt.Errorf("clone %s: %w", source, err)
+		return "", nil, fmt.Errorf("clone %s: %w", source, err)
 	}
 
 	upstream, err := DiscoverSkills(cloneDir)
 	if err != nil {
-		return nil, fmt.Errorf("discover skills in %s: %w", source, err)
+		return "", nil, fmt.Errorf("discover skills in %s: %w", source, err)
 	}
 
-	return upstream, nil
+	return cloneDir, upstream, nil
+}
+
+func hasSkillMD(cloneDir, dir string) bool {
+	_, err := os.Lstat(filepath.Join(cloneDir, filepath.FromSlash(dir), "SKILL.md"))
+
+	return err == nil
 }
 
 // NewCloneFunc returns a CloneFunc that shallow-clones into temp directories,

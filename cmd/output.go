@@ -85,6 +85,7 @@ type updateResult struct {
 	Diff         *diffStat    `json:"diff,omitempty"`
 	Reason       string       `json:"reason,omitempty"`
 	Applied      bool         `json:"applied,omitempty"`
+	reinstall    string
 }
 
 func newUpdateResult(c skill.UpdateCandidate) updateResult {
@@ -98,6 +99,7 @@ func newUpdateResult(c skill.UpdateCandidate) updateResult {
 		CurrentHash:  c.CurrentHash,
 		LatestHash:   c.LatestHash,
 		Reason:       c.Reason,
+		reinstall:    c.Reinstall,
 	}
 }
 

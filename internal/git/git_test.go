@@ -152,25 +152,10 @@ func TestShallowClone(t *testing.T) {
 	})
 }
 
-func TestDiffStat(t *testing.T) {
+func TestNumStat(t *testing.T) {
 	t.Parallel()
 
-	t.Run("when two directories are identical, the stat is zero", func(t *testing.T) {
-		t.Parallel()
-		// Arrange
-		dir := t.TempDir()
-		testutil.WriteFiles(t, dir, map[string]string{"a/file.txt": "same\n", "b/file.txt": "same\n"})
-
-		// Act
-		got, err := git.DiffStat(t.Context(), filepath.Join(dir, "a"), filepath.Join(dir, "b"))
-
-		// Assert
-		if err != nil || got != (git.Stat{}) {
-			t.Errorf("DiffStat() = %+v, %v, want zero", got, err)
-		}
-	})
-
-	t.Run("when files change, are added and are binary, the stat counts their lines and files but not mode changes", func(t *testing.T) {
+	t.Run("when text and binary files change, only text lines are counted", func(t *testing.T) {
 		t.Parallel()
 		// Arrange
 		dir := t.TempDir()
@@ -180,20 +165,14 @@ func TestDiffStat(t *testing.T) {
 			"b/new.md":   "added\n",
 			"a/bin":      "\x00a",
 			"b/bin":      "\x00b",
-			"a/run.sh":   "echo\n",
-			"b/run.sh":   "echo\n",
 		})
 
-		if err := os.Chmod(filepath.Join(dir, "b", "run.sh"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-
 		// Act
-		got, err := git.DiffStat(t.Context(), filepath.Join(dir, "a"), filepath.Join(dir, "b"))
+		added, deleted, err := git.NumStat(t.Context(), filepath.Join(dir, "a"), filepath.Join(dir, "b"))
 
 		// Assert
-		if err != nil || got != (git.Stat{Added: 3, Deleted: 1, Files: 3}) {
-			t.Errorf("DiffStat() = %+v, %v, want +3 -1 in 3 files", got, err)
+		if err != nil || added != 3 || deleted != 1 {
+			t.Errorf("NumStat() = +%d -%d, %v, want +3 -1", added, deleted, err)
 		}
 	})
 }

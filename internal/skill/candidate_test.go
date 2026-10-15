@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/h3y6e/skolar/internal/git"
 	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
 	"github.com/h3y6e/skolar/internal/testutil"
@@ -492,6 +493,59 @@ func TestCollectUpdateCandidates(t *testing.T) {
 		}
 	})
 
+	t.Run("when the recorded upstream SKILL.md is malformed, the check fails instead of reporting the skill removed", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		src := t.TempDir()
+		testutil.WriteFiles(t, src, map[string]string{"skills/a/SKILL.md": "---\nname: a\ncompatibility: MCP (tools: x)\n---\n"})
+
+		entries := map[string]lock.Entry{"a": {Source: "o/r", SourceType: "github", SkillPath: "skills/a/SKILL.md", ComputedHash: "h"}}
+
+		// Act
+		candidates, _ := collectLocked(entries, func(string) (string, error) { return src, nil })
+
+		// Assert
+		if len(candidates) != 1 || candidates[0].Status != skill.StatusCheckFailed {
+			t.Errorf("candidates = %+v, want a check-failed", candidates)
+		}
+	})
+
+	t.Run("when lockfile and gh skill installs share a source, a skill neither installed is listed once", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		src := t.TempDir()
+		testutil.WriteFiles(t, src, map[string]string{
+			"skills/a/SKILL.md": "# A\n",
+			"skills/b/SKILL.md": "# B\n",
+			"skills/c/SKILL.md": "# C\n",
+		})
+
+		entries := map[string]lock.Entry{"a": {Source: "o/r", SourceType: "github", SkillPath: "skills/a/SKILL.md"}}
+		installed := []skill.InstalledSkill{{Name: "b", Meta: skill.SourceMetadata{RepoURL: "https://github.com/o/r", TreeSHA: "t", Path: "skills/b"}}}
+		fns := skill.UpstreamFuncs{
+			FetchLatest: func(string) (string, git.ResolvedRef, error) {
+				return src, git.ResolvedRef{Full: "refs/heads/main"}, nil
+			},
+			TreeSHA: func(_, _ string) (string, error) { return "t", nil },
+		}
+
+		// Act
+		candidates, _ := skill.CollectUpdateCandidates(entries, installed, func(string) (string, error) { return src, nil }, fns, func(int, int) {})
+
+		// Assert
+		var news []string
+
+		for _, c := range candidates {
+			if c.Status == skill.StatusNew {
+				news = append(news, c.SkillName)
+			}
+		}
+
+		if !slices.Equal(news, []string{"c"}) {
+			t.Errorf("new skills = %v, want [c]", news)
+		}
+	})
+
 	t.Run("when one source cannot be cloned, only its skills fail the check", func(t *testing.T) {
 		t.Parallel()
 		// Arrange
@@ -668,6 +722,12 @@ func TestResolveUpdateCandidatesBySkillPath(t *testing.T) {
 			lock.Entry{SkillPath: "skills/dup/SKILL.md", ComputedHash: "a"},
 			[]skill.DiscoveredSkill{at("other", "skills/other", "a")},
 			[]want{{"dup", skill.StatusRemoved, ""}, {"other", skill.StatusNew, "skills/other"}},
+		},
+		{
+			"when an installed skill's path is another upstream skill's name, that skill is still new",
+			lock.Entry{SkillPath: "other/SKILL.md", ComputedHash: "a"},
+			[]skill.DiscoveredSkill{at("dup", "other", "a"), at("other", "skills/other", "b")},
+			[]want{{"dup", skill.StatusUpToDate, "other"}, {"other", skill.StatusNew, "skills/other"}},
 		},
 		{
 			"when the entry has no skillPath and two upstream skills share its name, the check fails as ambiguous",

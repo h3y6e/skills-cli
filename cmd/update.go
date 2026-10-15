@@ -106,6 +106,12 @@ func runUpdate(cmd *cobra.Command, source string, opts updateOptions) (err error
 	return checkFailed(names(candidates, failed))
 }
 
+func occupied(layout lock.Layout, name string) bool {
+	_, err := os.Lstat(layout.SkillDir(name))
+
+	return err == nil
+}
+
 // updateCandidates resolves the installed skills update covers, and the
 // upstream skills not installed anywhere in the directory.
 func updateCandidates(cmd *cobra.Command, inv inventory, source string, skills []string) ([]skill.UpdateCandidate, func(), error) {
@@ -135,7 +141,7 @@ func updateCandidates(cmd *cobra.Command, inv inventory, source string, skills [
 	printSkippedEntries(stderr, skipped)
 
 	candidates = slices.DeleteFunc(skill.FilterCandidates(candidates, skills), func(c skill.UpdateCandidate) bool {
-		return c.Status == skill.StatusNew && inv.recorded(c.SkillName)
+		return c.Status == skill.StatusNew && occupied(inv.layout, c.SkillName)
 	})
 	if len(candidates) == 0 {
 		fmt.Fprintln(stderr, "no matching skills to update")
@@ -224,11 +230,17 @@ func applyUpdates(inv inventory, candidates []skill.UpdateCandidate, apply []int
 	}
 
 	for _, i := range apply {
+		results[i].Applied = !candidates[i].Foreign
+	}
+
+	for _, i := range apply {
 		c := candidates[i]
-		if c.Foreign {
-			if err := skill.ReplaceSkill(c.SkillName, c.StagedDir, inv.layout); err != nil {
-				return fmt.Errorf("update %s: %w", c.SkillName, err)
-			}
+		if !c.Foreign {
+			continue
+		}
+
+		if err := skill.ReplaceSkill(c.SkillName, c.StagedDir, inv.layout); err != nil {
+			return fmt.Errorf("update %s: %w", c.SkillName, err)
 		}
 
 		results[i].Applied = true
@@ -324,7 +336,7 @@ func describe(r updateResult) string {
 func printHints(w io.Writer, results []updateResult, dir string) {
 	var removed []string
 
-	newSource := ""
+	reinstall := ""
 
 	for _, r := range results {
 		if r.Status == skill.StatusRemoved {
@@ -332,7 +344,7 @@ func printHints(w io.Writer, results []updateResult, dir string) {
 		}
 
 		if r.Status == skill.StatusNew {
-			newSource = cmp.Or(newSource, r.Source)
+			reinstall = cmp.Or(reinstall, r.reinstall)
 		}
 	}
 
@@ -340,8 +352,8 @@ func printHints(w io.Writer, results []updateResult, dir string) {
 		fmt.Fprintf(w, "hint: skolar remove %s --dir %s deletes the skills removed upstream\n", strings.Join(removed, " "), dir)
 	}
 
-	if newSource != "" {
-		fmt.Fprintf(w, "hint: skolar add %s -s <skill> --dir %s installs a skill not installed\n", newSource, dir)
+	if reinstall != "" {
+		fmt.Fprintf(w, "hint: skolar add %s -s <skill> --dir %s installs a skill not installed\n", reinstall, dir)
 	}
 }
 

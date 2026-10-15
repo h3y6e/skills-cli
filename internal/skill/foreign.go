@@ -275,16 +275,15 @@ func resolveRepoCandidates(group []InstalledSkill, fns UpstreamFuncs) []UpdateCa
 
 	sortCandidates(candidates)
 
-	return append(candidates, newCandidates(candidates, upstream)...)
+	return append(candidates, newCandidates(candidates, upstream, candidates[0].Source)...)
 }
 
 // resolveTrackedUpstream finds the upstream skill at github-path even when
 // discovery skips it, so that it fails on its own content rather than
 // passing for removed.
 func resolveTrackedUpstream(s InstalledSkill, cloneDir string, upstream []DiscoveredSkill) (DiscoveredSkill, error) {
-	dir := filepath.Join(cloneDir, filepath.FromSlash(s.Meta.Path))
-	if _, err := os.Lstat(filepath.Join(dir, "SKILL.md")); err == nil {
-		return DiscoveredSkill{Name: s.Name, Dir: dir, Path: s.Meta.Path}, nil
+	if hasSkillMD(cloneDir, s.Meta.Path) {
+		return DiscoveredSkill{Name: s.Name, Dir: filepath.Join(cloneDir, filepath.FromSlash(s.Meta.Path)), Path: s.Meta.Path}, nil
 	}
 
 	return resolveUpstream(s.Name, s.Meta.Path, upstream)

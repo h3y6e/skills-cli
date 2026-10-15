@@ -740,6 +740,48 @@ func TestUpdateIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("when a source has skills not installed, a directory already there is not listed and the hint keeps the ref", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		bareURL := testutil.BareRepo(t, map[string]string{
+			"skills/alpha/SKILL.md": "# Alpha\n",
+			"skills/beta/SKILL.md":  "# Beta\n",
+			"skills/gamma/SKILL.md": "# Gamma\n",
+		})
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		testutil.WriteFiles(t, skillsDir, map[string]string{"alpha/SKILL.md": "# Alpha\n", "beta/SKILL.md": "# Copied\n"})
+
+		lf := lock.File{Version: 1, Skills: map[string]lock.Entry{
+			"alpha": {Source: bareURL, Ref: "main", SourceType: "git", SkillPath: "skills/alpha/SKILL.md", ComputedHash: "stale"},
+		}}
+		if err := lock.WriteFile(lock.FilePath(skillsDir), lf); err != nil {
+			t.Fatalf("write lockfile: %v", err)
+		}
+
+		var out, errOut bytes.Buffer
+
+		root := cmd.NewRootCmd("test")
+		root.SetOut(&out)
+		root.SetErr(&errOut)
+		root.SetArgs([]string{"update", "--dry-run", "-d", skillsDir})
+
+		// Act
+		err := root.Execute()
+		// Assert
+		if err != nil {
+			t.Fatalf("update: %v", err)
+		}
+
+		if !strings.HasSuffix(out.String(), "  A  1 not installed: gamma\n") {
+			t.Errorf("stdout = %q, want only gamma not installed", out.String())
+		}
+
+		if !strings.Contains(errOut.String(), "skolar add "+bareURL+"#main -s <skill>") {
+			t.Errorf("stderr = %q, want an add hint with the ref", errOut.String())
+		}
+	})
+
 	t.Run("non-interactive preview lists all candidates without modifying files", func(t *testing.T) {
 		// Cannot be parallel: overrides IsTTY.
 		origIsTTY := cmd.IsTTY

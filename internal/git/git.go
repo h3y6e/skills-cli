@@ -73,42 +73,27 @@ func shallowCloneRef(ctx context.Context, cloneURL, ref, destDir string) error {
 	return nil
 }
 
-// Stat counts the lines added and deleted, and the files changed, between two trees.
-// Binary files count as changed files only; mode changes do not count.
-type Stat struct {
-	Added   int
-	Deleted int
-	Files   int
-}
-
-// DiffStat runs `git diff --no-index --numstat` from pathA to pathB.
-func DiffStat(ctx context.Context, pathA, pathB string) (Stat, error) {
+// NumStat counts the lines added and deleted from pathA to pathB, with
+// `git diff --no-index --numstat`. Binary files add no lines.
+func NumStat(ctx context.Context, pathA, pathB string) (added, deleted int, err error) {
 	cmd, err := gitCommand(ctx, "diff", "--no-index", "--numstat", "--", pathA, pathB)
 	if err != nil {
-		return Stat{}, err
+		return 0, 0, err
 	}
 
 	out, err := cmd.Output()
 	if exitErr, ok := errors.AsType[*exec.ExitError](err); err != nil && (!ok || exitErr.ExitCode() != 1) {
-		return Stat{}, fmt.Errorf("git diff --no-index: %w", err)
+		return 0, 0, fmt.Errorf("git diff --no-index: %w", err)
 	}
-
-	var stat Stat
 
 	for line := range strings.Lines(string(out)) {
-		added, rest, _ := strings.Cut(line, "\t")
-		deleted, _, _ := strings.Cut(rest, "\t")
-
-		if added == "0" && deleted == "0" {
-			continue
-		}
-
-		a, _ := strconv.Atoi(added)
-		d, _ := strconv.Atoi(deleted)
-		stat.Added += a
-		stat.Deleted += d
-		stat.Files++
+		a, rest, _ := strings.Cut(line, "\t")
+		d, _, _ := strings.Cut(rest, "\t")
+		n, _ := strconv.Atoi(a)
+		m, _ := strconv.Atoi(d)
+		added += n
+		deleted += m
 	}
 
-	return stat, nil
+	return added, deleted, nil
 }
