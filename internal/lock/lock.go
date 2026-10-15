@@ -69,6 +69,11 @@ func WriteFile(path string, file File) error {
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 
+	if err := tmp.Chmod(0o644); err != nil {
+		tmp.Close()
+		return fmt.Errorf("chmod temp lockfile for %q: %w", path, err)
+	}
+
 	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
 		return fmt.Errorf("write temp lockfile for %q: %w", path, err)

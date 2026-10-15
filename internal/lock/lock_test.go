@@ -181,3 +181,28 @@ func TestLayoutUsesLockfile(t *testing.T) {
 		})
 	}
 }
+
+func TestWriteFileMode(t *testing.T) {
+	t.Parallel()
+
+	t.Run("when the lockfile is written, it is readable by others like a committed file", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		path := filepath.Join(t.TempDir(), lock.FileName)
+
+		// Act
+		err := lock.WriteFile(path, lock.File{Version: 1})
+
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != 0o644 {
+			t.Errorf("mode = %v, want 0644", got)
+		}
+	})
+}
