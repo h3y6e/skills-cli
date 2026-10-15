@@ -58,7 +58,6 @@ Exit status: 0 on success, 1 on failure (including a skill that could not be che
 	root.SetFlagErrorFunc(usageError)
 
 	root.AddCommand(newAddCmd())
-	root.AddCommand(newCheckCmd())
 	root.AddCommand(newUpdateCmd())
 	root.AddCommand(newListCmd())
 	root.AddCommand(newRemoveCmd())
@@ -223,21 +222,6 @@ func (inv inventory) locked(name string) bool {
 
 func (inv inventory) recorded(name string) bool {
 	return inv.locked(name) || slices.ContainsFunc(inv.foreign, func(s skill.InstalledSkill) bool { return s.Name == name })
-}
-
-func collectCandidates(
-	ctx context.Context, prefix string, entries map[string]lock.Entry, foreign []skill.InstalledSkill,
-) (candidates []skill.UpdateCandidate, skipped []skill.SkippedEntry, cleanup func(), err error) {
-	cloneFn, cloneCleanup := skill.NewCloneFunc(ctx, prefix+"-*")
-	fns, upstreamCleanup := NewUpstreamFuncs(ctx, prefix+"-foreign-*")
-	cleanup = func() { cloneCleanup(); upstreamCleanup() }
-
-	candidates, skipped, err = skill.AggregateUpdateCandidates(entries, cloneFn)
-	if err != nil {
-		return nil, nil, cleanup, err
-	}
-
-	return append(candidates, skill.AggregateForeignUpdateCandidates(foreign, fns)...), skipped, cleanup, nil
 }
 
 func resolveVersion(version string) string {

@@ -290,12 +290,12 @@ func TestE2ETrackedLifecycle(t *testing.T) {
 	}
 
 	// --- check reports up-to-date ---
-	checkOut, err := runSkills(t, "check", "-d", skillsDir)
+	checkOut, err := runSkills(t, "update", "--dry-run", "-d", skillsDir)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
 
-	if !strings.Contains(checkOut, "alpha: up-to-date") {
+	if !strings.Contains(checkOut, "1 up-to-date") {
 		t.Fatalf("check should report alpha up-to-date, got: %q", checkOut)
 	}
 
@@ -316,12 +316,12 @@ func TestE2ETrackedLifecycle(t *testing.T) {
 	}
 
 	// --- check reports update available ---
-	checkOut, err = runSkills(t, "check", "-d", skillsDir)
+	checkOut, err = runSkills(t, "update", "--dry-run", "-d", skillsDir)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
 
-	if !strings.Contains(checkOut, "alpha: update available") {
+	if !strings.Contains(checkOut, "  M  alpha  ") {
 		t.Fatalf("check should report update available, got: %q", checkOut)
 	}
 
@@ -345,12 +345,12 @@ func TestE2ETrackedLifecycle(t *testing.T) {
 	}
 
 	// --- check is up-to-date again ---
-	checkOut, err = runSkills(t, "check", "-d", skillsDir)
+	checkOut, err = runSkills(t, "update", "--dry-run", "-d", skillsDir)
 	if err != nil {
 		t.Fatalf("check after update: %v", err)
 	}
 
-	if !strings.Contains(checkOut, "alpha: up-to-date") {
+	if !strings.Contains(checkOut, "1 up-to-date") {
 		t.Fatalf("check after update should be up-to-date, got: %q", checkOut)
 	}
 
@@ -383,12 +383,12 @@ func TestE2ETrackedPinnedIsSkipped(t *testing.T) {
 	}
 
 	// --- check reports pinned ---
-	checkOut, err := runSkills(t, "check", "-d", skillsDir)
+	checkOut, err := runSkills(t, "update", "--dry-run", "-d", skillsDir)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
 
-	if !strings.Contains(checkOut, "alpha: pinned") {
+	if !strings.Contains(checkOut, "1 pinned") {
 		t.Fatalf("check should report alpha pinned, got: %q", checkOut)
 	}
 
@@ -398,7 +398,7 @@ func TestE2ETrackedPinnedIsSkipped(t *testing.T) {
 		t.Fatalf("update: %v", err)
 	}
 
-	if !strings.Contains(updateOut, "alpha: pinned to v1.0.0 (skipped)") {
+	if updateOut != "1 pinned\n" {
 		t.Fatalf("update should skip pinned alpha, got: %q", updateOut)
 	}
 

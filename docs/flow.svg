@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" viewBox="0 0 900 536" width="900" height="536" role="img" aria-labelledby="t d">
   <title id="t">skolar reads and writes both the vercel-labs/skills lockfile and gh skill metadata</title>
-  <desc id="d">skolar sits between vercel-labs/skills and gh skill. add writes skills-lock.json or SKILL.md frontmatter, recording each skill in its SKILL.md metadata in any directory, or in an existing skills-lock.json and using the lockfile for skills gh can't express. check and update locate each skill upstream by its recorded path and compare hashes; verify checks files on disk against computedHash or github-tree-sha. Both upstream tools keep working on the same records.</desc>
+  <desc id="d">skolar sits between vercel-labs/skills and gh skill. add writes skills-lock.json or SKILL.md frontmatter, recording each skill in its SKILL.md metadata in any directory, or in an existing skills-lock.json and using the lockfile for skills gh can't express. update locates each skill upstream by its recorded path, follows it when it moved, and compares hashes; verify checks files on disk against computedHash or github-tree-sha. Both upstream tools keep working on the same records.</desc>
   <defs><filter id="blur" x="-20%" y="-20%" width="140%" height="160%"><feGaussianBlur stdDeviation="7"/></filter></defs>
   <style>
     text { white-space: pre; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; font-size: 13px; fill: #57575a; }
@@ -28,7 +28,7 @@
     .litend { fill: #fbfbfa; stroke: #000; stroke-width: 1; }
     .band { fill: #ededea; }
     .litedge { fill: none; stroke: #000; stroke-width: 1.1; }
-    .step { opacity: 0; animation: step 21.0s linear infinite; }
+    .step { opacity: 0; animation: step 17.5s linear infinite; }
     .idle { animation: hide 1s infinite; }
     @media (prefers-color-scheme: dark) {
       text { fill: #a3a3a3; }
@@ -52,23 +52,23 @@
       .band { fill: #262626; }
       .litedge { stroke: #fff; }
     }
-    @keyframes step { 0% { opacity: 0; } 1.67% { opacity: 1; } 15.00% { opacity: 1; } 16.67%, 100% { opacity: 0; } }
+    @keyframes step { 0% { opacity: 0; } 2.00% { opacity: 1; } 18.00% { opacity: 1; } 20.00%, 100% { opacity: 0; } }
     @keyframes hide { from, to { opacity: 0; } }
     @keyframes flow { to { stroke-dashoffset: -32; } }
     @media (prefers-reduced-motion: reduce) { .step, .flow, .idle { animation: none; } }
   </style>
   <rect class="card" x=".5" y=".5" width="899" height="535"/>
-<rect class="halo" x="278" y="36" width="344" height="68" rx="8"/><rect class="side plate" x="270" y="30" width="360" height="72" rx="6"/><rect class="top plate" x="270" y="26" width="360" height="72" rx="6"/><rect class="groove" x="274" y="30" width="352" height="64" rx="3"/><circle class="screw-ring" cx="279" cy="35" r="1.9"/><circle class="screw" cx="279" cy="35" r=".8"/><circle class="screw-ring" cx="621" cy="35" r="1.9"/><circle class="screw" cx="621" cy="35" r=".8"/><circle class="screw-ring" cx="279" cy="89" r="1.9"/><circle class="screw" cx="279" cy="89" r=".8"/><circle class="screw-ring" cx="621" cy="89" r="1.9"/><circle class="screw" cx="621" cy="89" r=".8"/><rect class="halo" x="24" y="164" width="184" height="72" rx="8"/><rect class="side plate" x="16" y="158" width="200" height="76" rx="6"/><rect class="top plate" x="16" y="154" width="200" height="76" rx="6"/><rect class="groove" x="20" y="158" width="192" height="68" rx="3"/><circle class="screw-ring" cx="25" cy="163" r="1.9"/><circle class="screw" cx="25" cy="163" r=".8"/><circle class="screw-ring" cx="207" cy="163" r="1.9"/><circle class="screw" cx="207" cy="163" r=".8"/><circle class="screw-ring" cx="25" cy="221" r="1.9"/><circle class="screw" cx="25" cy="221" r=".8"/><circle class="screw-ring" cx="207" cy="221" r="1.9"/><circle class="screw" cx="207" cy="221" r=".8"/><rect class="halo" x="268" y="134" width="364" height="132" rx="8"/><rect class="side subject" x="260" y="128" width="380" height="136" rx="6"/><rect class="top subject" x="260" y="124" width="380" height="136" rx="6"/><rect class="groove" x="264" y="128" width="372" height="128" rx="3"/><circle class="screw-ring" cx="269" cy="133" r="1.9"/><circle class="screw" cx="269" cy="133" r=".8"/><circle class="screw-ring" cx="631" cy="133" r="1.9"/><circle class="screw" cx="631" cy="133" r=".8"/><circle class="screw-ring" cx="269" cy="251" r="1.9"/><circle class="screw" cx="269" cy="251" r=".8"/><circle class="screw-ring" cx="631" cy="251" r="1.9"/><circle class="screw" cx="631" cy="251" r=".8"/><rect class="halo" x="692" y="164" width="184" height="72" rx="8"/><rect class="side plate" x="684" y="158" width="200" height="76" rx="6"/><rect class="top plate" x="684" y="154" width="200" height="76" rx="6"/><rect class="groove" x="688" y="158" width="192" height="68" rx="3"/><circle class="screw-ring" cx="693" cy="163" r="1.9"/><circle class="screw" cx="693" cy="163" r=".8"/><circle class="screw-ring" cx="875" cy="163" r="1.9"/><circle class="screw" cx="875" cy="163" r=".8"/><circle class="screw-ring" cx="693" cy="221" r="1.9"/><circle class="screw" cx="693" cy="221" r=".8"/><circle class="screw-ring" cx="875" cy="221" r="1.9"/><circle class="screw" cx="875" cy="221" r=".8"/><rect class="halo" x="24" y="322" width="376" height="148" rx="8"/><rect class="side plate" x="16" y="316" width="392" height="152" rx="6"/><rect class="top plate" x="16" y="312" width="392" height="152" rx="6"/><rect class="groove" x="20" y="316" width="384" height="144" rx="3"/><circle class="screw-ring" cx="25" cy="321" r="1.9"/><circle class="screw" cx="25" cy="321" r=".8"/><circle class="screw-ring" cx="399" cy="321" r="1.9"/><circle class="screw" cx="399" cy="321" r=".8"/><circle class="screw-ring" cx="25" cy="455" r="1.9"/><circle class="screw" cx="25" cy="455" r=".8"/><circle class="screw-ring" cx="399" cy="455" r="1.9"/><circle class="screw" cx="399" cy="455" r=".8"/><rect class="halo" x="432" y="322" width="444" height="148" rx="8"/><rect class="side plate" x="424" y="316" width="460" height="152" rx="6"/><rect class="top plate" x="424" y="312" width="460" height="152" rx="6"/><rect class="groove" x="428" y="316" width="452" height="144" rx="3"/><circle class="screw-ring" cx="433" cy="321" r="1.9"/><circle class="screw" cx="433" cy="321" r=".8"/><circle class="screw-ring" cx="875" cy="321" r="1.9"/><circle class="screw" cx="875" cy="321" r=".8"/><circle class="screw-ring" cx="433" cy="455" r="1.9"/><circle class="screw" cx="433" cy="455" r=".8"/><circle class="screw-ring" cx="875" cy="455" r="1.9"/><circle class="screw" cx="875" cy="455" r=".8"/>
+<rect class="halo" x="278" y="36" width="344" height="68" rx="8"/><rect class="side plate" x="270" y="30" width="360" height="72" rx="6"/><rect class="top plate" x="270" y="26" width="360" height="72" rx="6"/><rect class="groove" x="274" y="30" width="352" height="64" rx="3"/><circle class="screw-ring" cx="279" cy="35" r="1.9"/><circle class="screw" cx="279" cy="35" r=".8"/><circle class="screw-ring" cx="621" cy="35" r="1.9"/><circle class="screw" cx="621" cy="35" r=".8"/><circle class="screw-ring" cx="279" cy="89" r="1.9"/><circle class="screw" cx="279" cy="89" r=".8"/><circle class="screw-ring" cx="621" cy="89" r="1.9"/><circle class="screw" cx="621" cy="89" r=".8"/><rect class="halo" x="24" y="164" width="184" height="72" rx="8"/><rect class="side plate" x="16" y="158" width="200" height="76" rx="6"/><rect class="top plate" x="16" y="154" width="200" height="76" rx="6"/><rect class="groove" x="20" y="158" width="192" height="68" rx="3"/><circle class="screw-ring" cx="25" cy="163" r="1.9"/><circle class="screw" cx="25" cy="163" r=".8"/><circle class="screw-ring" cx="207" cy="163" r="1.9"/><circle class="screw" cx="207" cy="163" r=".8"/><circle class="screw-ring" cx="25" cy="221" r="1.9"/><circle class="screw" cx="25" cy="221" r=".8"/><circle class="screw-ring" cx="207" cy="221" r="1.9"/><circle class="screw" cx="207" cy="221" r=".8"/><rect class="halo" x="268" y="145" width="364" height="110" rx="8"/><rect class="side subject" x="260" y="139" width="380" height="114" rx="6"/><rect class="top subject" x="260" y="135" width="380" height="114" rx="6"/><rect class="groove" x="264" y="139" width="372" height="106" rx="3"/><circle class="screw-ring" cx="269" cy="144" r="1.9"/><circle class="screw" cx="269" cy="144" r=".8"/><circle class="screw-ring" cx="631" cy="144" r="1.9"/><circle class="screw" cx="631" cy="144" r=".8"/><circle class="screw-ring" cx="269" cy="240" r="1.9"/><circle class="screw" cx="269" cy="240" r=".8"/><circle class="screw-ring" cx="631" cy="240" r="1.9"/><circle class="screw" cx="631" cy="240" r=".8"/><rect class="halo" x="692" y="164" width="184" height="72" rx="8"/><rect class="side plate" x="684" y="158" width="200" height="76" rx="6"/><rect class="top plate" x="684" y="154" width="200" height="76" rx="6"/><rect class="groove" x="688" y="158" width="192" height="68" rx="3"/><circle class="screw-ring" cx="693" cy="163" r="1.9"/><circle class="screw" cx="693" cy="163" r=".8"/><circle class="screw-ring" cx="875" cy="163" r="1.9"/><circle class="screw" cx="875" cy="163" r=".8"/><circle class="screw-ring" cx="693" cy="221" r="1.9"/><circle class="screw" cx="693" cy="221" r=".8"/><circle class="screw-ring" cx="875" cy="221" r="1.9"/><circle class="screw" cx="875" cy="221" r=".8"/><rect class="halo" x="24" y="322" width="376" height="148" rx="8"/><rect class="side plate" x="16" y="316" width="392" height="152" rx="6"/><rect class="top plate" x="16" y="312" width="392" height="152" rx="6"/><rect class="groove" x="20" y="316" width="384" height="144" rx="3"/><circle class="screw-ring" cx="25" cy="321" r="1.9"/><circle class="screw" cx="25" cy="321" r=".8"/><circle class="screw-ring" cx="399" cy="321" r="1.9"/><circle class="screw" cx="399" cy="321" r=".8"/><circle class="screw-ring" cx="25" cy="455" r="1.9"/><circle class="screw" cx="25" cy="455" r=".8"/><circle class="screw-ring" cx="399" cy="455" r="1.9"/><circle class="screw" cx="399" cy="455" r=".8"/><rect class="halo" x="432" y="322" width="444" height="148" rx="8"/><rect class="side plate" x="424" y="316" width="460" height="152" rx="6"/><rect class="top plate" x="424" y="312" width="460" height="152" rx="6"/><rect class="groove" x="428" y="316" width="452" height="144" rx="3"/><circle class="screw-ring" cx="433" cy="321" r="1.9"/><circle class="screw" cx="433" cy="321" r=".8"/><circle class="screw-ring" cx="875" cy="321" r="1.9"/><circle class="screw" cx="875" cy="321" r=".8"/><circle class="screw-ring" cx="433" cy="455" r="1.9"/><circle class="screw" cx="433" cy="455" r=".8"/><circle class="screw-ring" cx="875" cy="455" r="1.9"/><circle class="screw" cx="875" cy="455" r=".8"/>
   <path class="wire" d="M 330 100 L 120 152"/><circle class="end" cx="330" cy="100" r="2.2"/><circle class="end" cx="120" cy="152" r="2.2"/>
   <path class="wire" d="M 570 100 L 780 152"/><circle class="end" cx="570" cy="100" r="2.2"/><circle class="end" cx="780" cy="152" r="2.2"/>
   <path class="wire" d="M 116 232 V 310"/><circle class="end" cx="116" cy="232" r="2.2"/><circle class="end" cx="116" cy="310" r="2.2"/>
   <path class="wire" d="M 784 232 V 310"/><circle class="end" cx="784" cy="232" r="2.2"/><circle class="end" cx="784" cy="310" r="2.2"/>
-  <path class="wire own" d="M 450 100 V 122"/><circle class="end" cx="450" cy="100" r="2.2"/><circle class="end" cx="450" cy="122" r="2.2"/>
-  <path class="wire own" d="M 390 262 L 322 310"/><circle class="end" cx="390" cy="262" r="2.2"/><circle class="end" cx="322" cy="310" r="2.2"/>
-  <path class="wire own" d="M 510 262 L 578 310"/><circle class="end" cx="510" cy="262" r="2.2"/><circle class="end" cx="578" cy="310" r="2.2"/>
+  <path class="wire own" d="M 450 100 V 133"/><circle class="end" cx="450" cy="100" r="2.2"/><circle class="end" cx="450" cy="133" r="2.2"/>
+  <path class="wire own" d="M 390 251 L 322 310"/><circle class="end" cx="390" cy="251" r="2.2"/><circle class="end" cx="322" cy="310" r="2.2"/>
+  <path class="wire own" d="M 510 251 L 578 310"/><circle class="end" cx="510" cy="251" r="2.2"/><circle class="end" cx="578" cy="310" r="2.2"/>
   <text class="corner readout idle" x="880" y="520" text-anchor="end">skolar reads and writes both records</text>
   <g class="step" style="animation-delay: 0s">
-    <rect class="band" x="272" y="162" width="356" height="22" rx="2"/>
+    <rect class="band" x="272" y="173" width="356" height="22" rx="2"/>
     <rect class="band" x="287" y="66" width="62" height="16" rx="2"/>
     <rect class="band" x="537" y="40" width="34" height="16" rx="2"/>
     <rect class="band" x="30" y="352" width="366" height="16" rx="2"/>
@@ -77,12 +77,12 @@
     <rect class="band" x="30" y="400" width="366" height="16" rx="2"/>
     <rect class="band" x="30" y="416" width="366" height="16" rx="2"/>
     <rect class="band" x="30" y="432" width="366" height="16" rx="2"/>
-    <path class="flow" d="M 450 100 V 122"/><circle class="litend" cx="450" cy="100" r="2.2"/><circle class="litend" cx="450" cy="122" r="2.2"/>
-    <path class="flow" d="M 390 262 L 322 310"/><circle class="litend" cx="390" cy="262" r="2.2"/><circle class="litend" cx="322" cy="310" r="2.2"/>
+    <path class="flow" d="M 450 100 V 133"/><circle class="litend" cx="450" cy="100" r="2.2"/><circle class="litend" cx="450" cy="133" r="2.2"/>
+    <path class="flow" d="M 390 251 L 322 310"/><circle class="litend" cx="390" cy="251" r="2.2"/><circle class="litend" cx="322" cy="310" r="2.2"/>
     <text class="corner readout" x="880" y="520" text-anchor="end">add · records in skills-lock.json when it exists</text>
   </g>
   <g class="step" style="animation-delay: 3.5s">
-    <rect class="band" x="272" y="162" width="356" height="22" rx="2"/>
+    <rect class="band" x="272" y="173" width="356" height="22" rx="2"/>
     <rect class="band" x="365" y="66" width="152" height="16" rx="2"/>
     <rect class="band" x="573" y="40" width="48" height="16" rx="2"/>
     <rect class="band" x="438" y="352" width="434" height="16" rx="2"/>
@@ -90,41 +90,33 @@
     <rect class="band" x="438" y="384" width="434" height="16" rx="2"/>
     <rect class="band" x="438" y="400" width="434" height="16" rx="2"/>
     <rect class="band" x="438" y="416" width="434" height="16" rx="2"/>
-    <path class="flow" d="M 450 100 V 122"/><circle class="litend" cx="450" cy="100" r="2.2"/><circle class="litend" cx="450" cy="122" r="2.2"/>
-    <path class="flow" d="M 510 262 L 578 310"/><circle class="litend" cx="510" cy="262" r="2.2"/><circle class="litend" cx="578" cy="310" r="2.2"/>
+    <path class="flow" d="M 450 100 V 133"/><circle class="litend" cx="450" cy="100" r="2.2"/><circle class="litend" cx="450" cy="133" r="2.2"/>
+    <path class="flow" d="M 510 251 L 578 310"/><circle class="litend" cx="510" cy="251" r="2.2"/><circle class="litend" cx="578" cy="310" r="2.2"/>
     <text class="corner readout" x="880" y="520" text-anchor="end">add · records in SKILL.md metadata in any directory</text>
   </g>
   <g class="step" style="animation-delay: 7s">
-    <rect class="band" x="272" y="184" width="356" height="22" rx="2"/>
+    <rect class="band" x="272" y="195" width="356" height="22" rx="2"/>
     <rect class="band" x="287" y="66" width="62" height="16" rx="2"/>
     <rect class="band" x="365" y="66" width="152" height="16" rx="2"/>
-    <rect class="band" x="30" y="400" width="366" height="16" rx="2"/>
-    <rect class="band" x="438" y="384" width="434" height="16" rx="2"/>
-    <path class="flow" d="M 450 100 V 122"/><circle class="litend" cx="450" cy="100" r="2.2"/><circle class="litend" cx="450" cy="122" r="2.2"/>
-    <path class="flow" d="M 390 262 L 322 310"/><circle class="litend" cx="390" cy="262" r="2.2"/><circle class="litend" cx="322" cy="310" r="2.2"/>
-    <path class="flow" d="M 510 262 L 578 310"/><circle class="litend" cx="510" cy="262" r="2.2"/><circle class="litend" cx="578" cy="310" r="2.2"/>
-    <text class="corner readout" x="880" y="520" text-anchor="end">check · finds each skill by skillPath / github-path</text>
-  </g>
-  <g class="step" style="animation-delay: 10.5s">
-    <rect class="band" x="272" y="206" width="356" height="22" rx="2"/>
     <rect class="band" x="537" y="40" width="34" height="16" rx="2"/>
     <rect class="band" x="573" y="40" width="48" height="16" rx="2"/>
-    <rect class="band" x="30" y="416" width="366" height="16" rx="2"/>
+    <rect class="band" x="30" y="400" width="366" height="32" rx="2"/>
+    <rect class="band" x="438" y="384" width="434" height="16" rx="2"/>
     <rect class="band" x="438" y="416" width="434" height="16" rx="2"/>
-    <path class="flow" d="M 450 100 V 122"/><circle class="litend" cx="450" cy="100" r="2.2"/><circle class="litend" cx="450" cy="122" r="2.2"/>
-    <path class="flow" d="M 390 262 L 322 310"/><circle class="litend" cx="390" cy="262" r="2.2"/><circle class="litend" cx="322" cy="310" r="2.2"/>
-    <path class="flow" d="M 510 262 L 578 310"/><circle class="litend" cx="510" cy="262" r="2.2"/><circle class="litend" cx="578" cy="310" r="2.2"/>
-    <text class="corner readout" x="880" y="520" text-anchor="end">update · refetches when upstream's hash changes</text>
+    <path class="flow" d="M 450 100 V 133"/><circle class="litend" cx="450" cy="100" r="2.2"/><circle class="litend" cx="450" cy="133" r="2.2"/>
+    <path class="flow" d="M 390 251 L 322 310"/><circle class="litend" cx="390" cy="251" r="2.2"/><circle class="litend" cx="322" cy="310" r="2.2"/>
+    <path class="flow" d="M 510 251 L 578 310"/><circle class="litend" cx="510" cy="251" r="2.2"/><circle class="litend" cx="578" cy="310" r="2.2"/>
+    <text class="corner readout" x="880" y="520" text-anchor="end">update · follows skillPath / github-path, compares hashes</text>
   </g>
-  <g class="step" style="animation-delay: 14s">
-    <rect class="band" x="272" y="228" width="356" height="22" rx="2"/>
+  <g class="step" style="animation-delay: 10.5s">
+    <rect class="band" x="272" y="217" width="356" height="22" rx="2"/>
     <rect class="band" x="30" y="416" width="366" height="16" rx="2"/>
     <rect class="band" x="438" y="416" width="434" height="16" rx="2"/>
-    <path class="flow" d="M 390 262 L 322 310"/><circle class="litend" cx="390" cy="262" r="2.2"/><circle class="litend" cx="322" cy="310" r="2.2"/>
-    <path class="flow" d="M 510 262 L 578 310"/><circle class="litend" cx="510" cy="262" r="2.2"/><circle class="litend" cx="578" cy="310" r="2.2"/>
+    <path class="flow" d="M 390 251 L 322 310"/><circle class="litend" cx="390" cy="251" r="2.2"/><circle class="litend" cx="322" cy="310" r="2.2"/>
+    <path class="flow" d="M 510 251 L 578 310"/><circle class="litend" cx="510" cy="251" r="2.2"/><circle class="litend" cx="578" cy="310" r="2.2"/>
     <text class="corner readout" x="880" y="520" text-anchor="end">verify · checks files against computedHash / github-tree-sha</text>
   </g>
-  <g class="step" style="animation-delay: 17.5s">
+  <g class="step" style="animation-delay: 14s">
     <rect class="litedge" x="16" y="154" width="200" height="76" rx="6"/>
     <rect class="litedge" x="684" y="154" width="200" height="76" rx="6"/>
     <rect class="litedge" x="16" y="312" width="392" height="152" rx="6"/>
@@ -143,11 +135,10 @@
   <text class="muted" x="34" y="206">vercel-labs/skills</text>
   <text class="h mono" x="702" y="184">gh skill</text>
   <text class="muted" x="702" y="206">cli/cli</text>
-  <text class="h mono" x="280" y="152">skolar</text>
-  <text x="280" y="177"><tspan class="cmd mono">add</tspan><tspan x="344">records in SKILL.md, or an existing lockfile</tspan></text>
-  <text x="280" y="199"><tspan class="cmd mono">check</tspan><tspan x="344">locates each skill by its recorded path</tspan></text>
-  <text x="280" y="221"><tspan class="cmd mono">update</tspan><tspan x="344">refetches when the hash differs</tspan></text>
-  <text x="280" y="243"><tspan class="cmd mono">verify</tspan><tspan x="344">checks files on disk against the record</tspan></text>
+  <text class="h mono" x="280" y="163">skolar</text>
+  <text x="280" y="188"><tspan class="cmd mono">add</tspan><tspan x="344">records in SKILL.md, or an existing lockfile</tspan></text>
+  <text x="280" y="210"><tspan class="cmd mono">update</tspan><tspan x="344">finds each skill by its recorded path</tspan></text>
+  <text x="280" y="232"><tspan class="cmd mono">verify</tspan><tspan x="344">checks files on disk against the record</tspan></text>
   <text class="h mono" x="34" y="340">skills-lock.json</text><text class="mono muted" x="390" y="340" text-anchor="end">.agents/skills</text>
   <text class="mono" x="34" y="364">"root-skill": {</text>
   <text class="mono" x="34" y="380">  "source": "h3y6e/skills",</text>

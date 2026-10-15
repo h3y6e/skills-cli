@@ -81,7 +81,7 @@ func verifyLockedOnline(name string, entry lock.Entry, installed string, cloneFn
 		return VerifyUnverifiable, nil, err.Error()
 	}
 
-	up, err := resolveUpstream(name, entry, upstream)
+	up, err := resolveUpstream(name, recordedDir(entry), upstream)
 	if err != nil {
 		return VerifyUnverifiable, nil, err.Error()
 	}

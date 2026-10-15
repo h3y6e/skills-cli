@@ -193,31 +193,57 @@ func subtree(files map[string]string, prefix string) map[string]string {
 	return out
 }
 
-func assertAllUpToDate(t *testing.T, dest string) {
+type updateResult struct {
+	SkillName    string `json:"skillName"`
+	Status       string `json:"status"`
+	Path         string `json:"path"`
+	PreviousPath string `json:"previousPath"`
+	Reason       string `json:"reason"`
+}
+
+// planUpdate returns what skolar update would do to the installed skills in dest.
+func planUpdate(t *testing.T, dest string) []updateResult {
 	t.Helper()
 
 	var record struct {
-		Results []struct {
-			SkillName string `json:"skillName"`
-			Status    string `json:"status"`
-			Reason    string `json:"reason"`
-		} `json:"results"`
+		Results []updateResult `json:"results"`
 	}
-	if err := json.Unmarshal([]byte(run(t, filepath.Dir(filepath.Dir(dest)), skolar, "check", "-d", dest, "--json")), &record); err != nil {
+	if err := json.Unmarshal([]byte(run(t, filepath.Dir(filepath.Dir(dest)), skolar, "update", "--dry-run", "-d", dest, "--json")), &record); err != nil {
 		t.Fatal(err)
 	}
 
-	var checked []string
-	for _, r := range record.Results {
-		checked = append(checked, r.SkillName)
+	installed := slices.DeleteFunc(record.Results, func(r updateResult) bool { return r.Status == "new" })
+
+	var planned []string
+	for _, r := range installed {
+		planned = append(planned, r.SkillName)
 	}
 
-	if installed := skillNames(t, dest); !slices.Equal(slices.Sorted(slices.Values(checked)), installed) {
-		t.Fatalf("skolar check covered %v, want every installed skill %v", checked, installed)
+	if names := skillNames(t, dest); !slices.Equal(slices.Sorted(slices.Values(planned)), names) {
+		t.Fatalf("skolar update covered %v, want every installed skill %v", planned, names)
 	}
 
-	for _, r := range record.Results {
+	return installed
+}
+
+func assertAllUpToDate(t *testing.T, dest string) {
+	t.Helper()
+
+	for _, r := range planUpdate(t, dest) {
 		if r.Status != "up-to-date" {
+			t.Errorf("%s: %s %s", r.SkillName, r.Status, r.Reason)
+		}
+	}
+}
+
+func assertMoved(t *testing.T, dest, name, from, to string) {
+	t.Helper()
+
+	for _, r := range planUpdate(t, dest) {
+		switch {
+		case r.SkillName == name && (r.Status != "moved" || r.PreviousPath != from || r.Path != to):
+			t.Errorf("%s: %s from %q to %q, want moved from %q to %q", name, r.Status, r.PreviousPath, r.Path, from, to)
+		case r.SkillName != name && r.Status != "up-to-date":
 			t.Errorf("%s: %s %s", r.SkillName, r.Status, r.Reason)
 		}
 	}
@@ -252,16 +278,22 @@ func TestVercelFormat(t *testing.T) {
 		assertAllUpToDate(t, filepath.Join(project, ".agents", "skills"))
 	})
 
-	t.Run("when a skillPath no longer exists upstream, skolar follows the skill by its unique name", func(t *testing.T) {
+	t.Run("when a skillPath no longer exists upstream, skolar reports the move and update restores the lock entry vercel writes", func(t *testing.T) {
 		// Arrange
 		project := t.TempDir()
 		vercelAdd(t, project)
+		before := snapshot(t, project)
 		editLock(t, project, func(entries map[string]map[string]any) {
 			entries["alpha"]["skillPath"] = "moved/alpha/SKILL.md"
 		})
+		dest := filepath.Join(project, ".agents", "skills")
 
-		// Act & Assert
-		assertAllUpToDate(t, filepath.Join(project, ".agents", "skills"))
+		// Act
+		assertMoved(t, dest, "alpha", "moved/alpha", "skills/alpha")
+		run(t, project, skolar, "update", "-y")
+
+		// Assert
+		assertSameFiles(t, before, snapshot(t, project))
 	})
 
 	t.Run("when skolar installs every skill vercel installs into a lockfile project, files and lock entries match and vercel update changes nothing", func(t *testing.T) {
@@ -367,6 +399,25 @@ func TestGhFormat(t *testing.T) {
 
 		// Act
 		assertAllUpToDate(t, dest)
+		run(t, filepath.Dir(dest), skolar, "update", "-d", dest, "-y")
+
+		// Assert
+		assertSameFiles(t, before, snapshot(t, dest))
+	})
+
+	t.Run("when a github-path no longer exists upstream, skolar reports the move and update restores the files gh installs", func(t *testing.T) {
+		// Arrange
+		dest := filepath.Join(t.TempDir(), "skills")
+		ghInstall(t, dest, "alpha")
+		before := snapshot(t, dest)
+		skillMD := filepath.Join(dest, "alpha", "SKILL.md")
+
+		if err := os.WriteFile(skillMD, []byte(strings.Replace(before["alpha/SKILL.md"], "github-path: skills/alpha", "github-path: moved/alpha", 1)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Act
+		assertMoved(t, dest, "alpha", "moved/alpha", "skills/alpha")
 		run(t, filepath.Dir(dest), skolar, "update", "-d", dest, "-y")
 
 		// Assert
