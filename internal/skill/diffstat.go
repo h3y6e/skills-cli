@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 // Stat counts the lines added and deleted, and the files changed, by
@@ -47,34 +48,42 @@ func DiffStat(c UpdateCandidate, dir string) (Stat, error) {
 		}
 	}
 
+	changed := changedFiles(want, got)
+
 	var stat Stat
 
-	for _, p := range changedFiles(want, got) {
+	for _, p := range changed {
 		added, deleted := lineDiff(got[p], want[p])
 		stat.Added += added
 		stat.Deleted += deleted
-		stat.Files++
 	}
 
-	// Update replaces the whole directory, so links, which copies leave out,
-	// go too.
-	links, err := countLinks(dir)
-	stat.Files += links
+	// Update replaces the whole directory, so installed links go too.
+	links, err := linkPaths(dir)
+	stat.Files = len(changed)
+
+	for _, l := range links {
+		if !slices.Contains(changed, l) {
+			stat.Files++
+		}
+	}
 
 	return stat, err
 }
 
-func countLinks(dir string) (int, error) {
-	n := 0
-	err := filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+func linkPaths(dir string) ([]string, error) {
+	var links []string
+
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err == nil && d.Type()&fs.ModeSymlink != 0 {
-			n++
+			rel, _ := filepath.Rel(dir, p)
+			links = append(links, filepath.ToSlash(rel))
 		}
 
 		return err
 	})
 
-	return n, err
+	return links, err
 }
 
 // lineDiff counts the lines a minimal line diff from a to b adds and

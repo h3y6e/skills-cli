@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 // style is how an install lays out the files of a skill.
@@ -43,7 +44,13 @@ func walkSkill(src fs.FS, s style, dir func(path string) error, file func(skillF
 		return errors.New("skill: not a directory")
 	}
 
-	return fs.WalkDir(src, ".", func(rel string, d fs.DirEntry, err error) error {
+	return walkTree(src, ".", s, []fs.FileInfo{info}, dir, file)
+}
+
+// walkTree walks root in src. followed holds the directories entered so far
+// through links, so that a link back into one of them ends the walk.
+func walkTree(src fs.FS, root string, s style, followed []fs.FileInfo, dir func(string) error, file func(skillFile) error) error {
+	return fs.WalkDir(src, root, func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -62,6 +69,17 @@ func walkSkill(src fs.FS, s style, dir func(path string) error, file func(skillF
 
 		if d.IsDir() {
 			return dir(rel)
+		}
+
+		// vercel-labs/skills copies a link to a directory as the directory.
+		if s == vercelStyle && d.Type()&fs.ModeSymlink != 0 {
+			if info, err := fs.Stat(src, rel); err == nil && info.IsDir() {
+				if slices.ContainsFunc(followed, func(f fs.FileInfo) bool { return os.SameFile(f, info) }) {
+					return nil
+				}
+
+				return walkTree(src, rel, s, append(slices.Clip(followed), info), dir, file)
+			}
 		}
 
 		f, ok, err := readSkillFile(src, rel, d, s)

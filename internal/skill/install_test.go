@@ -336,6 +336,44 @@ func TestInstallSymlinks(t *testing.T) {
 			t.Errorf("readme.md = %q, %v, want the README content", data, err)
 		}
 	})
+
+	t.Run("when a lockfile skill links to a directory in the repository, the install holds the directory and stops at a link back into it", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		srcDir := t.TempDir()
+		testutil.WriteFiles(t, srcDir, map[string]string{"skills/s/SKILL.md": "---\nname: s\ndescription: d\n---\n", "shared/ref.md": "ref\n"})
+
+		for target, link := range map[string]string{"../../shared": "skills/s/refs", "../skills/s": "shared/back"} {
+			if err := os.Symlink(target, filepath.Join(srcDir, filepath.FromSlash(link))); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		root, err := os.OpenRoot(srcDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		t.Cleanup(func() { _ = root.Close() })
+
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
+
+		discovered, err := skill.DiscoverSkills(root.FS())
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Act
+		err = skill.InstallSkills(discovered, skill.SourceRef{CanonicalSource: "o/r", SourceType: "github"}, lock.NewLayout(skillsDir))
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := listFiles(t, filepath.Join(skillsDir, "s")); !slices.Equal(got, []string{"SKILL.md", "refs/ref.md"}) {
+			t.Errorf("installed files = %v, want [SKILL.md refs/ref.md]", got)
+		}
+	})
 }
 
 func listFiles(t *testing.T, dir string) []string {

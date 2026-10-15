@@ -103,4 +103,29 @@ func TestDiffStat(t *testing.T) {
 			t.Errorf("DiffStat() = %+v, %v, want +3 -2 in 2 files", got, err)
 		}
 	})
+
+	t.Run("when an installed link gives way to an upstream file at its path, that path counts once", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		dir := t.TempDir()
+		testutil.WriteFiles(t, dir, map[string]string{
+			"installed/SKILL.md": "# A\n",
+			"upstream/SKILL.md":  "# A\n",
+			"upstream/link.md":   "# A\n",
+		})
+
+		if err := os.Symlink("SKILL.md", filepath.Join(dir, "installed", "link.md")); err != nil {
+			t.Fatal(err)
+		}
+
+		c := skill.UpdateCandidate{Status: skill.StatusUpdateAvailable, Upstream: os.DirFS(filepath.Join(dir, "upstream"))}
+
+		// Act
+		got, err := skill.DiffStat(c, filepath.Join(dir, "installed"))
+
+		// Assert
+		if err != nil || got.Files != 1 {
+			t.Errorf("DiffStat() = %+v, %v, want 1 file", got, err)
+		}
+	})
 }
