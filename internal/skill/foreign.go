@@ -285,24 +285,20 @@ func resolveRepoCandidates(group []InstalledSkill, fns UpstreamFuncs) ([]UpdateC
 			candidate.Status = StatusUpdateAvailable
 		}
 
-		stagedDir := filepath.Join(cloneDir, filepath.FromSlash(s.Meta.Path))
+		candidate.StagedDir = filepath.Join(cloneDir, filepath.FromSlash(s.Meta.Path))
 		if candidate.Status == StatusUpdateAvailable {
-			stagedDir, err = copyToStaging(cloneDir, stagedDir)
-			if err != nil {
-				return nil, fmt.Errorf("stage %q: %w", s.Name, err)
-			}
-
-			if err := injectStagedMetadata(stagedDir, SourceMetadata{
+			candidate.StagedDir, err = stageWithMetadata(cloneDir, candidate.StagedDir, SourceMetadata{
 				RepoURL: repoURL,
 				Ref:     resolved.Full,
 				TreeSHA: treeSHA,
 				Path:    s.Meta.Path,
-			}); err != nil {
-				return nil, fmt.Errorf("stage metadata for %q: %w", s.Name, err)
+			})
+			if err != nil {
+				candidate.Status = StatusCheckFailed
+				candidate.Reason = err.Error()
 			}
 		}
 
-		candidate.StagedDir = stagedDir
 		candidates = append(candidates, candidate)
 	}
 
@@ -320,6 +316,19 @@ func pinnedCandidate(s InstalledSkill) UpdateCandidate {
 		Reason:    s.Meta.Pinned,
 		Foreign:   true,
 	}
+}
+
+func stageWithMetadata(cloneDir, srcDir string, meta SourceMetadata) (string, error) {
+	stagedDir, err := copyToStaging(cloneDir, srcDir)
+	if err != nil {
+		return "", fmt.Errorf("stage: %w", err)
+	}
+
+	if err := injectStagedMetadata(stagedDir, meta); err != nil {
+		return "", fmt.Errorf("stage metadata: %w", err)
+	}
+
+	return stagedDir, nil
 }
 
 // injectStagedMetadata merges gh source metadata into the staged SKILL.md so
