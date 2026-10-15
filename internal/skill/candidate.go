@@ -358,7 +358,12 @@ func NewCloneFunc(ctx context.Context, prefix string) (CloneFunc, func()) {
 			return "", fmt.Errorf("create temp dir: %w", err)
 		}
 
-		if err := git.ShallowClone(ctx, ref.CloneURL, ref.Ref, tmpDir); err != nil {
+		resolved, err := git.ResolveDefault(ctx, ref.CloneURL, ref.Ref)
+		if err == nil {
+			_, err = git.Checkout(ctx, ref.CloneURL, resolved, tmpDir)
+		}
+
+		if err != nil {
 			os.RemoveAll(tmpDir)
 			return "", err
 		}

@@ -38,41 +38,6 @@ func runGit(ctx context.Context, args ...string) ([]byte, error) {
 	return out, nil
 }
 
-// ShallowClone clones cloneURL into destDir with depth=1 and optionally checks
-// out the requested ref.
-func ShallowClone(ctx context.Context, cloneURL, ref, destDir string) error {
-	if ref == "" {
-		return shallowCloneDefault(ctx, cloneURL, destDir)
-	}
-
-	return shallowCloneRef(ctx, cloneURL, ref, destDir)
-}
-
-func shallowCloneDefault(ctx context.Context, cloneURL, destDir string) error {
-	_, err := runGit(ctx, "clone", "--depth", "1", "--", cloneURL, destDir)
-	return err
-}
-
-func shallowCloneRef(ctx context.Context, cloneURL, ref, destDir string) error {
-	if _, err := runGit(ctx, "init", destDir); err != nil {
-		return err
-	}
-
-	if _, err := runGit(ctx, "-C", destDir, "remote", "add", "--", "origin", cloneURL); err != nil {
-		return err
-	}
-
-	if _, err := runGit(ctx, "-C", destDir, "fetch", "--depth", "1", "--", "origin", ref); err != nil {
-		return err
-	}
-
-	if _, err := runGit(ctx, "-C", destDir, "checkout", "--detach", "FETCH_HEAD"); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // NumStat counts the lines added and deleted from pathA to pathB, with
 // `git diff --no-index --numstat`. Binary files add no lines.
 func NumStat(ctx context.Context, pathA, pathB string) (added, deleted int, err error) {

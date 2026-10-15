@@ -523,10 +523,9 @@ func TestCollectUpdateCandidates(t *testing.T) {
 		entries := map[string]lock.Entry{"a": {Source: "o/r", SourceType: "github", SkillPath: "skills/a/SKILL.md"}}
 		installed := []skill.InstalledSkill{{Name: "b", Meta: skill.SourceMetadata{RepoURL: "https://github.com/o/r", TreeSHA: "t", Path: "skills/b"}}}
 		fns := skill.UpstreamFuncs{
-			FetchLatest: func(string) (string, git.ResolvedRef, error) {
-				return src, git.ResolvedRef{Full: "refs/heads/main"}, nil
+			FetchLatest: func(string) (git.Snapshot, error) {
+				return snapshotOf(t, src, "t"), nil
 			},
-			TreeSHA: func(_, _ string) (string, error) { return "t", nil },
 		}
 
 		// Act

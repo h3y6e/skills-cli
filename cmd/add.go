@@ -55,16 +55,14 @@ func runAdd(cmd *cobra.Command, source string, opts addOptions) error {
 
 	// gh skill format resolves the ref like gh skill install: explicit ref,
 	// else latest release, else default branch.
-	cloneRef := ref.Ref
-
-	var resolved git.ResolvedRef
+	resolve := git.ResolveDefault
 	if tracked {
-		resolved, err = ResolveRef(ctx, ref.CloneURL, ref.Ref)
-		if err != nil {
-			return fmt.Errorf("resolve ref for %s: %w", ref.CanonicalSource, err)
-		}
+		resolve = git.ResolveLatest
+	}
 
-		cloneRef = resolved.Full
+	resolved, err := resolve(ctx, ref.CloneURL, ref.Ref)
+	if err != nil {
+		return fmt.Errorf("resolve ref for %s: %w", ref.CanonicalSource, err)
 	}
 
 	tmpDir, err := os.MkdirTemp("", "skolar-add-*")
@@ -73,11 +71,12 @@ func runAdd(cmd *cobra.Command, source string, opts addOptions) error {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	if err := ShallowClone(ctx, ref.CloneURL, cloneRef, tmpDir); err != nil {
-		return fmt.Errorf("clone %s: %w", ref.CanonicalSource, err)
+	snap, err := git.Checkout(ctx, ref.CloneURL, resolved, tmpDir)
+	if err != nil {
+		return fmt.Errorf("fetch %s: %w", ref.CanonicalSource, err)
 	}
 
-	discovered, err := skill.DiscoverSkills(tmpDir)
+	discovered, err := skill.DiscoverSkills(snap.Dir)
 	if err != nil {
 		return fmt.Errorf("discover skills: %w", err)
 	}
@@ -100,7 +99,7 @@ func runAdd(cmd *cobra.Command, source string, opts addOptions) error {
 	}
 
 	if tracked {
-		return skill.InstallTrackedSkills(ctx, discovered, tmpDir, ref, resolved, layout)
+		return skill.InstallTrackedSkills(discovered, snap, ref, layout)
 	}
 
 	return skill.InstallSkills(discovered, ref, layout)

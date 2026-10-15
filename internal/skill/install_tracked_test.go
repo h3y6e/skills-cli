@@ -22,15 +22,58 @@ func initGitRepo(t *testing.T, files map[string]string) string {
 	return dir
 }
 
-func installTracked(t *testing.T, repoRoot string, ref skill.SourceRef, resolved git.ResolvedRef, skillsDir string) []skill.DiscoveredSkill {
+func TestMain(m *testing.M) { testutil.Main(m) }
+
+// checkoutRepo checks out the default branch of the repository at dir.
+func checkoutRepo(t *testing.T, dir string) git.Snapshot {
 	t.Helper()
 
-	discovered, err := skill.DiscoverSkills(repoRoot)
+	ref, err := git.ResolveDefault(t.Context(), dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	snap, err := git.Checkout(t.Context(), dir, ref, filepath.Join(t.TempDir(), "repo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return snap
+}
+
+// snapshotOf presents dir as a checkout of refs/tags/v2.0.0 whose every
+// directory has the tree SHA tree.
+func snapshotOf(t *testing.T, dir, tree string) git.Snapshot {
+	t.Helper()
+
+	trees := map[string]string{}
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err == nil && d.IsDir() {
+			rel, _ := filepath.Rel(dir, path)
+			trees[filepath.ToSlash(rel)] = tree
+		}
+
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return git.Snapshot{Dir: dir, Ref: git.ResolvedRef{Full: "refs/tags/v2.0.0"}, Trees: trees}
+}
+
+func installTracked(t *testing.T, repo string, ref skill.SourceRef, resolved git.ResolvedRef, skillsDir string) []skill.DiscoveredSkill {
+	t.Helper()
+
+	snap := checkoutRepo(t, repo)
+	snap.Ref = resolved
+
+	discovered, err := skill.DiscoverSkills(snap.Dir)
 	if err != nil {
 		t.Fatalf("DiscoverSkills() error = %v", err)
 	}
 
-	if err := skill.InstallTrackedSkills(t.Context(), discovered, repoRoot, ref, resolved, lock.NewLayout(skillsDir)); err != nil {
+	if err := skill.InstallTrackedSkills(discovered, snap, ref, lock.NewLayout(skillsDir)); err != nil {
 		t.Fatalf("InstallTrackedSkills() error = %v", err)
 	}
 
@@ -140,7 +183,7 @@ func TestInstallTrackedSkills(t *testing.T) {
 		}
 
 		// Act
-		err = skill.InstallTrackedSkills(t.Context(), discovered, repoRoot, ref, resolved, lock.NewLayout(skillsDir))
+		err = skill.InstallTrackedSkills(discovered, git.Snapshot{Dir: repoRoot, Ref: resolved}, ref, lock.NewLayout(skillsDir))
 
 		// Assert
 		if err == nil {
@@ -181,10 +224,5 @@ func TestInstallTrackedSkills(t *testing.T) {
 func gitTreeSHA(t *testing.T, repoDir, path string) string {
 	t.Helper()
 
-	sha, err := git.TreeSHA(t.Context(), repoDir, path)
-	if err != nil {
-		t.Fatalf("TreeSHA() error = %v", err)
-	}
-
-	return sha
+	return strings.TrimSpace(testutil.Git(t, repoDir, "rev-parse", "HEAD:"+path))
 }

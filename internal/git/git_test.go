@@ -7,147 +7,223 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/h3y6e/skolar/internal/git"
 	"github.com/h3y6e/skolar/internal/testutil"
 )
 
-func TestMain(m *testing.M) {
-	for _, name := range []string{"GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM"} {
-		if err := os.Setenv(name, "/dev/null"); err != nil {
-			panic(err)
-		}
-	}
+func TestMain(m *testing.M) { testutil.Main(m) }
 
-	os.Exit(m.Run())
-}
-
-func initBareRepoWithRefs(t *testing.T) string {
+func checkout(t *testing.T, url, ref string) (git.Snapshot, error) {
 	t.Helper()
 
-	work := testutil.InitWorkRepo(t)
-	skillFile := "skills/my-skill/SKILL.md"
-	testutil.Commit(t, work, "main", map[string]string{skillFile: "# Main\n"})
-	testutil.Git(t, work, "tag", "v1.0.0")
+	resolved, err := git.ResolveDefault(t.Context(), url, ref)
+	if err != nil {
+		return git.Snapshot{}, err
+	}
 
-	testutil.Git(t, work, "checkout", "-b", "feature/install")
-	testutil.Commit(t, work, "feature", map[string]string{skillFile: "# Feature\n"})
-	testutil.Git(t, work, "checkout", "main")
-
-	return testutil.BareClone(t, work)
+	return git.Checkout(t.Context(), url, resolved, filepath.Join(t.TempDir(), "dest"))
 }
 
-func TestShallowClone(t *testing.T) {
+func readSkill(t *testing.T, s git.Snapshot) string {
+	t.Helper()
+
+	data, err := os.ReadFile(filepath.Join(s.Dir, "skills", "my-skill", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return string(data)
+}
+
+func TestCheckout(t *testing.T) {
 	t.Parallel()
 
-	bareRepo := testutil.BareRepo(t, map[string]string{
-		"skills/my-skill/SKILL.md": "# My Skill\n",
-		"README.md":                "hello\n",
-	})
-
-	t.Run("clones repo to dest", func(t *testing.T) {
+	t.Run("when no ref is given, checkout writes the default branch without .git", func(t *testing.T) {
 		t.Parallel()
-		dest := filepath.Join(t.TempDir(), "clone-dest")
 
-		err := git.ShallowClone(t.Context(), bareRepo, "", dest)
+		// Arrange
+		repo := initTaggedRepo(t)
+
+		// Act
+		s, err := checkout(t, repo, "")
+		// Assert
 		if err != nil {
-			t.Fatalf("ShallowClone() error = %v", err)
+			t.Fatal(err)
 		}
 
-		skillPath := filepath.Join(dest, "skills", "my-skill", "SKILL.md")
+		if got := readSkill(t, s); got != "# v2.0.0-rc.1\n" {
+			t.Errorf("SKILL.md = %q, want the main branch content", got)
+		}
 
-		data, err := os.ReadFile(skillPath)
+		if _, err := os.Stat(filepath.Join(s.Dir, ".git")); !os.IsNotExist(err) {
+			t.Errorf("stat .git = %v, want not exist", err)
+		}
+	})
+
+	t.Run("when a branch, a lightweight tag or an annotated tag is given, checkout writes its content", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		repo := initTaggedRepo(t)
+
+		for ref, want := range map[string]string{"feature/install": "# Feature\n", "v1.0.0": "# v1.0.0\n", "annotated": "# v1.9.0\n"} {
+			// Act
+			s, err := checkout(t, repo, ref)
+			// Assert
+			if err != nil {
+				t.Fatalf("%s: %v", ref, err)
+			}
+
+			if got := readSkill(t, s); got != want {
+				t.Errorf("%s: SKILL.md = %q, want %q", ref, got, want)
+			}
+		}
+	})
+
+	t.Run("when a name matches both a branch and a tag, checkout writes the branch", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		repo := initTaggedRepo(t)
+
+		// Act
+		s, err := checkout(t, repo, "collide")
+		// Assert
 		if err != nil {
-			t.Fatalf("expected skill file to exist: %v", err)
+			t.Fatal(err)
 		}
 
-		if string(data) != "# My Skill\n" {
-			t.Errorf("skill file content = %q, want %q", string(data), "# My Skill\n")
-		}
-	})
-
-	t.Run("is shallow (depth 1)", func(t *testing.T) {
-		t.Parallel()
-		dest := filepath.Join(t.TempDir(), "shallow-check")
-
-		if err := git.ShallowClone(t.Context(), bareRepo, "", dest); err != nil {
-			t.Fatalf("ShallowClone() error = %v", err)
-		}
-
-		out := testutil.Git(t, dest, "rev-list", "--count", "HEAD")
-
-		count := strings.TrimSpace(out)
-		if count != "1" {
-			t.Errorf("expected 1 commit in shallow clone, got %s", count)
+		if s.Ref.Full != "refs/heads/collide" || readSkill(t, s) != "# Feature\n" {
+			t.Errorf("ref %q, SKILL.md %q, want the collide branch", s.Ref.Full, readSkill(t, s))
 		}
 	})
 
-	t.Run("returns error for invalid URL", func(t *testing.T) {
+	t.Run("when the ref is a commit SHA, checkout writes that commit", func(t *testing.T) {
 		t.Parallel()
-		dest := filepath.Join(t.TempDir(), "bad-clone")
 
-		err := git.ShallowClone(t.Context(), "/nonexistent/repo", "", dest)
+		// Arrange
+		repo := initTaggedRepo(t)
+		sha := strings.TrimSpace(testutil.Git(t, strings.TrimPrefix(repo, "file://"), "rev-parse", "v1.0.0"))
+
+		// Act
+		s, err := checkout(t, repo, sha)
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := readSkill(t, s); got != "# v1.0.0\n" {
+			t.Errorf("SKILL.md = %q, want the v1.0.0 content", got)
+		}
+	})
+
+	t.Run("when a commit was fetched before, checkout writes it without the remote", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		repo := initTaggedRepo(t)
+
+		ref, err := git.ResolveDefault(t.Context(), repo, "v1.0.0")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := git.Checkout(t.Context(), repo, ref, filepath.Join(t.TempDir(), "first")); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.RemoveAll(strings.TrimPrefix(repo, "file://")); err != nil {
+			t.Fatal(err)
+		}
+
+		// Act
+		s, err := git.Checkout(t.Context(), repo, ref, filepath.Join(t.TempDir(), "second"))
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := readSkill(t, s); got != "# v1.0.0\n" {
+			t.Errorf("SKILL.md = %q, want the v1.0.0 content", got)
+		}
+	})
+
+	t.Run("when the same remote is checked out concurrently, every checkout succeeds", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		repo := initTaggedRepo(t)
+		refs := []string{"v1.0.0", "v1.9.0", "feature/install", "main", "collide", "v1.0.0"}
+		errs := make([]error, len(refs))
+
+		// Act
+		var wg sync.WaitGroup
+		for i, ref := range refs {
+			wg.Go(func() { _, errs[i] = checkout(t, repo, ref) })
+		}
+
+		wg.Wait()
+
+		// Assert
+		for i, err := range errs {
+			if err != nil {
+				t.Errorf("%s: %v", refs[i], err)
+			}
+		}
+	})
+
+	t.Run("when checked out, Trees holds the tree SHA of the root and every directory", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		repo := initTaggedRepo(t)
+		bare := strings.TrimPrefix(repo, "file://")
+
+		// Act
+		s, err := checkout(t, repo, "v1.0.0")
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for path, rev := range map[string]string{".": "v1.0.0^{tree}", "skills/my-skill": "v1.0.0:skills/my-skill"} {
+			if want := strings.TrimSpace(testutil.Git(t, bare, "rev-parse", rev)); s.Trees[path] != want {
+				t.Errorf("Trees[%q] = %q, want %q", path, s.Trees[path], want)
+			}
+		}
+	})
+
+	t.Run("when the remote does not exist, checkout fails", func(t *testing.T) {
+		t.Parallel()
+
+		// Act
+		_, err := checkout(t, "/nonexistent/repo", "")
+
+		// Assert
 		if err == nil {
-			t.Fatal("expected error for invalid clone URL, got nil")
+			t.Fatal("checkout succeeded without a remote")
 		}
 	})
 
-	t.Run("respects context cancellation", func(t *testing.T) {
+	t.Run("when the context is cancelled, checkout fails", func(t *testing.T) {
 		t.Parallel()
-		dest := filepath.Join(t.TempDir(), "cancelled")
+
+		// Arrange
+		repo := initTaggedRepo(t)
+		ref := git.ResolvedRef{Full: "refs/heads/main", Object: "refs/heads/main"}
 
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 
-		err := git.ShallowClone(ctx, bareRepo, "", dest)
+		// Act
+		_, err := git.Checkout(ctx, repo, ref, t.TempDir())
+
+		// Assert
 		if err == nil {
-			t.Fatal("expected error for cancelled context, got nil")
-		}
-	})
-
-	t.Run("clones requested branch ref", func(t *testing.T) {
-		t.Parallel()
-
-		bareWithRefs := initBareRepoWithRefs(t)
-		dest := filepath.Join(t.TempDir(), "branch-clone")
-
-		if err := git.ShallowClone(t.Context(), bareWithRefs, "feature/install", dest); err != nil {
-			t.Fatalf("ShallowClone() error = %v", err)
-		}
-
-		data, err := os.ReadFile(filepath.Join(dest, "skills", "my-skill", "SKILL.md"))
-		if err != nil {
-			t.Fatalf("expected cloned branch file: %v", err)
-		}
-
-		if string(data) != "# Feature\n" {
-			t.Errorf("branch clone content = %q, want %q", string(data), "# Feature\n")
-		}
-
-		out := testutil.Git(t, dest, "rev-list", "--count", "HEAD")
-		if strings.TrimSpace(out) != "1" {
-			t.Errorf("expected shallow branch clone, got %s commits", strings.TrimSpace(out))
-		}
-	})
-
-	t.Run("clones requested tag ref", func(t *testing.T) {
-		t.Parallel()
-
-		bareWithRefs := initBareRepoWithRefs(t)
-		dest := filepath.Join(t.TempDir(), "tag-clone")
-
-		if err := git.ShallowClone(t.Context(), bareWithRefs, "v1.0.0", dest); err != nil {
-			t.Fatalf("ShallowClone() error = %v", err)
-		}
-
-		data, err := os.ReadFile(filepath.Join(dest, "skills", "my-skill", "SKILL.md"))
-		if err != nil {
-			t.Fatalf("expected cloned tag file: %v", err)
-		}
-
-		if string(data) != "# Main\n" {
-			t.Errorf("tag clone content = %q, want %q", string(data), "# Main\n")
+			t.Fatal("checkout succeeded with a cancelled context")
 		}
 	})
 }
@@ -177,7 +253,7 @@ func TestNumStat(t *testing.T) {
 	})
 }
 
-func TestShallowCloneUntrustedInput(t *testing.T) {
+func TestCheckoutUntrustedInput(t *testing.T) {
 	t.Parallel()
 
 	t.Run("when the ref looks like an option, git does not run it as one", func(t *testing.T) {
@@ -187,7 +263,7 @@ func TestShallowCloneUntrustedInput(t *testing.T) {
 		marker := filepath.Join(t.TempDir(), "pwned")
 
 		// Act
-		_ = git.ShallowClone(t.Context(), bare, "--upload-pack=touch "+marker, filepath.Join(t.TempDir(), "dest"))
+		_, _ = checkout(t, bare, "--upload-pack=touch "+marker)
 
 		// Assert
 		if _, err := os.Stat(marker); !os.IsNotExist(err) {
@@ -195,7 +271,7 @@ func TestShallowCloneUntrustedInput(t *testing.T) {
 		}
 	})
 
-	t.Run("when the remote asks for credentials, cloning fails instead of prompting", func(t *testing.T) {
+	t.Run("when the remote asks for credentials, resolving fails instead of prompting", func(t *testing.T) {
 		t.Parallel()
 		// Arrange
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -205,17 +281,17 @@ func TestShallowCloneUntrustedInput(t *testing.T) {
 		t.Cleanup(srv.Close)
 
 		// Act
-		err := git.ShallowClone(t.Context(), srv.URL+"/o/r.git", "", filepath.Join(t.TempDir(), "dest"))
+		_, err := checkout(t, srv.URL+"/o/r.git", "")
 
 		// Assert
 		if err == nil || !strings.Contains(err.Error(), "terminal prompts disabled") {
-			t.Errorf("ShallowClone() error = %v, want terminal prompts disabled", err)
+			t.Errorf("checkout error = %v, want terminal prompts disabled", err)
 		}
 	})
 }
 
-func TestShallowCloneIgnoresAskpass(t *testing.T) {
-	t.Run("when an askpass program is configured, cloning fails without running it", func(t *testing.T) {
+func TestCheckoutIgnoresAskpass(t *testing.T) {
+	t.Run("when an askpass program is configured, resolving fails without running it", func(t *testing.T) {
 		// Arrange
 		marker := filepath.Join(t.TempDir(), "asked")
 
@@ -233,11 +309,11 @@ func TestShallowCloneIgnoresAskpass(t *testing.T) {
 		t.Cleanup(srv.Close)
 
 		// Act
-		err := git.ShallowClone(t.Context(), srv.URL+"/o/r.git", "", filepath.Join(t.TempDir(), "dest"))
+		_, err := checkout(t, srv.URL+"/o/r.git", "")
 
 		// Assert
 		if err == nil {
-			t.Fatal("ShallowClone() succeeded against a remote that rejects every request")
+			t.Fatal("checkout succeeded against a remote that rejects every request")
 		}
 
 		if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {

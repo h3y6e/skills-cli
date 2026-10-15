@@ -8,6 +8,32 @@ import (
 	"testing"
 )
 
+// Main runs a package's tests with git isolated from the user's config and
+// skolar's cache from the user's.
+func Main(m *testing.M) {
+	home, err := os.MkdirTemp("", "skolar-test-home-*")
+	if err != nil {
+		panic(err)
+	}
+
+	for name, value := range map[string]string{
+		"HOME":              home,
+		"XDG_CACHE_HOME":    filepath.Join(home, ".cache"),
+		"GIT_CONFIG_GLOBAL": os.DevNull,
+		"GIT_CONFIG_SYSTEM": os.DevNull,
+	} {
+		if err := os.Setenv(name, value); err != nil {
+			panic(err)
+		}
+	}
+
+	code := m.Run()
+
+	_ = os.RemoveAll(home)
+
+	os.Exit(code)
+}
+
 // Git runs git in dir, isolated from the user and system config, and
 // returns its output.
 func Git(t *testing.T, dir string, args ...string) string {

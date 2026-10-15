@@ -125,16 +125,13 @@ func FilterInstalledBySource(installed []InstalledSkill, source string) ([]Insta
 // UpstreamFuncs groups the git operations used to probe upstream
 // repositories. Replaceable in tests.
 type UpstreamFuncs struct {
-	// FetchLatest resolves the latest ref of repoURL (gh skill semantics:
-	// latest release, then default branch) and clones it into a new directory
-	// whose parent is free for staging, returning the clone path and the
-	// resolved ref.
-	FetchLatest func(repoURL string) (cloneDir string, ref git.ResolvedRef, err error)
-	// FetchRef clones repoURL at ref into a new directory whose parent is
+	// FetchLatest checks out the latest ref of repoURL (gh skill semantics:
+	// latest release, then default branch) into a new directory whose parent
+	// is free for staging.
+	FetchLatest func(repoURL string) (git.Snapshot, error)
+	// FetchRef checks out repoURL at ref into a new directory whose parent is
 	// free for staging.
-	FetchRef func(repoURL, ref string) (cloneDir string, err error)
-	// TreeSHA returns the git tree SHA of path within a repository directory.
-	TreeSHA func(repoDir, path string) (string, error)
+	FetchRef func(repoURL, ref string) (git.Snapshot, error)
 }
 
 // NewUpstreamFuncs returns the production UpstreamFuncs along with a cleanup
@@ -159,34 +156,27 @@ func NewUpstreamFuncs(ctx context.Context, tmpPrefix string) (UpstreamFuncs, fun
 		return dir, nil
 	}
 
+	checkout := func(repoURL string, resolved git.ResolvedRef, err error) (git.Snapshot, error) {
+		if err != nil {
+			return git.Snapshot{}, err
+		}
+
+		tmpDir, err := tempDir()
+		if err != nil {
+			return git.Snapshot{}, err
+		}
+
+		return git.Checkout(ctx, repoURL, resolved, filepath.Join(tmpDir, "repo"))
+	}
+
 	fns := UpstreamFuncs{
-		FetchLatest: func(repoURL string) (string, git.ResolvedRef, error) {
-			resolved, err := git.ResolveRef(ctx, repoURL, "")
-			if err != nil {
-				return "", git.ResolvedRef{}, err
-			}
-
-			tmpDir, err := tempDir()
-			if err != nil {
-				return "", git.ResolvedRef{}, err
-			}
-
-			cloneDir := filepath.Join(tmpDir, "repo")
-
-			return cloneDir, resolved, git.ShallowClone(ctx, repoURL, resolved.Full, cloneDir)
+		FetchLatest: func(repoURL string) (git.Snapshot, error) {
+			resolved, err := git.ResolveLatest(ctx, repoURL, "")
+			return checkout(repoURL, resolved, err)
 		},
-		FetchRef: func(repoURL, ref string) (string, error) {
-			tmpDir, err := tempDir()
-			if err != nil {
-				return "", err
-			}
-
-			cloneDir := filepath.Join(tmpDir, "repo")
-
-			return cloneDir, git.ShallowClone(ctx, repoURL, ref, cloneDir)
-		},
-		TreeSHA: func(repoDir, path string) (string, error) {
-			return git.TreeSHA(ctx, repoDir, path)
+		FetchRef: func(repoURL, ref string) (git.Snapshot, error) {
+			resolved, err := git.ResolveDefault(ctx, repoURL, ref)
+			return checkout(repoURL, resolved, err)
 		},
 	}
 
@@ -245,7 +235,7 @@ func failedCandidate(s InstalledSkill, reason string) UpdateCandidate {
 func resolveRepoCandidates(group []InstalledSkill, fns UpstreamFuncs) []UpdateCandidate {
 	repoURL := group[0].Meta.RepoURL
 
-	cloneDir, resolved, upstream, err := fetchRepo(repoURL, fns)
+	snap, upstream, err := fetchRepo(repoURL, fns)
 	if err != nil {
 		candidates := make([]UpdateCandidate, 0, len(group))
 		for _, s := range group {
@@ -258,16 +248,16 @@ func resolveRepoCandidates(group []InstalledSkill, fns UpstreamFuncs) []UpdateCa
 	candidates := make([]UpdateCandidate, 0, len(group))
 	for _, s := range group {
 		candidate := trackedCandidate(s)
-		candidate.Ref = resolved.Full
+		candidate.Ref = snap.Ref.Full
 
-		up, err := resolveTrackedUpstream(s, cloneDir, upstream)
+		up, err := resolveTrackedUpstream(s, snap.Dir, upstream)
 		switch {
 		case errors.Is(err, errRemoved):
 			candidate.Status, candidate.PreviousPath = StatusRemoved, s.Meta.Path
 		case err != nil:
 			candidate.Status, candidate.Reason = StatusCheckFailed, err.Error()
 		default:
-			candidate = resolveTracked(candidate, s, up, cloneDir, resolved, fns)
+			candidate = resolveTracked(candidate, s, up, snap)
 		}
 
 		candidates = append(candidates, candidate)
@@ -289,32 +279,30 @@ func resolveTrackedUpstream(s InstalledSkill, cloneDir string, upstream []Discov
 	return resolveUpstream(s.Name, s.Meta.Path, upstream)
 }
 
-func fetchRepo(repoURL string, fns UpstreamFuncs) (string, git.ResolvedRef, []DiscoveredSkill, error) {
+func fetchRepo(repoURL string, fns UpstreamFuncs) (git.Snapshot, []DiscoveredSkill, error) {
 	source, err := OwnerRepoFromURL(repoURL)
 	if err != nil {
-		return "", git.ResolvedRef{}, nil, err
+		return git.Snapshot{}, nil, err
 	}
 
-	cloneDir, resolved, err := fns.FetchLatest(repoURL)
+	snap, err := fns.FetchLatest(repoURL)
 	if err != nil {
-		return "", git.ResolvedRef{}, nil, fmt.Errorf("fetch %s: %w", source, err)
+		return git.Snapshot{}, nil, fmt.Errorf("fetch %s: %w", source, err)
 	}
 
-	upstream, err := DiscoverSkills(cloneDir)
+	upstream, err := DiscoverSkills(snap.Dir)
 	if err != nil {
-		return "", git.ResolvedRef{}, nil, fmt.Errorf("discover skills in %s: %w", source, err)
+		return git.Snapshot{}, nil, fmt.Errorf("discover skills in %s: %w", source, err)
 	}
 
-	return cloneDir, resolved, upstream, nil
+	return snap, upstream, nil
 }
 
 // resolveTracked compares an installed skill with the upstream skill it
 // resolved to, staging the upstream skill with fresh metadata when update
 // would replace it.
-func resolveTracked(
-	candidate UpdateCandidate, s InstalledSkill, up DiscoveredSkill, cloneDir string, resolved git.ResolvedRef, fns UpstreamFuncs,
-) UpdateCandidate {
-	treeSHA, err := fns.TreeSHA(cloneDir, up.Path)
+func resolveTracked(candidate UpdateCandidate, s InstalledSkill, up DiscoveredSkill, snap git.Snapshot) UpdateCandidate {
+	treeSHA, err := snap.Tree(up.Path)
 	if err != nil {
 		candidate.Status, candidate.Reason = StatusCheckFailed, err.Error()
 		return candidate
@@ -327,9 +315,9 @@ func resolveTracked(
 		return candidate
 	}
 
-	candidate.StagedDir, err = stageWithMetadata(cloneDir, up.Dir, SourceMetadata{
+	candidate.StagedDir, err = stageWithMetadata(snap.Dir, up.Dir, SourceMetadata{
 		RepoURL: s.Meta.RepoURL,
-		Ref:     resolved.Full,
+		Ref:     snap.Ref.Full,
 		TreeSHA: treeSHA,
 		Path:    up.Path,
 	})

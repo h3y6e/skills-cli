@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/h3y6e/skolar/internal/git"
 	"github.com/h3y6e/skolar/internal/lock"
 )
 
@@ -105,7 +106,7 @@ func verifyLockedOnline(name string, entry lock.Entry, installed string, cloneFn
 // VerifyTracked compares each gh-format skill with the upstream tree its
 // metadata records, fetched at github-ref.
 func VerifyTracked(installed []InstalledSkill, fns UpstreamFuncs) []VerifyResult {
-	clones := map[[2]string]string{}
+	clones := map[[2]string]git.Snapshot{}
 
 	results := make([]VerifyResult, 0, len(installed))
 	for _, s := range installed {
@@ -127,22 +128,24 @@ func VerifyTracked(installed []InstalledSkill, fns UpstreamFuncs) []VerifyResult
 	return results
 }
 
-func verifyTracked(s InstalledSkill, fns UpstreamFuncs, clones map[[2]string]string) (VerifyStatus, []string, string) {
+func verifyTracked(s InstalledSkill, fns UpstreamFuncs, clones map[[2]string]git.Snapshot) (VerifyStatus, []string, string) {
 	key := [2]string{s.Meta.RepoURL, s.Meta.Ref}
 
-	cloneDir, ok := clones[key]
+	snap, ok := clones[key]
 	if !ok {
 		var err error
 
-		cloneDir, err = fns.FetchRef(s.Meta.RepoURL, s.Meta.Ref)
+		snap, err = fns.FetchRef(s.Meta.RepoURL, s.Meta.Ref)
 		if err != nil {
 			return VerifyUnverifiable, nil, fmt.Sprintf("fetch %s: %v", s.Meta.Ref, err)
 		}
 
-		clones[key] = cloneDir
+		clones[key] = snap
 	}
 
-	treeSHA, err := fns.TreeSHA(cloneDir, s.Meta.Path)
+	cloneDir := snap.Dir
+
+	treeSHA, err := snap.Tree(s.Meta.Path)
 	if err != nil {
 		return VerifyUnverifiable, nil, err.Error()
 	}

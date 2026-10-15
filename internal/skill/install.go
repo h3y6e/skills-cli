@@ -1,7 +1,6 @@
 package skill
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -78,13 +77,11 @@ func InstallSkills(skills []DiscoveredSkill, ref SourceRef, layout lock.Layout) 
 	return nil
 }
 
-// InstallTrackedSkills copies discovered skills to the destination directory,
-// injecting gh-compatible source metadata into each SKILL.md. No lockfile is
-// written; the frontmatter metadata is the install record, as with
-// gh skill install. Only github sources are supported.
-// repoRoot is the cloned repository the skills were discovered in, and
-// resolved is the ref the clone was made from.
-func InstallTrackedSkills(ctx context.Context, skills []DiscoveredSkill, repoRoot string, ref SourceRef, resolved git.ResolvedRef, layout lock.Layout) (err error) {
+// InstallTrackedSkills copies skills discovered in snap to the destination
+// directory, injecting gh-compatible source metadata into each SKILL.md. No
+// lockfile is written; the frontmatter metadata is the install record, as
+// with gh skill install. Only github sources are supported.
+func InstallTrackedSkills(skills []DiscoveredSkill, snap git.Snapshot, ref SourceRef, layout lock.Layout) (err error) {
 	if len(skills) == 0 {
 		return errors.New("no skills to install")
 	}
@@ -100,14 +97,14 @@ func InstallTrackedSkills(ctx context.Context, skills []DiscoveredSkill, repoRoo
 	defer func() { err = errors.Join(err, tx.Cleanup()) }()
 
 	for i, s := range skills {
-		treeSHA, err := git.TreeSHA(ctx, repoRoot, s.Path)
+		treeSHA, err := snap.Tree(s.Path)
 		if err != nil {
-			return fmt.Errorf("resolve tree SHA for %q: %w", s.Name, err)
+			return err
 		}
 
 		meta := SourceMetadata{
 			RepoURL: RepoURLForSource(ref.CanonicalSource),
-			Ref:     resolved.Full,
+			Ref:     snap.Ref.Full,
 			TreeSHA: treeSHA,
 			Path:    s.Path,
 			Pinned:  ref.Ref,

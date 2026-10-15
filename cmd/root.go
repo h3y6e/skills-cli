@@ -13,7 +13,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/h3y6e/skolar/internal/git"
 	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
 	cobra_usage "github.com/jdx/usage/integrations/cobra"
@@ -21,12 +20,8 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// Git operations as variables, replaceable for testing (same pattern as IsTTY).
-var (
-	ShallowClone     = git.ShallowClone
-	ResolveRef       = git.ResolveRef
-	NewUpstreamFuncs = skill.NewUpstreamFuncs
-)
+// NewUpstreamFuncs is replaceable for testing (same pattern as IsTTY).
+var NewUpstreamFuncs = skill.NewUpstreamFuncs
 
 // NewRootCmd builds the skolar command tree.
 func NewRootCmd(version string) *cobra.Command {

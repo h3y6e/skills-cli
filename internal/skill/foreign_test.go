@@ -164,14 +164,14 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 		}
 	}
 
-	fakeFetch := func(t *testing.T, files map[string]string) func(string) (string, git.ResolvedRef, error) {
+	fakeFetch := func(t *testing.T, files map[string]string, tree string) func(string) (git.Snapshot, error) {
 		t.Helper()
 
-		return func(_ string) (string, git.ResolvedRef, error) {
+		return func(_ string) (git.Snapshot, error) {
 			dir := t.TempDir()
 			testutil.WriteFiles(t, dir, files)
 
-			return dir, git.ResolvedRef{Full: "refs/tags/v2.0.0"}, nil
+			return snapshotOf(t, dir, tree), nil
 		}
 	}
 
@@ -193,10 +193,12 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 
 		skills := []skill.InstalledSkill{installed("foo", "https://github.com/o/r", "tree-1", "skills/foo")}
 		fns := skill.UpstreamFuncs{
-			FetchLatest: func(string) (string, git.ResolvedRef, error) {
-				return clone, git.ResolvedRef{Full: "refs/tags/v2.0.0"}, nil
+			FetchLatest: func(string) (git.Snapshot, error) {
+				snap := snapshotOf(t, clone, "tree-2")
+				snap.Trees["skills/foo"] = "tree-2"
+
+				return snap, nil
 			},
-			TreeSHA: func(_, _ string) (string, error) { return "tree-2", nil },
 		}
 
 		// Act
@@ -214,8 +216,7 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 		// Arrange
 		skills := []skill.InstalledSkill{installed("foo", "https://github.com/o/r", "tree-1", "skills/foo")}
 		fns := skill.UpstreamFuncs{
-			FetchLatest: fakeFetch(t, map[string]string{"skills/foo/SKILL.md": "# Foo\n"}),
-			TreeSHA:     func(_, _ string) (string, error) { return "tree-1", nil },
+			FetchLatest: fakeFetch(t, map[string]string{"skills/foo/SKILL.md": "# Foo\n"}, "tree-1"),
 		}
 
 		// Act
@@ -247,16 +248,15 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 		skills := []skill.InstalledSkill{installed("foo", "https://github.com/o/r", "tree-old", "skills/foo")}
 		fetches := 0
 		fns := skill.UpstreamFuncs{
-			FetchLatest: func(_ string) (string, git.ResolvedRef, error) {
+			FetchLatest: func(_ string) (git.Snapshot, error) {
 				fetches++
 				dir := t.TempDir()
 				testutil.WriteFiles(t, dir, map[string]string{
 					"skills/foo/SKILL.md": "# Foo v2\n",
 				})
 
-				return dir, git.ResolvedRef{Full: "refs/tags/v2.0.0"}, nil
+				return snapshotOf(t, dir, "tree-new"), nil
 			},
-			TreeSHA: func(_, _ string) (string, error) { return "tree-new", nil },
 		}
 
 		// Act
@@ -310,7 +310,7 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 
 		skills := []skill.InstalledSkill{installed("foo", "https://github.com/o/r", "tree-old", "skills/foo")}
 		fns := skill.UpstreamFuncs{
-			FetchLatest: func(string) (string, git.ResolvedRef, error) {
+			FetchLatest: func(string) (git.Snapshot, error) {
 				dir := t.TempDir()
 				if err := os.MkdirAll(filepath.Join(dir, "skills/foo"), 0o755); err != nil {
 					t.Fatal(err)
@@ -320,9 +320,8 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				return dir, git.ResolvedRef{Full: "refs/tags/v2.0.0"}, nil
+				return snapshotOf(t, dir, "tree-new"), nil
 			},
-			TreeSHA: func(_, _ string) (string, error) { return "tree-new", nil },
 		}
 
 		// Act
@@ -345,8 +344,7 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 		// Arrange
 		skills := []skill.InstalledSkill{installed("foo", "https://github.com/o/r", "tree-1", "skills/foo")}
 		fns := skill.UpstreamFuncs{
-			FetchLatest: fakeFetch(t, map[string]string{"skills/bar/SKILL.md": "# Bar\n"}),
-			TreeSHA:     func(_, _ string) (string, error) { return "tree-1", nil },
+			FetchLatest: fakeFetch(t, map[string]string{"skills/bar/SKILL.md": "# Bar\n"}, "tree-1"),
 		}
 
 		// Act
@@ -364,8 +362,7 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 		// Arrange
 		skills := []skill.InstalledSkill{installed("foo", "https://github.com/o/r", "tree-1", "skills/old/foo")}
 		fns := skill.UpstreamFuncs{
-			FetchLatest: fakeFetch(t, map[string]string{"skills/foo/SKILL.md": "# Foo\n", "skills/bar/SKILL.md": "# Bar\n"}),
-			TreeSHA:     func(_, _ string) (string, error) { return "tree-1", nil },
+			FetchLatest: fakeFetch(t, map[string]string{"skills/foo/SKILL.md": "# Foo\n", "skills/bar/SKILL.md": "# Bar\n"}, "tree-1"),
 		}
 
 		// Act
@@ -397,11 +394,10 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 		pinned := installed("foo", "https://github.com/o/r", "tree-1", "skills/foo")
 		pinned.Meta.Pinned = "v1.0.0"
 		fns := skill.UpstreamFuncs{
-			FetchLatest: func(string) (string, git.ResolvedRef, error) {
+			FetchLatest: func(string) (git.Snapshot, error) {
 				t.Fatal("FetchLatest called for pinned skill")
-				return "", git.ResolvedRef{}, nil
+				return git.Snapshot{}, nil
 			},
-			TreeSHA: func(_, _ string) (string, error) { return "", nil },
 		}
 
 		// Act
@@ -428,11 +424,10 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 			Meta: skill.SourceMetadata{LocalPath: "/home/user/skills/mine"},
 		}
 		fns := skill.UpstreamFuncs{
-			FetchLatest: func(string) (string, git.ResolvedRef, error) {
+			FetchLatest: func(string) (git.Snapshot, error) {
 				t.Fatal("FetchLatest called for local skill")
-				return "", git.ResolvedRef{}, nil
+				return git.Snapshot{}, nil
 			},
-			TreeSHA: func(_, _ string) (string, error) { return "", nil },
 		}
 
 		// Act
@@ -458,17 +453,16 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 			installed("foo", "https://github.com/o/r", "tree-2", "skills/foo"),
 		}
 		fns := skill.UpstreamFuncs{
-			FetchLatest: func(repoURL string) (string, git.ResolvedRef, error) {
+			FetchLatest: func(repoURL string) (git.Snapshot, error) {
 				if repoURL == "https://github.com/o/gone" {
-					return "", git.ResolvedRef{}, errors.New("repository not found")
+					return git.Snapshot{}, errors.New("repository not found")
 				}
 
 				dir := t.TempDir()
 				testutil.WriteFiles(t, dir, map[string]string{"skills/foo/SKILL.md": "# Foo\n"})
 
-				return dir, git.ResolvedRef{Full: "refs/tags/v2.0.0"}, nil
+				return snapshotOf(t, dir, "tree-2"), nil
 			},
-			TreeSHA: func(_, _ string) (string, error) { return "tree-2", nil },
 		}
 
 		// Act
@@ -502,16 +496,15 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 			installed("good", "https://github.com/o/r", "tree-old", "skills/good"),
 		}
 		fns := skill.UpstreamFuncs{
-			FetchLatest: func(string) (string, git.ResolvedRef, error) {
+			FetchLatest: func(string) (git.Snapshot, error) {
 				dir := t.TempDir()
 				testutil.WriteFiles(t, dir, map[string]string{
 					"skills/bad/SKILL.md":  "---\nname: bad\ncompatibility: MCP (tools: search)\n---\n",
 					"skills/good/SKILL.md": "---\nname: good\n---\n",
 				})
 
-				return dir, git.ResolvedRef{Full: "refs/tags/v2.0.0"}, nil
+				return snapshotOf(t, dir, "tree-new"), nil
 			},
-			TreeSHA: func(_, _ string) (string, error) { return "tree-new", nil },
 		}
 
 		// Act
@@ -538,11 +531,10 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 		// Arrange
 		broken := installed("foo", "https://github.com/o/r", "tree-1", "")
 		fns := skill.UpstreamFuncs{
-			FetchLatest: func(string) (string, git.ResolvedRef, error) {
+			FetchLatest: func(string) (git.Snapshot, error) {
 				t.Fatal("FetchLatest called for skill without github-path")
-				return "", git.ResolvedRef{}, nil
+				return git.Snapshot{}, nil
 			},
-			TreeSHA: func(_, _ string) (string, error) { return "", nil },
 		}
 
 		// Act
@@ -571,7 +563,7 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 		var fetches atomic.Int32
 
 		fns := skill.UpstreamFuncs{
-			FetchLatest: func(_ string) (string, git.ResolvedRef, error) {
+			FetchLatest: func(_ string) (git.Snapshot, error) {
 				fetches.Add(1)
 
 				dir := t.TempDir()
@@ -580,14 +572,10 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 					"skills/bar/SKILL.md": "# Bar\n",
 				})
 
-				return dir, git.ResolvedRef{Full: "refs/tags/v2.0.0"}, nil
-			},
-			TreeSHA: func(_, path string) (string, error) {
-				if strings.HasSuffix(path, "foo") {
-					return "tree-1", nil
-				}
+				snap := snapshotOf(t, dir, "tree-2")
+				snap.Trees["skills/foo"] = "tree-1"
 
-				return "tree-2", nil
+				return snap, nil
 			},
 		}
 

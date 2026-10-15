@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/h3y6e/skolar/cmd"
+	"github.com/h3y6e/skolar/internal/git"
 	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
 	"github.com/h3y6e/skolar/internal/testutil"
@@ -249,9 +250,9 @@ func TestVerifySkillFilter(t *testing.T) {
 		orig := cmd.NewUpstreamFuncs
 		cmd.NewUpstreamFuncs = func(ctx context.Context, prefix string) (skill.UpstreamFuncs, func()) {
 			fns, cleanup := orig(ctx, prefix)
-			fns.FetchRef = func(string, string) (string, error) {
+			fns.FetchRef = func(string, string) (git.Snapshot, error) {
 				t.Error("verify fetched a skill that -s did not select")
-				return "", errors.New("unexpected fetch")
+				return git.Snapshot{}, errors.New("unexpected fetch")
 			}
 
 			return fns, cleanup

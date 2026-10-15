@@ -2,7 +2,6 @@ package cmd_test
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/h3y6e/skolar/cmd"
-	"github.com/h3y6e/skolar/internal/git"
 	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
 	"github.com/h3y6e/skolar/internal/testutil"
@@ -40,52 +38,12 @@ func initBareRepoWithTwoTags(t *testing.T) string {
 func stubGitHubTransport(t *testing.T, canonical, bareURL string) {
 	t.Helper()
 
-	cloneURL := "https://github.com/" + canonical + ".git"
 	repoURL := "https://github.com/" + canonical
-
-	origClone, origResolve, origUpstream := cmd.ShallowClone, cmd.ResolveRef, cmd.NewUpstreamFuncs
-
-	cmd.ShallowClone = func(ctx context.Context, url, ref, dir string) error {
-		if url == cloneURL {
-			url = bareURL
-		}
-
-		return origClone(ctx, url, ref, dir)
-	}
-	cmd.ResolveRef = func(ctx context.Context, url, ref string) (git.ResolvedRef, error) {
-		if url == cloneURL {
-			url = bareURL
-		}
-
-		return origResolve(ctx, url, ref)
-	}
-	cmd.NewUpstreamFuncs = func(ctx context.Context, prefix string) (skill.UpstreamFuncs, func()) {
-		upstream, cleanup := origUpstream(ctx, prefix)
-
-		return skill.UpstreamFuncs{
-			FetchLatest: func(url string) (string, git.ResolvedRef, error) {
-				if url == repoURL {
-					url = bareURL
-				}
-
-				return upstream.FetchLatest(url)
-			},
-			FetchRef: func(url, ref string) (string, error) {
-				if url == repoURL {
-					url = bareURL
-				}
-
-				return upstream.FetchRef(url, ref)
-			},
-			TreeSHA: upstream.TreeSHA,
-		}, cleanup
-	}
-
-	t.Cleanup(func() {
-		cmd.ShallowClone = origClone
-		cmd.ResolveRef = origResolve
-		cmd.NewUpstreamFuncs = origUpstream
-	})
+	t.Setenv("GIT_CONFIG_COUNT", "2")
+	t.Setenv("GIT_CONFIG_KEY_0", "url."+bareURL+".insteadOf")
+	t.Setenv("GIT_CONFIG_VALUE_0", repoURL)
+	t.Setenv("GIT_CONFIG_KEY_1", "url."+bareURL+".insteadOf")
+	t.Setenv("GIT_CONFIG_VALUE_1", repoURL+".git")
 }
 
 func runSkills(t *testing.T, args ...string) (string, error) {
