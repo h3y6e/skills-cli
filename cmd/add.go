@@ -56,12 +56,14 @@ func runAdd(cmd *cobra.Command, source string, opts addOptions) error {
 	// gh skill format resolves the ref like gh skill install: explicit ref,
 	// else latest release, else default branch.
 	cloneRef := ref.Ref
+
 	var resolved git.ResolvedRef
 	if tracked {
 		resolved, err = ResolveRef(ctx, ref.CloneURL, ref.Ref)
 		if err != nil {
 			return fmt.Errorf("resolve ref for %s: %w", ref.CanonicalSource, err)
 		}
+
 		cloneRef = resolved.Full
 	}
 
@@ -79,15 +81,18 @@ func runAdd(cmd *cobra.Command, source string, opts addOptions) error {
 	if err != nil {
 		return fmt.Errorf("discover skills: %w", err)
 	}
+
 	discovered = skill.FilterDiscoveredSkills(discovered, opts.skills)
 	if len(discovered) == 0 {
 		return errors.New("no skills found to install")
 	}
 
 	overwrite := printInstallPlan(cmd.OutOrStdout(), layout, discovered)
+
 	if opts.dryRun {
 		return nil
 	}
+
 	if overwrite {
 		if err := approve(cmd, opts.yes, "Overwrite existing skills?"); err != nil {
 			return err
@@ -97,34 +102,42 @@ func runAdd(cmd *cobra.Command, source string, opts addOptions) error {
 	if tracked {
 		return skill.InstallTrackedSkills(ctx, discovered, tmpDir, ref, resolved, layout)
 	}
+
 	return skill.InstallSkills(discovered, ref, layout)
 }
 
 func installsTracked(layout lock.Layout, ref skill.SourceRef) (bool, error) {
 	lockfileExists := false
+
 	if layout.UsesLockfile() {
 		_, err := lock.ReadFile(layout.LockPath())
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return false, err
 		}
+
 		lockfileExists = err == nil
 	}
+
 	tracked := skill.PreferTrackedInstall(lockfileExists, ref.SourceType)
 	if !tracked && !layout.UsesLockfile() {
 		return false, fmt.Errorf("%s sources can't be added to %q: skills-lock.json records only %s", ref.SourceType, layout.Dir, lock.DefaultDir)
 	}
+
 	return tracked, nil
 }
 
 func printInstallPlan(w io.Writer, layout lock.Layout, skills []skill.DiscoveredSkill) bool {
 	overwrite := false
+
 	for _, s := range skills {
 		action := "install"
 		if _, err := os.Stat(layout.SkillDir(s.Name)); err == nil {
 			action = "overwrite"
 			overwrite = true
 		}
+
 		fmt.Fprintf(w, "%s %s\n", action, layout.SkillDir(s.Name))
 	}
+
 	return overwrite
 }

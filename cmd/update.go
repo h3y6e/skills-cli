@@ -33,6 +33,7 @@ Shows the diff of each skill, then overwrites local changes after confirmation.`
 			if len(args) > 0 {
 				source = args[0]
 			}
+
 			return runUpdate(cmd, source, opts)
 		},
 	}
@@ -50,10 +51,12 @@ func runUpdate(cmd *cobra.Command, source string, opts updateOptions) error {
 	if err != nil {
 		return err
 	}
+
 	entries, err := filterEntriesBySource(inv.entries, source)
 	if err != nil {
 		return err
 	}
+
 	foreign, err := skill.FilterInstalledBySource(inv.foreign, source)
 	if err != nil {
 		return err
@@ -61,26 +64,32 @@ func runUpdate(cmd *cobra.Command, source string, opts updateOptions) error {
 
 	candidates, skipped, cleanup, err := collectCandidates(cmd.Context(), "skolar-update", entries, foreign)
 	defer cleanup()
+
 	if err != nil {
 		return err
 	}
+
 	candidates = skill.FilterCandidates(candidates, opts.skills)
 
 	if len(candidates) == 0 && len(skipped) == 0 {
 		fmt.Fprintln(cmd.ErrOrStderr(), "no installed skills to update")
 		return nil
 	}
+
 	printSkippedEntries(cmd.ErrOrStderr(), skipped)
+
 	if len(candidates) == 0 {
 		fmt.Fprintln(cmd.ErrOrStderr(), "no matching skills to update")
 		return nil
 	}
 
 	w := cmd.OutOrStdout()
+
 	locked, tracked, failed := reviewUpdates(cmd.Context(), w, inv.layout, candidates)
 	if opts.dryRun || len(locked)+len(tracked) == 0 {
 		return checkFailed(failed)
 	}
+
 	if err := approve(cmd, opts.yes, "Apply these updates?"); err != nil {
 		return err
 	}
@@ -88,6 +97,7 @@ func runUpdate(cmd *cobra.Command, source string, opts updateOptions) error {
 	if err := applyUpdates(w, inv, locked, tracked); err != nil {
 		return err
 	}
+
 	return checkFailed(failed)
 }
 
@@ -96,16 +106,20 @@ func applyUpdates(w io.Writer, inv inventory, locked, tracked []skill.UpdateCand
 		if err := skill.ApplyCandidateUpdates(inv.lockFile, locked, inv.layout); err != nil {
 			return err
 		}
+
 		for _, c := range locked {
 			fmt.Fprintf(w, "%s: updated\n", c.SkillName)
 		}
 	}
+
 	for _, c := range tracked {
 		if err := skill.ReplaceSkill(c.SkillName, c.StagedDir, inv.layout); err != nil {
 			return fmt.Errorf("update %s: %w", c.SkillName, err)
 		}
+
 		fmt.Fprintf(w, "%s: updated\n", c.SkillName)
 	}
+
 	return nil
 }
 
@@ -121,11 +135,14 @@ func reviewUpdates(
 			if err != nil {
 				fmt.Fprintf(w, "%s: diff error: %v\n", c.SkillName, err)
 				failed = append(failed, c.SkillName)
+
 				continue
 			}
+
 			if hasDiff {
 				fmt.Fprintf(w, "--- %s ---\n%s\n", c.SkillName, diff)
 			}
+
 			if c.Foreign {
 				tracked = append(tracked, c)
 			} else {
@@ -140,6 +157,7 @@ func reviewUpdates(
 			fmt.Fprintf(w, "%s: installed from local path (skipped)\n", c.SkillName)
 		}
 	}
+
 	return locked, tracked, failed
 }
 
@@ -154,13 +172,16 @@ func filterEntriesBySource(entries map[string]lock.Entry, source string) (map[st
 	}
 
 	filtered := make(map[string]lock.Entry)
+
 	for name, entry := range entries {
 		if entry.Source != ref.CanonicalSource {
 			continue
 		}
+
 		if ref.Ref != "" && entry.Ref != ref.Ref {
 			continue
 		}
+
 		filtered[name] = entry
 	}
 

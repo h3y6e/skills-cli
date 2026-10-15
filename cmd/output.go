@@ -24,15 +24,20 @@ func approve(cmd *cobra.Command, yes bool, question string) error {
 	if yes {
 		return nil
 	}
+
 	if !IsTTY() {
 		return &cliError{codeConfirmationRequired, errors.New("confirmation required"), "re-run with --yes"}
 	}
+
 	fmt.Fprintf(cmd.ErrOrStderr(), "%s [y/N] ", question)
+
 	answers := make(chan string, 1)
+
 	go func() {
 		answer, _ := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
 		answers <- answer
 	}()
+
 	ctx := cmd.Context()
 	select {
 	case <-ctx.Done():
@@ -41,9 +46,11 @@ func approve(cmd *cobra.Command, yes bool, question string) error {
 		if ctx.Err() != nil {
 			return context.Cause(ctx)
 		}
+
 		if a := strings.ToLower(strings.TrimSpace(answer)); a != "y" && a != "yes" {
 			return &cliError{code: codeDeclined, err: errors.New("declined")}
 		}
+
 		return nil
 	}
 }
@@ -54,11 +61,14 @@ func writeRecord(w io.Writer, key string, value any, err error) error {
 	if err != nil {
 		rec["error"] = newErrorRecord(err)
 	}
+
 	data, marshalErr := json.MarshalIndent(rec, "", "  ")
 	if marshalErr != nil {
 		return errors.Join(err, marshalErr)
 	}
+
 	_, writeErr := fmt.Fprintln(w, string(data))
+
 	return errors.Join(err, writeErr)
 }
 
@@ -105,5 +115,6 @@ func shortHash(h string) string {
 	if len(h) <= 7 {
 		return h
 	}
+
 	return h[:7]
 }

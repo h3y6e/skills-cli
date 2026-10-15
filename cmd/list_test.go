@@ -20,6 +20,7 @@ func TestListFlags(t *testing.T) {
 
 	t.Run("--json flag is registered", func(t *testing.T) {
 		t.Parallel()
+
 		flag := listCmd.Flags().Lookup("json")
 		if flag == nil {
 			t.Fatal("expected --json flag on list command")
@@ -47,17 +48,21 @@ func TestListFlags(t *testing.T) {
 		    }
 		  }
 		}`)
+
 		if err := os.MkdirAll(filepath.Dir(lock.FilePath(dirA)), 0o755); err != nil {
 			t.Fatalf("mkdir lockfile parent: %v", err)
 		}
+
 		if err := os.WriteFile(lock.FilePath(dirA), lockData, 0o644); err != nil {
 			t.Fatalf("write lockfile: %v", err)
 		}
 
 		var out bytes.Buffer
+
 		root := cmd.NewRootCmd("test")
 		root.SetOut(&out)
 		root.SetArgs([]string{"list", "-d", filepath.Join(rootDir, "custom", "skills")})
+
 		if err := root.Execute(); err != nil {
 			t.Fatalf("list error: %v", err)
 		}
@@ -78,13 +83,13 @@ func TestListIgnoresUnrelatedLockfile(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(base, "skills-lock.json"), []byte("{"), 0o644); err != nil {
 			t.Fatal(err)
 		}
+
 		root := cmd.NewRootCmd("test")
 		root.SetOut(&bytes.Buffer{})
 		root.SetArgs([]string{"list", "-d", filepath.Join(base, "custom", "skills")})
 
 		// Act
 		err := root.Execute()
-
 		// Assert
 		if err != nil {
 			t.Fatalf("list: %v", err)
@@ -104,15 +109,18 @@ func TestListAlias(t *testing.T) {
 	// Install.
 	root1 := cmd.NewRootCmd("test")
 	root1.SetArgs([]string{"add", "-d", skillsDir, bareURL})
+
 	if err := root1.Execute(); err != nil {
 		t.Fatalf("add error: %v", err)
 	}
 
 	// Use ls alias.
 	var out bytes.Buffer
+
 	root2 := cmd.NewRootCmd("test")
 	root2.SetOut(&out)
 	root2.SetArgs([]string{"ls", "-d", skillsDir})
+
 	if err := root2.Execute(); err != nil {
 		t.Fatalf("ls error: %v", err)
 	}
@@ -138,14 +146,17 @@ func TestListHuman(t *testing.T) {
 
 		root1 := cmd.NewRootCmd("test")
 		root1.SetArgs([]string{"add", "-d", skillsDir, bareURL})
+
 		if err := root1.Execute(); err != nil {
 			t.Fatalf("add error: %v", err)
 		}
 
 		var out bytes.Buffer
+
 		root2 := cmd.NewRootCmd("test")
 		root2.SetOut(&out)
 		root2.SetArgs([]string{"list", "-d", skillsDir})
+
 		if err := root2.Execute(); err != nil {
 			t.Fatalf("list error: %v", err)
 		}
@@ -154,6 +165,7 @@ func TestListHuman(t *testing.T) {
 		if !strings.Contains(got, "alpha") {
 			t.Errorf("expected alpha in output, got: %q", got)
 		}
+
 		if !strings.Contains(got, "beta") {
 			t.Errorf("expected beta in output, got: %q", got)
 		}
@@ -170,9 +182,11 @@ func TestListHuman(t *testing.T) {
 		}
 
 		var out bytes.Buffer
+
 		root := cmd.NewRootCmd("test")
 		root.SetErr(&out)
 		root.SetArgs([]string{"list", "-d", skillsDir})
+
 		if err := root.Execute(); err != nil {
 			t.Fatalf("list error: %v", err)
 		}
@@ -191,15 +205,16 @@ func TestListHuman(t *testing.T) {
 
 		// Act
 		var out bytes.Buffer
+
 		root := cmd.NewRootCmd("test")
 		root.SetErr(&out)
 		root.SetArgs([]string{"list", "-d", skillsDir})
 		err := root.Execute()
-
 		// Assert
 		if err != nil {
 			t.Fatalf("list: %v", err)
 		}
+
 		if !strings.Contains(out.String(), "no installed skills") {
 			t.Errorf("output = %q, want %q", out.String(), "no installed skills")
 		}
@@ -217,14 +232,17 @@ func TestListJSON(t *testing.T) {
 
 	root1 := cmd.NewRootCmd("test")
 	root1.SetArgs([]string{"add", "-d", skillsDir, bareURL})
+
 	if err := root1.Execute(); err != nil {
 		t.Fatalf("add error: %v", err)
 	}
 
 	var out bytes.Buffer
+
 	root2 := cmd.NewRootCmd("test")
 	root2.SetOut(&out)
 	root2.SetArgs([]string{"list", "--json", "-d", skillsDir})
+
 	if err := root2.Execute(); err != nil {
 		t.Fatalf("list --json error: %v", err)
 	}
@@ -252,15 +270,18 @@ func TestListJSONEmpty(t *testing.T) {
 	t.Parallel()
 
 	skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
+
 	lf := lock.File{Version: 1, Skills: map[string]lock.Entry{}}
 	if err := lock.WriteFile(lock.FilePath(skillsDir), lf); err != nil {
 		t.Fatal(err)
 	}
 
 	var out bytes.Buffer
+
 	root := cmd.NewRootCmd("test")
 	root.SetOut(&out)
 	root.SetArgs([]string{"list", "--json", "-d", skillsDir})
+
 	if err := root.Execute(); err != nil {
 		t.Fatalf("list --json error: %v", err)
 	}
@@ -276,6 +297,7 @@ func TestListJSONIncludesRef(t *testing.T) {
 	t.Parallel()
 
 	skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
+
 	lf := lock.File{
 		Version: 1,
 		Skills: map[string]lock.Entry{
@@ -292,9 +314,11 @@ func TestListJSONIncludesRef(t *testing.T) {
 	}
 
 	var out bytes.Buffer
+
 	root := cmd.NewRootCmd("test")
 	root.SetOut(&out)
 	root.SetArgs([]string{"list", "--json", "-d", skillsDir})
+
 	if err := root.Execute(); err != nil {
 		t.Fatalf("list --json error: %v", err)
 	}
@@ -303,6 +327,7 @@ func TestListJSONIncludesRef(t *testing.T) {
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
+
 	if results[0]["ref"] != "feature/install" {
 		t.Errorf("ref = %v, want %q", results[0]["ref"], "feature/install")
 	}

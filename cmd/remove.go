@@ -54,9 +54,11 @@ func runRemove(cmd *cobra.Command, skillNames []string, opts removeOptions) erro
 	for _, name := range skillNames {
 		fmt.Fprintf(cmd.OutOrStdout(), "remove %s\n", inv.layout.SkillDir(name))
 	}
+
 	if opts.dryRun {
 		return nil
 	}
+
 	if err := approve(cmd, opts.yes, "Remove these skills?"); err != nil {
 		return err
 	}
@@ -70,11 +72,14 @@ func runRemove(cmd *cobra.Command, skillNames []string, opts removeOptions) erro
 	if !slices.ContainsFunc(skillNames, inv.locked) {
 		return nil
 	}
+
 	for _, name := range skillNames {
 		delete(inv.lockFile.Skills, name)
 	}
+
 	if err := lock.WriteFile(inv.layout.LockPath(), inv.lockFile); err != nil {
 		return fmt.Errorf("write lockfile: %w", err)
 	}
+
 	return nil
 }

@@ -14,8 +14,12 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	os.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
-	os.Setenv("GIT_CONFIG_SYSTEM", "/dev/null")
+	for _, name := range []string{"GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM"} {
+		if err := os.Setenv(name, "/dev/null"); err != nil {
+			panic(err)
+		}
+	}
+
 	os.Exit(m.Run())
 }
 
@@ -52,10 +56,12 @@ func TestShallowClone(t *testing.T) {
 		}
 
 		skillPath := filepath.Join(dest, "skills", "my-skill", "SKILL.md")
+
 		data, err := os.ReadFile(skillPath)
 		if err != nil {
 			t.Fatalf("expected skill file to exist: %v", err)
 		}
+
 		if string(data) != "# My Skill\n" {
 			t.Errorf("skill file content = %q, want %q", string(data), "# My Skill\n")
 		}
@@ -70,6 +76,7 @@ func TestShallowClone(t *testing.T) {
 		}
 
 		out := testutil.Git(t, dest, "rev-list", "--count", "HEAD")
+
 		count := strings.TrimSpace(out)
 		if count != "1" {
 			t.Errorf("expected 1 commit in shallow clone, got %s", count)
@@ -113,9 +120,11 @@ func TestShallowClone(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected cloned branch file: %v", err)
 		}
+
 		if string(data) != "# Feature\n" {
 			t.Errorf("branch clone content = %q, want %q", string(data), "# Feature\n")
 		}
+
 		out := testutil.Git(t, dest, "rev-list", "--count", "HEAD")
 		if strings.TrimSpace(out) != "1" {
 			t.Errorf("expected shallow branch clone, got %s commits", strings.TrimSpace(out))
@@ -136,6 +145,7 @@ func TestShallowClone(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected cloned tag file: %v", err)
 		}
+
 		if string(data) != "# Main\n" {
 			t.Errorf("tag clone content = %q, want %q", string(data), "# Main\n")
 		}
@@ -157,6 +167,7 @@ func TestDiffNoIndex(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DiffNoIndex() error = %v", err)
 		}
+
 		if hasDiff {
 			t.Errorf("expected hasDiff=false for identical dirs, got true; output:\n%s", output)
 		}
@@ -174,9 +185,11 @@ func TestDiffNoIndex(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DiffNoIndex() error = %v", err)
 		}
+
 		if !hasDiff {
 			t.Error("expected hasDiff=true for differing files")
 		}
+
 		if len(output) == 0 {
 			t.Error("expected non-empty diff output")
 		}
@@ -188,18 +201,22 @@ func TestDiffNoIndex(t *testing.T) {
 		dir := t.TempDir()
 		a := filepath.Join(dir, "a")
 		b := filepath.Join(dir, "b")
+
 		if err := os.MkdirAll(a, 0o755); err != nil {
 			t.Fatal(err)
 		}
+
 		testutil.WriteFiles(t, dir, map[string]string{"b/new-file.txt": "added\n"})
 
 		output, hasDiff, err := git.DiffNoIndex(t.Context(), a, b)
 		if err != nil {
 			t.Fatalf("DiffNoIndex() error = %v", err)
 		}
+
 		if !hasDiff {
 			t.Error("expected hasDiff=true for added file")
 		}
+
 		if len(output) == 0 {
 			t.Error("expected non-empty diff output for added file")
 		}
@@ -211,9 +228,11 @@ func TestDiffNoIndex(t *testing.T) {
 		dir := t.TempDir()
 		a := filepath.Join(dir, "a")
 		b := filepath.Join(dir, "b")
+
 		if err := os.MkdirAll(a, 0o755); err != nil {
 			t.Fatal(err)
 		}
+
 		if err := os.MkdirAll(b, 0o755); err != nil {
 			t.Fatal(err)
 		}

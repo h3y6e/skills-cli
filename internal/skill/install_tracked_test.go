@@ -18,6 +18,7 @@ func initGitRepo(t *testing.T, files map[string]string) string {
 
 	dir := testutil.InitWorkRepo(t)
 	testutil.Commit(t, dir, "init", files)
+
 	return dir
 }
 
@@ -28,9 +29,11 @@ func installTracked(t *testing.T, repoRoot string, ref skill.SourceRef, resolved
 	if err != nil {
 		t.Fatalf("DiscoverSkills() error = %v", err)
 	}
+
 	if err := skill.InstallTrackedSkills(t.Context(), discovered, repoRoot, ref, resolved, lock.NewLayout(skillsDir)); err != nil {
 		t.Fatalf("InstallTrackedSkills() error = %v", err)
 	}
+
 	return discovered
 }
 
@@ -41,10 +44,12 @@ func readInstalledMetadata(t *testing.T, skillsDir, name string) skill.SourceMet
 	if err != nil {
 		t.Fatalf("expected installed SKILL.md: %v", err)
 	}
+
 	meta, err := skill.ParseSourceMetadata(string(data))
 	if err != nil {
 		t.Fatalf("ParseSourceMetadata() error = %v", err)
 	}
+
 	return meta
 }
 
@@ -70,19 +75,24 @@ func TestInstallTrackedSkills(t *testing.T) {
 		if meta.RepoURL != "https://github.com/h3y6e/agent-skills" {
 			t.Errorf("RepoURL = %q", meta.RepoURL)
 		}
+
 		if meta.Ref != "refs/heads/main" {
 			t.Errorf("Ref = %q", meta.Ref)
 		}
+
 		if meta.Path != "skills/foo" {
 			t.Errorf("Path = %q", meta.Path)
 		}
+
 		if meta.Pinned != "" {
 			t.Errorf("Pinned = %q, want empty", meta.Pinned)
 		}
+
 		wantTree := gitTreeSHA(t, repoRoot, "skills/foo")
 		if meta.TreeSHA != wantTree {
 			t.Errorf("TreeSHA = %q, want %q", meta.TreeSHA, wantTree)
 		}
+
 		if _, err := os.Stat(lock.FilePath(skillsDir)); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("lockfile must not be written in gh format, stat err = %v", err)
 		}
@@ -107,6 +117,7 @@ func TestInstallTrackedSkills(t *testing.T) {
 		if meta.Pinned != "v1.0.0" {
 			t.Errorf("Pinned = %q, want %q", meta.Pinned, "v1.0.0")
 		}
+
 		if meta.Ref != "refs/tags/v1.0.0" {
 			t.Errorf("Ref = %q", meta.Ref)
 		}
@@ -122,6 +133,7 @@ func TestInstallTrackedSkills(t *testing.T) {
 		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 		ref := skill.SourceRef{SourceType: "gitlab", CanonicalSource: "h3y6e/agent-skills"}
 		resolved := git.ResolvedRef{Full: "refs/heads/main"}
+
 		discovered, err := skill.DiscoverSkills(repoRoot)
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
@@ -147,6 +159,7 @@ func TestInstallTrackedSkills(t *testing.T) {
 		testutil.WriteFiles(t, skillsDir, map[string]string{
 			"foo/SKILL.md": "# Foo v1\n",
 		})
+
 		ref := skill.SourceRef{SourceType: "github", CanonicalSource: "h3y6e/agent-skills"}
 		resolved := git.ResolvedRef{Full: "refs/heads/main"}
 
@@ -158,6 +171,7 @@ func TestInstallTrackedSkills(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected installed SKILL.md: %v", err)
 		}
+
 		if got := string(data); !strings.Contains(got, "# Foo v2") {
 			t.Errorf("installed content = %q, want it to contain %q", got, "# Foo v2")
 		}
@@ -171,5 +185,6 @@ func gitTreeSHA(t *testing.T, repoDir, path string) string {
 	if err != nil {
 		t.Fatalf("TreeSHA() error = %v", err)
 	}
+
 	return sha
 }

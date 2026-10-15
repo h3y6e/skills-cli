@@ -1,3 +1,4 @@
+// Command skolar manages local agent skills from git repositories.
 package main
 
 import (

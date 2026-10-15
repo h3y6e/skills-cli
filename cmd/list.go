@@ -33,7 +33,7 @@ func newListCmd() *cobra.Command {
 		Annotations: map[string]string{recordKey: "skills"},
 		Short:       "List installed skills",
 		Args:        usageArgs(cobra.NoArgs),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runList(cmd, opts)
 		},
 	}
@@ -46,6 +46,7 @@ func newListCmd() *cobra.Command {
 
 func runList(cmd *cobra.Command, opts listOptions) (err error) {
 	payload := []listEntryJSON{}
+
 	if opts.json {
 		defer func() { err = writeRecord(cmd.OutOrStdout(), cmd.Annotations[recordKey], payload, err) }()
 	}
@@ -65,6 +66,7 @@ func runList(cmd *cobra.Command, opts listOptions) (err error) {
 			ComputedHash: entry.ComputedHash,
 		})
 	}
+
 	for _, s := range inv.foreign {
 		payload = append(payload, listEntryJSON{
 			SkillName:    s.Name,
@@ -74,6 +76,7 @@ func runList(cmd *cobra.Command, opts listOptions) (err error) {
 			ComputedHash: s.Meta.TreeSHA,
 		})
 	}
+
 	slices.SortFunc(payload, func(a, b listEntryJSON) int {
 		return cmp.Compare(a.SkillName, b.SkillName)
 	})
@@ -90,6 +93,7 @@ func runList(cmd *cobra.Command, opts listOptions) (err error) {
 	for _, entry := range payload {
 		fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s\n", entry.SkillName, skill.FormatSourceInput(entry.Source, entry.Ref), shortHash(entry.ComputedHash))
 	}
+
 	return nil
 }
 
@@ -98,8 +102,10 @@ func foreignSource(meta skill.SourceMetadata) string {
 		if source, err := skill.OwnerRepoFromURL(meta.RepoURL); err == nil {
 			return source
 		}
+
 		return meta.RepoURL
 	}
+
 	return meta.LocalPath
 }
 
@@ -107,5 +113,6 @@ func foreignSourceType(meta skill.SourceMetadata) lock.SourceType {
 	if meta.IsGitHub() {
 		return lock.SourceGitHub
 	}
+
 	return lock.SourceLocal
 }

@@ -30,17 +30,20 @@ func ScanInstalledSkills(skillsDir string) ([]InstalledSkill, error) {
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
+
 	if err != nil {
 		return nil, fmt.Errorf("read skills directory %q: %w", skillsDir, err)
 	}
 
 	var installed []InstalledSkill
+
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
 
 		dir := filepath.Join(skillsDir, entry.Name())
+
 		data, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
 		if err != nil {
 			continue
@@ -61,6 +64,7 @@ func ScanInstalledSkills(skillsDir string) ([]InstalledSkill, error) {
 	slices.SortFunc(installed, func(a, b InstalledSkill) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
+
 	return installed, nil
 }
 
@@ -76,11 +80,13 @@ func PreferTrackedInstall(lockfileExists bool, sourceType lock.SourceType) bool 
 // lockfile-managed entries.
 func UnmanagedSkills(installed []InstalledSkill, managed map[string]lock.Entry) []InstalledSkill {
 	var foreign []InstalledSkill
+
 	for _, s := range installed {
 		if _, ok := managed[s.Name]; !ok {
 			foreign = append(foreign, s)
 		}
 	}
+
 	return foreign
 }
 
@@ -99,16 +105,20 @@ func FilterInstalledBySource(installed []InstalledSkill, source string) ([]Insta
 	}
 
 	var filtered []InstalledSkill
+
 	for _, s := range installed {
 		if !s.Meta.IsGitHub() {
 			continue
 		}
+
 		ownerRepo, err := OwnerRepoFromURL(s.Meta.RepoURL)
 		if err != nil || ownerRepo != ref.CanonicalSource || s.Meta.Pinned != ref.Ref {
 			continue
 		}
+
 		filtered = append(filtered, s)
 	}
+
 	return filtered, nil
 }
 
@@ -138,12 +148,15 @@ func NewUpstreamFuncs(ctx context.Context, tmpPrefix string) (UpstreamFuncs, fun
 			if err != nil {
 				return "", git.ResolvedRef{}, err
 			}
+
 			tmpDir, err := os.MkdirTemp("", tmpPrefix)
 			if err != nil {
 				return "", git.ResolvedRef{}, fmt.Errorf("create temp dir: %w", err)
 			}
+
 			dirs = append(dirs, tmpDir)
 			cloneDir := filepath.Join(tmpDir, "repo")
+
 			return cloneDir, resolved, git.ShallowClone(ctx, repoURL, resolved.Full, cloneDir)
 		},
 		FetchRef: func(repoURL, ref string) (string, error) {
@@ -151,8 +164,10 @@ func NewUpstreamFuncs(ctx context.Context, tmpPrefix string) (UpstreamFuncs, fun
 			if err != nil {
 				return "", fmt.Errorf("create temp dir: %w", err)
 			}
+
 			dirs = append(dirs, tmpDir)
 			cloneDir := filepath.Join(tmpDir, "repo")
+
 			return cloneDir, git.ShallowClone(ctx, repoURL, ref, cloneDir)
 		},
 		TreeSHA: func(repoDir, path string) (string, error) {
@@ -165,6 +180,7 @@ func NewUpstreamFuncs(ctx context.Context, tmpPrefix string) (UpstreamFuncs, fun
 			os.RemoveAll(d)
 		}
 	}
+
 	return fns, cleanup
 }
 
@@ -175,6 +191,7 @@ func NewUpstreamFuncs(ctx context.Context, tmpPrefix string) (UpstreamFuncs, fun
 // with their own statuses and never fetched.
 func AggregateForeignUpdateCandidates(installed []InstalledSkill, fns UpstreamFuncs) []UpdateCandidate {
 	byRepo := make(map[string][]InstalledSkill)
+
 	var candidates []UpdateCandidate
 
 	for _, s := range installed {
@@ -217,17 +234,21 @@ func AggregateForeignUpdateCandidates(installed []InstalledSkill, fns UpstreamFu
 					Foreign:   true,
 				})
 			}
+
 			continue
 		}
+
 		candidates = append(candidates, repoCandidates...)
 	}
 
 	sortCandidates(candidates)
+
 	return candidates
 }
 
 func resolveRepoCandidates(group []InstalledSkill, fns UpstreamFuncs) ([]UpdateCandidate, error) {
 	repoURL := group[0].Meta.RepoURL
+
 	source, err := OwnerRepoFromURL(repoURL)
 	if err != nil {
 		return nil, err
@@ -253,10 +274,12 @@ func resolveRepoCandidates(group []InstalledSkill, fns UpstreamFuncs) ([]UpdateC
 			candidate.Status = StatusCheckFailed
 			candidate.Reason = err.Error()
 			candidates = append(candidates, candidate)
+
 			continue
 		}
 
 		candidate.LatestHash = treeSHA
+
 		candidate.Status = StatusUpToDate
 		if treeSHA != s.Meta.TreeSHA {
 			candidate.Status = StatusUpdateAvailable
@@ -268,6 +291,7 @@ func resolveRepoCandidates(group []InstalledSkill, fns UpstreamFuncs) ([]UpdateC
 			if err != nil {
 				return nil, fmt.Errorf("stage %q: %w", s.Name, err)
 			}
+
 			if err := injectStagedMetadata(stagedDir, SourceMetadata{
 				RepoURL: repoURL,
 				Ref:     resolved.Full,
@@ -277,6 +301,7 @@ func resolveRepoCandidates(group []InstalledSkill, fns UpstreamFuncs) ([]UpdateC
 				return nil, fmt.Errorf("stage metadata for %q: %w", s.Name, err)
 			}
 		}
+
 		candidate.StagedDir = stagedDir
 		candidates = append(candidates, candidate)
 	}
@@ -286,6 +311,7 @@ func resolveRepoCandidates(group []InstalledSkill, fns UpstreamFuncs) ([]UpdateC
 
 func pinnedCandidate(s InstalledSkill) UpdateCandidate {
 	source, _ := OwnerRepoFromURL(s.Meta.RepoURL)
+
 	return UpdateCandidate{
 		SkillName: s.Name,
 		Source:    source,
@@ -300,14 +326,17 @@ func pinnedCandidate(s InstalledSkill) UpdateCandidate {
 // the installed result stays updatable by gh skill.
 func injectStagedMetadata(stagedDir string, meta SourceMetadata) error {
 	path := filepath.Join(stagedDir, "SKILL.md")
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
+
 	injected, err := InjectSourceMetadata(string(data), meta)
 	if err != nil {
 		return err
 	}
+
 	return os.WriteFile(path, []byte(injected), 0o644)
 }
 
@@ -318,5 +347,6 @@ func copyToStaging(cloneDir, srcDir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	return dir, copyDir(srcDir, dir, false)
 }

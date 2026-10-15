@@ -37,6 +37,7 @@ func usageArgs(validate cobra.PositionalArgs) cobra.PositionalArgs {
 		if err := validate(c, args); err != nil {
 			return usageError(c, err)
 		}
+
 		return nil
 	}
 }
@@ -45,6 +46,7 @@ func checkFailed(names []string) error {
 	if len(names) == 0 {
 		return nil
 	}
+
 	return &cliError{code: codeCheckFailed, err: fmt.Errorf("could not check %s", strings.Join(names, ", "))}
 }
 
@@ -59,5 +61,6 @@ func newErrorRecord(err error) errorRecord {
 	if ce, ok := errors.AsType[*cliError](err); ok {
 		rec.Code, rec.Fix = ce.code, ce.fix
 	}
+
 	return rec
 }

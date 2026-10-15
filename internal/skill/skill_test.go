@@ -26,6 +26,7 @@ func TestDiscoverSkills(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
+
 		if len(skills) != 2 {
 			t.Fatalf("expected 2 skills, got %d", len(skills))
 		}
@@ -33,6 +34,7 @@ func TestDiscoverSkills(t *testing.T) {
 		if skills[0].Name != "my-skill" {
 			t.Errorf("skills[0].Name = %q, want %q", skills[0].Name, "my-skill")
 		}
+
 		if skills[1].Name != "other-skill" {
 			t.Errorf("skills[1].Name = %q, want %q", skills[1].Name, "other-skill")
 		}
@@ -41,6 +43,7 @@ func TestDiscoverSkills(t *testing.T) {
 			if s.ComputedHash == "" {
 				t.Errorf("skill %q has empty ComputedHash", s.Name)
 			}
+
 			if s.Dir == "" {
 				t.Errorf("skill %q has empty Dir", s.Name)
 			}
@@ -59,9 +62,11 @@ func TestDiscoverSkills(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
+
 		if len(skills) != 1 {
 			t.Fatalf("expected 1 skill, got %d", len(skills))
 		}
+
 		if skills[0].Name != "my-skill" {
 			t.Errorf("Name = %q, want %q", skills[0].Name, "my-skill")
 		}
@@ -79,17 +84,19 @@ func TestDiscoverSkills(t *testing.T) {
 
 		// Act
 		skills, err := skill.DiscoverSkills(root)
-
 		// Assert
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
+
 		if len(skills) != 2 {
 			t.Fatalf("expected 2 skills, got %d", len(skills))
 		}
+
 		if skills[0].Name != "codebase-design" || skills[0].Path != "skills/engineering/codebase-design" {
 			t.Errorf("skills[0] = %q (%q)", skills[0].Name, skills[0].Path)
 		}
+
 		if skills[1].Name != "writing-japanese" || skills[1].Path != "skills/writing/writing-japanese" {
 			t.Errorf("skills[1] = %q (%q)", skills[1].Name, skills[1].Path)
 		}
@@ -107,17 +114,19 @@ func TestDiscoverSkills(t *testing.T) {
 
 		// Act
 		skills, err := skill.DiscoverSkills(root)
-
 		// Assert
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
+
 		if len(skills) != 2 {
 			t.Fatalf("expected 2 skills, got %d", len(skills))
 		}
+
 		if skills[0].Name != "cxg" || skills[0].Path != "skills/cxg" {
 			t.Errorf("skills[0] = %q (%q)", skills[0].Name, skills[0].Path)
 		}
+
 		if skills[1].Name != "diagnosing-bugs" || skills[1].Path != "skills/engineering/diagnosing-bugs" {
 			t.Errorf("skills[1] = %q (%q)", skills[1].Name, skills[1].Path)
 		}
@@ -135,11 +144,11 @@ func TestDiscoverSkills(t *testing.T) {
 
 		// Act
 		skills, err := skill.DiscoverSkills(root)
-
 		// Assert
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		picked := skill.FilterDiscoveredSkills(skills, nil)
 		if len(skills) != 2 || len(picked) != 1 || picked[0].Path != "skills/a/code-review" {
 			t.Errorf("skills = %+v, picked = %+v, want both found and skills/a/code-review picked", skills, picked)
@@ -164,6 +173,7 @@ func TestDiscoverSkills(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
+
 		fromFlat, err := skill.DiscoverSkills(flatRoot)
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
@@ -173,6 +183,7 @@ func TestDiscoverSkills(t *testing.T) {
 		if got := fromSkillsDir[0].Path; got != "skills/my-skill" {
 			t.Errorf("Path = %q, want %q", got, "skills/my-skill")
 		}
+
 		if got := fromFlat[0].Path; got != "my-skill" {
 			t.Errorf("Path = %q, want %q", got, "my-skill")
 		}
@@ -189,11 +200,11 @@ func TestDiscoverSkills(t *testing.T) {
 
 		// Act
 		skills, err := skill.DiscoverSkills(root)
-
 		// Assert
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		if len(skills) != 2 || !skills[0].Default || !skills[1].Default {
 			t.Errorf("skills = %+v, want preferred and root-skill as defaults", skills)
 		}
@@ -211,9 +222,11 @@ func TestDiscoverSkills(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
+
 		if len(skills) != 1 {
 			t.Fatalf("expected 1 skill, got %d", len(skills))
 		}
+
 		if skills[0].Name != "valid" {
 			t.Errorf("Name = %q, want %q", skills[0].Name, "valid")
 		}
@@ -230,6 +243,7 @@ func TestDiscoverSkills(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
+
 		if len(skills) != 0 {
 			t.Errorf("expected 0 skills, got %d", len(skills))
 		}
@@ -246,11 +260,11 @@ func TestDiscoverSkills(t *testing.T) {
 
 		// Act
 		skills, err := skill.DiscoverSkills(root)
-
 		// Assert
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		if len(skills) != 2 || skills[0].Name != "top" || !skills[0].Default || skills[1].Name != "nested" || !skills[1].Default {
 			t.Errorf("skills = %+v, want nested and top as defaults", skills)
 		}
@@ -267,6 +281,7 @@ func TestDiscoverSkills(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		hash1 := skills1[0].ComputedHash
 
 		testutil.WriteFiles(t, root, map[string]string{
@@ -277,6 +292,7 @@ func TestDiscoverSkills(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		hash2 := skills2[0].ComputedHash
 
 		if hash1 == hash2 {
@@ -337,17 +353,18 @@ func TestComputeHashMatchesVercel(t *testing.T) {
 			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 				t.Fatal(err)
 			}
+
 			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 				t.Fatal(err)
 			}
 		}
+
 		if err := os.Symlink("a.md", filepath.Join(dir, "link.md")); err != nil {
 			t.Fatal(err)
 		}
 
 		// Act
 		got, err := skill.ComputeHash(dir)
-
 		// Assert
 		if err != nil {
 			t.Fatal(err)

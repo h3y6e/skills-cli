@@ -14,8 +14,10 @@ import (
 	"github.com/h3y6e/skolar/internal/lock"
 )
 
+// Status is the update state of an installed skill.
 type Status string
 
+// Statuses check reports and update acts on.
 const (
 	StatusUpToDate        Status = "up-to-date"
 	StatusUpdateAvailable Status = "update-available"
@@ -64,23 +66,29 @@ func ResolveUpdateCandidates(entries map[string]lock.Entry, upstream []Discovere
 			Ref:         entry.Ref,
 			CurrentHash: entry.ComputedHash,
 		}
+
 		up, err := resolveUpstream(name, entry, upstream)
 		if err != nil {
 			candidate.Status, candidate.Reason = StatusCheckFailed, err.Error()
 			candidates = append(candidates, candidate)
+
 			continue
 		}
+
 		candidate.LatestHash = up.ComputedHash
 		candidate.StagedDir = up.Dir
 		candidate.SkillPath = up.SkillMDPath()
+
 		candidate.Status = StatusUpToDate
 		if entry.ComputedHash != up.ComputedHash {
 			candidate.Status = StatusUpdateAvailable
 		}
+
 		candidates = append(candidates, candidate)
 	}
 
 	sortCandidates(candidates)
+
 	return candidates
 }
 
@@ -88,22 +96,27 @@ func resolveUpstream(name string, entry lock.Entry, upstream []DiscoveredSkill) 
 	if i := slices.IndexFunc(upstream, func(s DiscoveredSkill) bool { return s.SkillMDPath() == entry.SkillPath }); i >= 0 {
 		return upstream[i], nil
 	}
+
 	var named []DiscoveredSkill
+
 	for _, s := range upstream {
 		if s.Name == name {
 			named = append(named, s)
 		}
 	}
+
 	switch len(named) {
 	case 0:
 		return DiscoveredSkill{}, fmt.Errorf("skill %q not found in upstream source", name)
 	case 1:
 		return named[0], nil
 	}
+
 	paths := make([]string, len(named))
 	for i, s := range named {
 		paths[i] = s.SkillMDPath()
 	}
+
 	return DiscoveredSkill{}, fmt.Errorf("skill %q is ambiguous upstream: %s", name, strings.Join(paths, ", "))
 }
 
@@ -112,12 +125,15 @@ func FilterCandidates(candidates []UpdateCandidate, filter []string) []UpdateCan
 	if len(filter) == 0 {
 		return candidates
 	}
+
 	var result []UpdateCandidate
+
 	for _, c := range candidates {
 		if slices.Contains(filter, c.SkillName) {
 			result = append(result, c)
 		}
 	}
+
 	return result
 }
 
@@ -129,10 +145,12 @@ func FilterDiscoveredSkills(skills []DiscoveredSkill, filter []string) []Discove
 		if slices.ContainsFunc(result, func(r DiscoveredSkill) bool { return r.Name == s.Name }) {
 			continue
 		}
+
 		if len(filter) == 0 && s.Default || slices.Contains(filter, s.Name) {
 			result = append(result, s)
 		}
 	}
+
 	return result
 }
 
@@ -150,6 +168,7 @@ func AggregateUpdateCandidates(entries map[string]lock.Entry, cloneFn CloneFunc)
 
 	bySource := groupEntriesBySource(supported)
 	results := make(chan aggregateResult, len(bySource))
+
 	var wg sync.WaitGroup
 
 	for source, group := range bySource {
@@ -175,50 +194,64 @@ func AggregateUpdateCandidates(entries map[string]lock.Entry, cloneFn CloneFunc)
 		close(results)
 	}()
 
-	var all []UpdateCandidate
-	var errs []error
+	var (
+		all  []UpdateCandidate
+		errs []error
+	)
+
 	for result := range results {
 		if result.err != nil {
 			errs = append(errs, result.err)
 			continue
 		}
+
 		all = append(all, result.candidates...)
 	}
+
 	if err := errors.Join(errs...); err != nil {
 		return nil, skipped, err
 	}
 
 	sortCandidates(all)
+
 	return all, skipped, nil
 }
 
 // NewCloneFunc returns a CloneFunc that shallow-clones into temp directories,
 // and a cleanup function that removes all created temp directories.
 func NewCloneFunc(ctx context.Context, prefix string) (CloneFunc, func()) {
-	var dirs []string
-	var mu sync.Mutex
+	var (
+		dirs []string
+		mu   sync.Mutex
+	)
 
 	cloneFn := func(source string) (string, error) {
 		ref, err := ParseSource(source)
 		if err != nil {
 			return "", err
 		}
+
 		tmpDir, err := os.MkdirTemp("", prefix)
 		if err != nil {
 			return "", fmt.Errorf("create temp dir: %w", err)
 		}
+
 		if err := git.ShallowClone(ctx, ref.CloneURL, ref.Ref, tmpDir); err != nil {
 			os.RemoveAll(tmpDir)
 			return "", err
 		}
+
 		mu.Lock()
+
 		dirs = append(dirs, tmpDir)
 		mu.Unlock()
+
 		return tmpDir, nil
 	}
 
 	cleanup := func() {
 		mu.Lock()
+
 		cleanupDirs := append([]string(nil), dirs...)
 		mu.Unlock()
 
@@ -243,6 +276,7 @@ func sortCandidates(c []UpdateCandidate) {
 
 func partitionSupportedEntries(entries map[string]lock.Entry) (map[string]lock.Entry, []SkippedEntry) {
 	supported := make(map[string]lock.Entry)
+
 	var skipped []SkippedEntry
 
 	for name, entry := range entries {
@@ -250,6 +284,7 @@ func partitionSupportedEntries(entries map[string]lock.Entry) (map[string]lock.E
 			supported[name] = entry
 			continue
 		}
+
 		skipped = append(skipped, SkippedEntry{SkillName: name, SourceType: entry.SourceType})
 	}
 
@@ -262,14 +297,18 @@ func partitionSupportedEntries(entries map[string]lock.Entry) (map[string]lock.E
 
 func groupEntriesBySource(entries map[string]lock.Entry) map[string]map[string]lock.Entry {
 	bySource := make(map[string]map[string]lock.Entry)
+
 	for name, entry := range entries {
 		sourceKey := SourceInput(entry)
+
 		group, ok := bySource[sourceKey]
 		if !ok {
 			group = make(map[string]lock.Entry)
 			bySource[sourceKey] = group
 		}
+
 		group[name] = entry
 	}
+
 	return bySource
 }

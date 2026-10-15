@@ -22,17 +22,21 @@ func TestVerifyTrackedRootSkill(t *testing.T) {
 		skillsDir := filepath.Join(t.TempDir(), "skills")
 		ref := skill.SourceRef{CanonicalSource: "o/r", SourceType: "github"}
 		installTracked(t, repo, ref, git.ResolvedRef{Full: "refs/heads/main"}, skillsDir)
+
 		installed, err := skill.ScanInstalledSkills(skillsDir)
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		fns := skill.UpstreamFuncs{
 			FetchRef: func(string, string) (string, error) {
 				clone := filepath.Join(t.TempDir(), "clone")
-				out, err := exec.Command("git", "clone", "-q", repo, clone).CombinedOutput()
+
+				out, err := exec.CommandContext(t.Context(), "git", "clone", "-q", repo, clone).CombinedOutput()
 				if err != nil {
 					t.Fatalf("git clone: %v\n%s", err, out)
 				}
+
 				return clone, nil
 			},
 			TreeSHA: func(dir, path string) (string, error) { return git.TreeSHA(t.Context(), dir, path) },
@@ -45,6 +49,7 @@ func TestVerifyTrackedRootSkill(t *testing.T) {
 		if len(results) != 2 {
 			t.Fatalf("results = %+v", results)
 		}
+
 		for _, r := range results {
 			if r.Status != skill.VerifyVerified {
 				t.Errorf("%s: %s %v %s", r.SkillName, r.Status, r.Files, r.Reason)

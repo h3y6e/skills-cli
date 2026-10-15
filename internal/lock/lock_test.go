@@ -68,6 +68,7 @@ func TestReadFileFixture(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
+
 	if err := os.WriteFile(path, lockFixture, 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
@@ -141,6 +142,7 @@ func TestReadFileFixture(t *testing.T) {
 			if !ok {
 				t.Fatalf("entry %q missing", tt.name)
 			}
+
 			if got != tt.entry {
 				t.Fatalf("entry = %#v, want %#v", got, tt.entry)
 			}
@@ -148,6 +150,7 @@ func TestReadFileFixture(t *testing.T) {
 	}
 
 	raw, _ := json.Marshal(got)
+
 	var roundTrip lock.File
 	if err := json.Unmarshal(raw, &roundTrip); err != nil {
 		t.Fatalf("JSON round-trip failed: %v", err)
@@ -192,15 +195,16 @@ func TestWriteFileMode(t *testing.T) {
 
 		// Act
 		err := lock.WriteFile(path, lock.File{Version: 1})
-
 		// Assert
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		info, err := os.Stat(path)
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		if got := info.Mode().Perm(); got != 0o644 {
 			t.Errorf("mode = %v, want 0644", got)
 		}

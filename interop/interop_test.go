@@ -6,6 +6,7 @@ package interop
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io/fs"
 	"maps"
@@ -32,17 +33,23 @@ func TestMain(m *testing.M) {
 	}
 	// The sandboxed HOME hides gh's stored login, so pass it as GH_TOKEN.
 	if os.Getenv("GH_TOKEN") == "" {
-		if token, err := exec.Command("gh", "auth", "token").Output(); err == nil {
-			os.Setenv("GH_TOKEN", strings.TrimSpace(string(token)))
+		if token, err := exec.CommandContext(context.Background(), "gh", "auth", "token").Output(); err == nil {
+			if err := os.Setenv("GH_TOKEN", strings.TrimSpace(string(token))); err != nil {
+				panic(err)
+			}
 		}
 	}
+
 	skolar = filepath.Join(dir, "skolar")
-	build := exec.Command("go", "build", "-o", skolar, "github.com/h3y6e/skolar")
+	build := exec.CommandContext(context.Background(), "go", "build", "-o", skolar, "github.com/h3y6e/skolar")
+
 	build.Stdout, build.Stderr = os.Stdout, os.Stderr
 	if err := build.Run(); err != nil {
 		panic(err)
 	}
+
 	code := m.Run()
+
 	os.RemoveAll(dir)
 	os.Exit(code)
 }
@@ -54,7 +61,8 @@ var homes sync.Map
 func env(t *testing.T) []string {
 	t.Helper()
 	home, _ := homes.LoadOrStore(t.Name(), t.TempDir())
-	h := home.(string)
+	h, _ := home.(string)
+
 	return append(os.Environ(),
 		"HOME="+h, "XDG_CONFIG_HOME="+filepath.Join(h, ".config"), "XDG_STATE_HOME="+filepath.Join(h, ".local", "state"),
 		"DO_NOT_TRACK=1", "DISABLE_TELEMETRY=1", "NO_COLOR=1")
@@ -62,21 +70,27 @@ func env(t *testing.T) []string {
 
 func runStderr(t *testing.T, dir, name string, args ...string) (string, string) {
 	t.Helper()
-	cmd := exec.Command(name, args...)
+
+	cmd := exec.CommandContext(t.Context(), name, args...)
 	cmd.Dir = dir
 	cmd.Env = env(t)
+
 	var stderr bytes.Buffer
+
 	cmd.Stderr = &stderr
+
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("%s %s: %v\nstdout:\n%s\nstderr:\n%s", name, strings.Join(args, " "), err, out, stderr.String())
 	}
+
 	return string(out), stderr.String()
 }
 
 func run(t *testing.T, dir, name string, args ...string) string {
 	t.Helper()
 	out, _ := runStderr(t, dir, name, args...)
+
 	return out
 }
 
@@ -84,6 +98,7 @@ func run(t *testing.T, dir, name string, args ...string) string {
 // skips a skill, since it still exits 0.
 func ghUpdate(t *testing.T, dir string, args ...string) {
 	t.Helper()
+
 	_, stderr := runStderr(t, filepath.Dir(dir), "gh", append([]string{"skill", "update", "--dir", dir}, args...)...)
 	for line := range strings.Lines(stderr) {
 		if strings.HasPrefix(line, "!") {
@@ -104,42 +119,53 @@ func ghInstall(t *testing.T, dir string, args ...string) {
 
 func snapshot(t *testing.T, dir string) map[string]string {
 	t.Helper()
+
 	files := map[string]string{}
+
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
+
 		b, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
+
 		rel, _ := filepath.Rel(dir, path)
 		files[filepath.ToSlash(rel)] = string(b)
+
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	return files
 }
 
 func skillNames(t *testing.T, dir string) []string {
 	t.Helper()
+
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	var names []string
+
 	for _, e := range entries {
 		if e.IsDir() {
 			names = append(names, e.Name())
 		}
 	}
+
 	return names
 }
 
 func assertSameFiles(t *testing.T, want, got map[string]string) {
 	t.Helper()
+
 	for _, k := range slices.Sorted(maps.Keys(want)) {
 		if g, ok := got[k]; !ok {
 			t.Errorf("missing %s", k)
@@ -147,6 +173,7 @@ func assertSameFiles(t *testing.T, want, got map[string]string) {
 			t.Errorf("%s differs\nwant:\n%s\ngot:\n%s", k, want[k], g)
 		}
 	}
+
 	for _, k := range slices.Sorted(maps.Keys(got)) {
 		if _, ok := want[k]; !ok {
 			t.Errorf("unexpected %s", k)
@@ -156,16 +183,19 @@ func assertSameFiles(t *testing.T, want, got map[string]string) {
 
 func subtree(files map[string]string, prefix string) map[string]string {
 	out := map[string]string{}
+
 	for k, v := range files {
 		if rest, ok := strings.CutPrefix(k, prefix+"/"); ok {
 			out[rest] = v
 		}
 	}
+
 	return out
 }
 
 func assertAllUpToDate(t *testing.T, dest string) {
 	t.Helper()
+
 	var record struct {
 		Results []struct {
 			SkillName string `json:"skillName"`
@@ -176,13 +206,16 @@ func assertAllUpToDate(t *testing.T, dest string) {
 	if err := json.Unmarshal([]byte(run(t, filepath.Dir(filepath.Dir(dest)), skolar, "check", "-d", dest, "--json")), &record); err != nil {
 		t.Fatal(err)
 	}
+
 	var checked []string
 	for _, r := range record.Results {
 		checked = append(checked, r.SkillName)
 	}
+
 	if installed := skillNames(t, dest); !slices.Equal(slices.Sorted(slices.Values(checked)), installed) {
 		t.Fatalf("skolar check covered %v, want every installed skill %v", checked, installed)
 	}
+
 	for _, r := range record.Results {
 		if r.Status != "up-to-date" {
 			t.Errorf("%s: %s %s", r.SkillName, r.Status, r.Reason)
@@ -235,6 +268,7 @@ func TestVercelFormat(t *testing.T) {
 		// Arrange
 		vercel, own := t.TempDir(), t.TempDir()
 		vercelAdd(t, vercel)
+
 		if err := os.WriteFile(filepath.Join(own, "skills-lock.json"), []byte(`{"version":1,"skills":{}}`), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -255,36 +289,44 @@ func TestVercelFormat(t *testing.T) {
 			dir := ".agents/skills/" + name
 			assertSameFiles(t, subtree(want, dir), subtree(installed, dir))
 		}
+
 		var wantLock, gotLock struct {
 			Skills map[string]json.RawMessage `json:"skills"`
 		}
 		if err := json.Unmarshal([]byte(want["skills-lock.json"]), &wantLock); err != nil {
 			t.Fatal(err)
 		}
+
 		if err := json.Unmarshal([]byte(installed["skills-lock.json"]), &gotLock); err != nil {
 			t.Fatal(err)
 		}
+
 		for name, entry := range wantLock.Skills {
 			got, ok := gotLock.Skills[name]
 			if !ok {
 				t.Errorf("lock entry %s missing", name)
 				continue
 			}
+
 			if !bytes.Equal(compactJSON(t, entry), compactJSON(t, got)) {
 				t.Errorf("lock entry %s\nwant: %s\ngot:  %s", name, entry, got)
 			}
 		}
+
 		assertSameFiles(t, installed, snapshot(t, own))
 	})
 }
 
 func editLock(t *testing.T, project string, edit func(entries map[string]map[string]any)) {
 	t.Helper()
+
 	path := filepath.Join(project, "skills-lock.json")
+
 	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	var lf struct {
 		Version int                       `json:"version"`
 		Skills  map[string]map[string]any `json:"skills"`
@@ -292,11 +334,14 @@ func editLock(t *testing.T, project string, edit func(entries map[string]map[str
 	if err := json.Unmarshal(b, &lf); err != nil {
 		t.Fatal(err)
 	}
+
 	edit(lf.Skills)
+
 	b, err = json.MarshalIndent(lf, "", "  ")
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if err := os.WriteFile(path, append(b, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -304,10 +349,12 @@ func editLock(t *testing.T, project string, edit func(entries map[string]map[str
 
 func compactJSON(t *testing.T, raw json.RawMessage) []byte {
 	t.Helper()
+
 	var b bytes.Buffer
 	if err := json.Compact(&b, raw); err != nil {
 		t.Fatal(err)
 	}
+
 	return b.Bytes()
 }
 
@@ -341,6 +388,7 @@ func TestGhFormat(t *testing.T) {
 		for _, name := range skillNames(t, gh) {
 			assertSameFiles(t, subtree(want, name), subtree(installed, name))
 		}
+
 		assertSameFiles(t, installed, snapshot(t, own))
 	})
 
@@ -394,16 +442,20 @@ func TestGhFormat(t *testing.T) {
 // unpin turns a pinned gh install into an unpinned one at the same version.
 func unpin(t *testing.T, skillMD string) {
 	t.Helper()
+
 	b, err := os.ReadFile(skillMD)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	var kept []string
+
 	for line := range strings.Lines(string(b)) {
 		if !strings.Contains(line, "github-pinned:") {
 			kept = append(kept, line)
 		}
 	}
+
 	if err := os.WriteFile(skillMD, []byte(strings.Join(kept, "")), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -429,6 +481,7 @@ func TestGhUndiscoverableLayouts(t *testing.T) {
 			if got := metadataValue(before[tc.skill+"/SKILL.md"], "github-path"); got != tc.path {
 				t.Errorf("github-path = %q, want %q", got, tc.path)
 			}
+
 			assertSameFiles(t, before, snapshot(t, dir))
 		})
 	}
@@ -440,6 +493,7 @@ func metadataValue(skillMD, key string) string {
 			return strings.Trim(strings.TrimSpace(v), `"'`)
 		}
 	}
+
 	return ""
 }
 
@@ -458,6 +512,7 @@ func TestRecordChoice(t *testing.T) {
 		if got := metadataValue(snapshot(t, dir)["alpha/SKILL.md"], "github-repo"); got != fixtureURL {
 			t.Errorf("github-repo = %q, want %q", got, fixtureURL)
 		}
+
 		if got := snapshot(t, project)["skills-lock.json"]; got != lockBefore {
 			t.Errorf("skills-lock.json changed:\n%s", got)
 		}
@@ -467,19 +522,22 @@ func TestRecordChoice(t *testing.T) {
 		// Arrange
 		src := t.TempDir()
 		run(t, src, "git", "init", "-q")
+
 		if err := os.MkdirAll(filepath.Join(src, "skills", "local"), 0o755); err != nil {
 			t.Fatal(err)
 		}
+
 		if err := os.WriteFile(filepath.Join(src, "skills", "local", "SKILL.md"), []byte("---\nname: local\ndescription: d\n---\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
+
 		run(t, src, "git", "add", "-A")
 		run(t, src, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init")
 		project := t.TempDir()
 		dir := filepath.Join(project, "custom", "skills")
 
 		// Act
-		cmd := exec.Command(skolar, "add", "file://"+src, "-d", dir, "-y")
+		cmd := exec.CommandContext(t.Context(), skolar, "add", "file://"+src, "-d", dir, "-y")
 		cmd.Dir = project
 		out, err := cmd.CombinedOutput()
 
@@ -487,6 +545,7 @@ func TestRecordChoice(t *testing.T) {
 		if err == nil {
 			t.Fatalf("skolar add succeeded:\n%s", out)
 		}
+
 		if files := snapshot(t, project); len(files) != 0 {
 			t.Errorf("skolar add wrote files: %v", slices.Sorted(maps.Keys(files)))
 		}

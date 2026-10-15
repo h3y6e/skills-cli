@@ -50,11 +50,11 @@ func TestResolveRef(t *testing.T) {
 
 		// Act
 		got, err := git.ResolveRef(t.Context(), repo, "feature/install")
-
 		// Assert
 		if err != nil {
 			t.Fatalf("ResolveRef() error = %v", err)
 		}
+
 		if got.Full != "refs/heads/feature/install" {
 			t.Errorf("Full = %q, want %q", got.Full, "refs/heads/feature/install")
 		}
@@ -68,11 +68,11 @@ func TestResolveRef(t *testing.T) {
 
 		// Act
 		got, err := git.ResolveRef(t.Context(), repo, "v1.0.0")
-
 		// Assert
 		if err != nil {
 			t.Fatalf("ResolveRef() error = %v", err)
 		}
+
 		if got.Full != "refs/tags/v1.0.0" {
 			t.Errorf("Full = %q, want %q", got.Full, "refs/tags/v1.0.0")
 		}
@@ -90,6 +90,7 @@ func TestResolveRef(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ResolveRef() error = %v", err)
 		}
+
 		if err := git.ShallowClone(t.Context(), repo, got.Full, dest); err != nil {
 			t.Fatalf("ShallowClone() error = %v", err)
 		}
@@ -98,10 +99,12 @@ func TestResolveRef(t *testing.T) {
 		if got.Full != "refs/heads/collide" {
 			t.Errorf("Full = %q, want %q", got.Full, "refs/heads/collide")
 		}
+
 		data, err := os.ReadFile(filepath.Join(dest, "skills/my-skill/SKILL.md"))
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		if string(data) != "# Feature\n" {
 			t.Errorf("cloned SKILL.md = %q, want branch content", data)
 		}
@@ -116,11 +119,11 @@ func TestResolveRef(t *testing.T) {
 
 		// Act
 		got, err := git.ResolveRef(t.Context(), repo, sha)
-
 		// Assert
 		if err != nil {
 			t.Fatalf("ResolveRef() error = %v", err)
 		}
+
 		if got.Full != sha {
 			t.Errorf("got = %+v, want Full = %q", got, sha)
 		}
@@ -134,11 +137,11 @@ func TestResolveRef(t *testing.T) {
 
 		// Act
 		got, err := git.ResolveRef(t.Context(), repo, "")
-
 		// Assert
 		if err != nil {
 			t.Fatalf("ResolveRef() error = %v", err)
 		}
+
 		if got.Full != "refs/tags/v1.9.0" {
 			t.Errorf("Full = %q, want %q", got.Full, "refs/tags/v1.9.0")
 		}
@@ -152,11 +155,11 @@ func TestResolveRef(t *testing.T) {
 
 		// Act
 		got, err := git.ResolveRef(t.Context(), repo, "")
-
 		// Assert
 		if err != nil {
 			t.Fatalf("ResolveRef() error = %v", err)
 		}
+
 		if got.Full != "refs/heads/main" {
 			t.Errorf("Full = %q, want %q", got.Full, "refs/heads/main")
 		}
@@ -171,19 +174,21 @@ func TestTreeSHA(t *testing.T) {
 
 		// Arrange
 		repo := initTaggedRepo(t)
+
 		clone := filepath.Join(t.TempDir(), "clone")
 		if err := git.ShallowClone(t.Context(), repo, "v1.0.0", clone); err != nil {
 			t.Fatalf("ShallowClone() error = %v", err)
 		}
+
 		want := strings.TrimSpace(testutil.Git(t, clone, "rev-parse", "HEAD:skills/my-skill"))
 
 		// Act
 		got, err := git.TreeSHA(t.Context(), clone, "skills/my-skill")
-
 		// Assert
 		if err != nil {
 			t.Fatalf("TreeSHA() error = %v", err)
 		}
+
 		if got != want {
 			t.Errorf("TreeSHA() = %q, want %q", got, want)
 		}
@@ -194,10 +199,12 @@ func TestTreeSHA(t *testing.T) {
 
 		// Arrange
 		repo := initTaggedRepo(t)
+
 		clone := filepath.Join(t.TempDir(), "clone")
 		if err := git.ShallowClone(t.Context(), repo, "v1.0.0", clone); err != nil {
 			t.Fatalf("ShallowClone() error = %v", err)
 		}
+
 		want := strings.TrimSpace(testutil.Git(t, clone, "rev-parse", "HEAD^{tree}"))
 
 		// Act
@@ -214,6 +221,7 @@ func TestTreeSHA(t *testing.T) {
 
 		// Arrange
 		repo := initTaggedRepo(t)
+
 		clone := filepath.Join(t.TempDir(), "clone")
 		if err := git.ShallowClone(t.Context(), repo, "", clone); err != nil {
 			t.Fatalf("ShallowClone() error = %v", err)

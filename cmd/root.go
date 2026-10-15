@@ -1,3 +1,4 @@
+// Package cmd implements the skolar command line.
 package cmd
 
 import (
@@ -27,6 +28,7 @@ var (
 	NewUpstreamFuncs = skill.NewUpstreamFuncs
 )
 
+// NewRootCmd builds the skolar command tree.
 func NewRootCmd(version string) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "skolar",
@@ -44,16 +46,16 @@ Exit status: 0 on success, 1 on failure (including a skill that could not be che
 			if len(args) == 0 {
 				return c.Help()
 			}
+
 			msg := fmt.Sprintf("unknown command %q for %q", args[0], c.CommandPath())
 			if s := c.SuggestionsFor(args[0]); len(s) > 0 {
 				msg += "\n\nDid you mean this?\n\t" + strings.Join(s, "\n\t")
 			}
+
 			return usageError(c, errors.New(msg))
 		},
 	}
-	root.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
-		return usageError(c, err)
-	})
+	root.SetFlagErrorFunc(usageError)
 
 	root.AddCommand(newAddCmd())
 	root.AddCommand(newCheckCmd())
@@ -75,12 +77,14 @@ func Execute(version string) int {
 
 	ctx, cancel := context.WithCancelCause(context.Background())
 	sigs := make(chan os.Signal, 1)
+
 	for _, s := range []os.Signal{os.Interrupt, syscall.SIGTERM} {
 		// An inherited ignore (e.g. a background job) must stay, or reraise would block.
 		if !signal.Ignored(s) {
 			signal.Notify(sigs, s)
 		}
 	}
+
 	go func() { cancel(signalError{<-sigs}) }()
 
 	c, err := root, applyEnv(root)
@@ -91,23 +95,29 @@ func Execute(version string) int {
 	if sig, ok := errors.AsType[signalError](context.Cause(ctx)); ok {
 		reraise(sig.Signal)
 	}
+
 	if err == nil {
 		return 0
 	}
+
 	rec := newErrorRecord(err)
 	// Handlers write their own record; usage errors stop before any handler runs.
 	if key := c.Annotations[recordKey]; key != "" && rec.Code == codeUsage {
 		if asJSON, _ := c.Flags().GetBool("json"); asJSON {
-			writeRecord(c.OutOrStdout(), key, []any{}, err)
+			_ = writeRecord(c.OutOrStdout(), key, []any{}, err)
 		}
 	}
+
 	fmt.Fprintf(os.Stderr, "error: %s\n", rec.Message)
+
 	if rec.Fix != "" {
 		fmt.Fprintf(os.Stderr, "fix: %s\n", rec.Fix)
 	}
+
 	if rec.Code == codeUsage || rec.Code == codeConfirmationRequired {
 		return 2
 	}
+
 	return 1
 }
 
@@ -120,10 +130,12 @@ func (e signalError) Error() string { return "received " + e.String() }
 
 func reraise(sig os.Signal) {
 	signal.Reset()
+
 	p, err := os.FindProcess(os.Getpid())
 	if err != nil {
 		return
 	}
+
 	if p.Signal(sig) == nil {
 		select {}
 	}
@@ -138,27 +150,34 @@ func applyEnv(root *cobra.Command) error {
 		commands = append(commands[1:], c.Commands()...)
 
 		var err error
+
 		c.Flags().VisitAll(func(f *pflag.Flag) {
 			name := "SKOLAR_" + strings.ToUpper(strings.ReplaceAll(f.Name, "-", "_"))
+
 			value := os.Getenv(name)
 			if err != nil || value == "" {
 				return
 			}
+
 			if slice, ok := f.Value.(pflag.SliceValue); ok {
 				err = slice.Replace(strings.Split(value, ","))
 			} else {
 				err = f.Value.Set(value)
 			}
+
 			if err != nil {
 				err = usageError(root, fmt.Errorf("%s: %w", name, err))
 				return
 			}
+
 			f.DefValue = f.Value.String()
 		})
+
 		if err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -181,15 +200,19 @@ type inventory struct {
 
 func loadInventory(dir string) (inventory, error) {
 	layout := lock.NewLayout(dir)
+
 	lf, err := layout.ReadLockFile()
 	if err != nil {
 		return inventory{}, err
 	}
+
 	installed, err := skill.ScanInstalledSkills(layout.Dir)
 	if err != nil {
 		return inventory{}, err
 	}
+
 	entries := layout.Entries(lf)
+
 	return inventory{layout: layout, lockFile: lf, entries: entries, foreign: skill.UnmanagedSkills(installed, entries)}, nil
 }
 
@@ -213,6 +236,7 @@ func collectCandidates(
 	if err != nil {
 		return nil, nil, cleanup, err
 	}
+
 	return append(candidates, skill.AggregateForeignUpdateCandidates(foreign, fns)...), skipped, cleanup, nil
 }
 
@@ -221,15 +245,18 @@ func resolveVersion(version string) string {
 	if !ok {
 		return version
 	}
+
 	if version == "dev" {
 		if v := info.Main.Version; v != "" && v != "(devel)" {
 			version = v
 		}
 	}
+
 	for _, s := range info.Settings {
 		if s.Key == "vcs.revision" && len(s.Value) >= 7 {
 			return version + " (" + s.Value[:7] + ")"
 		}
 	}
+
 	return version
 }
