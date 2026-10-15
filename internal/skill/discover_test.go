@@ -224,6 +224,7 @@ func TestDiscoverSkillsEdges(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(root, "skills", "link"), 0o755); err != nil {
 			t.Fatal(err)
 		}
+
 		if err := os.Symlink(filepath.Join(root, "elsewhere.md"), filepath.Join(root, "skills", "link", "SKILL.md")); err != nil {
 			t.Fatal(err)
 		}
@@ -234,6 +235,7 @@ func TestDiscoverSkillsEdges(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		if got := discoveredPaths(t, skills, false); !maps.Equal(got, map[string]string{"good": "skills/good"}) {
 			t.Errorf("DiscoverSkills() = %v", got)
 		}
