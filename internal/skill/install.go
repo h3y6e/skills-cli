@@ -342,6 +342,7 @@ func copyDir(src fs.FS, dst string, vercel bool) error {
 		}
 
 		target := filepath.Join(dst, filepath.FromSlash(rel))
+
 		if skipCopy(d, vercel) {
 			if d.IsDir() {
 				return filepath.SkipDir

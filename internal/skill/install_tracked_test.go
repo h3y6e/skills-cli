@@ -49,6 +49,7 @@ func snapshotOf(t *testing.T, dir, tree string) git.Snapshot {
 	t.Helper()
 
 	trees := map[string]string{}
+
 	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err == nil && d.IsDir() {
 			rel, _ := filepath.Rel(dir, path)

@@ -39,6 +39,7 @@ func stubGitHubTransport(t *testing.T, canonical, bareURL string) {
 	t.Helper()
 
 	repoURL := "https://github.com/" + canonical
+
 	t.Setenv("GIT_CONFIG_COUNT", "2")
 	t.Setenv("GIT_CONFIG_KEY_0", "url."+bareURL+".insteadOf")
 	t.Setenv("GIT_CONFIG_VALUE_0", repoURL)

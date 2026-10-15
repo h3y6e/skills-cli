@@ -153,6 +153,7 @@ func readSkillDir(repo fs.FS, rel string) (skillDir, bool) {
 	if err != nil {
 		return skillDir{}, false
 	}
+
 	raw, _, err := parseFrontmatter(string(data))
 	if err != nil {
 		return skillDir{}, false

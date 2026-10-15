@@ -121,7 +121,7 @@ func verifyTracked(s InstalledSkill, fns UpstreamFuncs) (VerifyStatus, []string,
 	if err != nil {
 		return VerifyUnverifiable, nil, err.Error()
 	}
-	defer snap.Close()
+	defer func() { _ = snap.Close() }()
 
 	want, err := withMetadata(snap.FS, s.Meta)
 	if err != nil {

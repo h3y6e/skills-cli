@@ -41,6 +41,7 @@ func ComputeHash(fsys fs.FS) (string, error) {
 	slices.SortFunc(files, collate.New(language.Und).CompareString)
 
 	h := sha256.New()
+
 	for _, p := range files {
 		data, err := fs.ReadFile(fsys, p)
 		if err != nil {

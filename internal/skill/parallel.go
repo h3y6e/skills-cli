@@ -11,6 +11,7 @@ func parallelMap[T, R any](items []T, f func(T) R) []R {
 	sem := make(chan struct{}, 16)
 
 	var wg sync.WaitGroup
+
 	for i, item := range items {
 		sem <- struct{}{}
 

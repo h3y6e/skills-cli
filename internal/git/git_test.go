@@ -73,6 +73,7 @@ func TestFetch(t *testing.T) {
 		// Arrange
 		work := testutil.InitWorkRepo(t)
 		testutil.WriteFiles(t, work, map[string]string{"skills/a/SKILL.md": "# A\n", "skills/a/run.sh": "#!/bin/sh\n"})
+
 		if err := os.Chmod(filepath.Join(work, "skills", "a", "run.sh"), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -289,6 +290,7 @@ func TestReadTree(t *testing.T) {
 
 		// Arrange
 		repo := initTaggedRepo(t)
+
 		s, err := fetch(t, repo, "v1.0.0")
 		if err != nil {
 			t.Fatal(err)

@@ -69,7 +69,7 @@ func runAdd(cmd *cobra.Command, source string, opts addOptions) error {
 	if err != nil {
 		return fmt.Errorf("fetch %s: %w", ref.CanonicalSource, err)
 	}
-	defer snap.Close()
+	defer func() { _ = snap.Close() }()
 
 	discovered, err := skill.DiscoverSkills(snap.FS)
 	if err != nil {
