@@ -92,7 +92,8 @@ func latestTag(refs remoteRefs) string {
 			continue
 		}
 
-		if latestVersion == "" || semver.Compare(version, latestVersion) > 0 {
+		// Tags such as 1.0.0 and v1.0.0 rank equal; the name breaks the tie.
+		if c := semver.Compare(version, latestVersion); latestVersion == "" || c > 0 || c == 0 && name > latest {
 			latestVersion, latest = version, name
 		}
 	}

@@ -52,7 +52,7 @@ func TestCacheRepo(t *testing.T) {
 		t.Cleanup(func() { _ = c.Close() })
 
 		// Act
-		r, err := c.repo(t.Context(), testutil.BareRepo(t, map[string]string{"a": "a\n"}))
+		r, err := c.repo(t.Context(), testutil.BareRepo(t, map[string]string{"a": "a\n"}), "sha1")
 		// Assert
 		if err != nil {
 			t.Fatal(err)
@@ -105,7 +105,7 @@ func TestCacheRepo(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		r, err := c.repo(t.Context(), url)
+		r, err := c.repo(t.Context(), url, "sha1")
 		if err != nil {
 			t.Fatal(err)
 		}

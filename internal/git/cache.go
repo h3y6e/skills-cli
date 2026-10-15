@@ -67,7 +67,7 @@ func (c *Cache) Close() error {
 // endings and applying filters as .gitattributes and core.autocrlf direct,
 // fetching ref unless the cache holds it.
 func (c *Cache) Checkout(ctx context.Context, cloneURL string, ref ResolvedRef) (fs.FS, error) {
-	r, err := c.repo(ctx, cloneURL)
+	r, err := c.repo(ctx, cloneURL, objectFormat(ref.Object))
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +109,7 @@ func (c *Cache) Checkout(ctx context.Context, cloneURL string, ref ResolvedRef) 
 
 // Fetch reads ref of cloneURL, fetching it unless the cache holds it.
 func (c *Cache) Fetch(ctx context.Context, cloneURL string, ref ResolvedRef) (Snapshot, error) {
-	r, err := c.repo(ctx, cloneURL)
+	r, err := c.repo(ctx, cloneURL, objectFormat(ref.Object))
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -126,7 +126,7 @@ func (c *Cache) Fetch(ctx context.Context, cloneURL string, ref ResolvedRef) (Sn
 
 // Prefetch fetches ref of cloneURL unless the cache holds it.
 func (c *Cache) Prefetch(ctx context.Context, cloneURL string, ref ResolvedRef) error {
-	r, err := c.repo(ctx, cloneURL)
+	r, err := c.repo(ctx, cloneURL, objectFormat(ref.Object))
 	if err != nil {
 		return err
 	}
@@ -142,7 +142,7 @@ func (c *Cache) ReadTree(ctx context.Context, cloneURL, treeSHA string) (fs.FS, 
 		return nil, fmt.Errorf("invalid tree SHA %q", treeSHA)
 	}
 
-	r, err := c.repo(ctx, cloneURL)
+	r, err := c.repo(ctx, cloneURL, objectFormat(treeSHA))
 	if err != nil {
 		return nil, err
 	}
@@ -154,16 +154,16 @@ func (c *Cache) ReadTree(ctx context.Context, cloneURL, treeSHA string) (fs.FS, 
 	return r.tree(treeSHA), nil
 }
 
-// repo opens the repository of cloneURL, keyed so that the URLs one remote
-// is named by, with or without .git, share it.
-func (c *Cache) repo(ctx context.Context, cloneURL string) (*repo, error) {
-	key := strings.TrimSuffix(strings.TrimSuffix(cloneURL, "/"), ".git")
+// repo opens the repository of cloneURL in object format, keyed so that
+// the URLs one remote is named by, with or without .git, share it.
+func (c *Cache) repo(ctx context.Context, cloneURL, format string) (*repo, error) {
+	key := strings.TrimSuffix(strings.TrimSuffix(cloneURL, "/"), ".git") + "\x00" + format
 
 	c.mu.Lock()
 
 	open, ok := c.repos[key]
 	if !ok {
-		open = sync.OnceValues(func() (*repo, error) { return openRepo(ctx, key) })
+		open = sync.OnceValues(func() (*repo, error) { return openRepo(ctx, key, format) })
 		c.repos[key] = open
 	}
 
@@ -182,7 +182,7 @@ type repo struct {
 	close  func() error
 }
 
-func openRepo(ctx context.Context, key string) (*repo, error) {
+func openRepo(ctx context.Context, key, format string) (*repo, error) {
 	base, err := cacheRoot()
 	if err != nil {
 		return nil, fmt.Errorf("locate cache: %w", err)
@@ -197,7 +197,7 @@ func openRepo(ctx context.Context, key string) (*repo, error) {
 	sum := sha256.Sum256([]byte(key))
 	r := &repo{gitDir: filepath.Join(root, "repos", hex.EncodeToString(sum[:12])+".git")}
 
-	if err := r.init(ctx); err != nil {
+	if err := r.init(ctx, format); err != nil {
 		return nil, err
 	}
 
@@ -242,7 +242,7 @@ func cacheRoot() (string, error) {
 	return filepath.Join(home, ".cache"), err
 }
 
-func (r *repo) init(ctx context.Context) error {
+func (r *repo) init(ctx context.Context, format string) error {
 	unlock, err := lock(ctx, r.gitDir+".lock")
 	if err != nil {
 		return err
@@ -253,7 +253,7 @@ func (r *repo) init(ctx context.Context) error {
 		return err
 	}
 
-	_, err = runGit(ctx, "init", "--quiet", "--bare", "--", r.gitDir)
+	_, err = runGit(ctx, "init", "--quiet", "--bare", "--object-format="+format, "--", r.gitDir)
 
 	return err
 }
@@ -367,6 +367,16 @@ func (r *repo) request(command, object string) (string, string, error) {
 	}
 
 	return fields[0], fields[2], nil
+}
+
+// objectFormat names the hash algorithm of the object ID oid, which a
+// cache repository must share with its remote to fetch from it.
+func objectFormat(oid string) string {
+	if len(oid) == 64 {
+		return "sha256"
+	}
+
+	return "sha1"
 }
 
 func isObjectID(s string) bool {

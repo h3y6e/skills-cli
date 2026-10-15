@@ -133,6 +133,32 @@ func TestResolveLatest(t *testing.T) {
 	})
 }
 
+func TestResolveLatestTie(t *testing.T) {
+	t.Parallel()
+
+	t.Run("when two tags rank as the same version, resolving always picks the same one", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		work := testutil.InitWorkRepo(t)
+		testutil.Commit(t, work, "one", map[string]string{"a": "1\n"})
+		testutil.Git(t, work, "tag", "1.0.0")
+		testutil.Commit(t, work, "two", map[string]string{"a": "2\n"})
+		testutil.Git(t, work, "tag", "v1.0.0")
+		repo := testutil.BareClone(t, work)
+
+		for range 10 {
+			// Act
+			got, err := git.ResolveLatest(t.Context(), repo, "")
+
+			// Assert
+			if err != nil || got.Full != "refs/tags/v1.0.0" {
+				t.Fatalf("ResolveLatest() = %+v, %v, want refs/tags/v1.0.0", got, err)
+			}
+		}
+	})
+}
+
 func TestResolveDefault(t *testing.T) {
 	t.Parallel()
 

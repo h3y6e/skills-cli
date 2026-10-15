@@ -307,6 +307,42 @@ func TestFetch(t *testing.T) {
 	})
 }
 
+func TestFetchObjectFormat(t *testing.T) {
+	// Not parallel: sets GIT_DEFAULT_HASH.
+	t.Run("when the remote uses SHA-256, fetching reads it", func(t *testing.T) {
+		// Arrange
+		work := t.TempDir()
+		testutil.Git(t, work, "init", "--object-format=sha256", "-b", "main")
+		testutil.Git(t, work, "config", "user.email", "test@test.com")
+		testutil.Git(t, work, "config", "user.name", "Test")
+		testutil.Commit(t, work, "init", map[string]string{"skills/my-skill/SKILL.md": "# 256\n"})
+
+		// Act
+		s, err := fetch(t, "file://"+work, "")
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := readSkill(t, s); got != "# 256\n" {
+			t.Errorf("SKILL.md = %q", got)
+		}
+	})
+
+	t.Run("when git creates SHA-256 repositories by default, fetching a SHA-1 remote still works", func(t *testing.T) {
+		// Arrange
+		repo := initTaggedRepo(t)
+		t.Setenv("GIT_DEFAULT_HASH", "sha256")
+
+		// Act
+		_, err := fetch(t, repo, "v1.0.0")
+		// Assert
+		if err != nil {
+			t.Errorf("fetch() error = %v", err)
+		}
+	})
+}
+
 func TestReadTree(t *testing.T) {
 	t.Parallel()
 
