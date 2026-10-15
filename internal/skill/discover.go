@@ -48,6 +48,15 @@ func subFS(fsys fs.FS, dir string) fs.FS {
 // lstat returns the type of name in fsys without following a final link,
 // which fs.Stat on os.DirFS would.
 func lstat(fsys fs.FS, name string) (fs.FileMode, bool) {
+	if name == "." {
+		info, err := fs.Stat(fsys, ".")
+		if err != nil {
+			return 0, false
+		}
+
+		return info.Mode().Type(), true
+	}
+
 	entries, err := fs.ReadDir(fsys, path.Dir(name))
 	if err != nil {
 		return 0, false

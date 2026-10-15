@@ -176,6 +176,24 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 		}
 	}
 
+	t.Run("when a root skill's upstream SKILL.md is malformed, the candidate fails instead of passing for removed", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		skills := []skill.InstalledSkill{installed("whole", "https://github.com/o/r", "tree-1", ".")}
+		fns := skill.UpstreamFuncs{
+			FetchLatest: fakeFetch(t, map[string]string{"SKILL.md": "---\nname: [\n---\n"}, "tree-2"),
+		}
+
+		// Act
+		candidates := collectTracked(skills, fns)
+
+		// Assert
+		if len(candidates) != 1 || candidates[0].Status != skill.StatusCheckFailed {
+			t.Errorf("candidates = %+v, want one check-failed", candidates)
+		}
+	})
+
 	t.Run("when the upstream skill directory is a symlink, the candidate fails instead of staging the link target", func(t *testing.T) {
 		t.Parallel()
 
