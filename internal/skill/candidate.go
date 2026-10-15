@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/h3y6e/skolar/internal/git"
@@ -25,14 +26,6 @@ const (
 
 func (s Status) String() string { return string(s) }
 
-// DiscoveredSkill represents a skill found in an upstream repository.
-type DiscoveredSkill struct {
-	Name         string
-	Dir          string
-	Path         string // repo-relative directory of the skill, e.g. "skills/foo"
-	ComputedHash string
-}
-
 // UpdateCandidate represents the update status of an installed skill.
 type UpdateCandidate struct {
 	SkillName   string
@@ -42,7 +35,9 @@ type UpdateCandidate struct {
 	LatestHash  string
 	Status      Status
 	StagedDir   string
-	Reason      string
+	// SkillPath is the upstream SKILL.md path the candidate was resolved to.
+	SkillPath string
+	Reason    string
 	// Foreign marks skills installed by gh-compatible tooling that have no
 	// lockfile entry. Applying them replaces the directory only; the lockfile
 	// is left untouched.
@@ -59,46 +54,59 @@ type SkippedEntry struct {
 }
 
 // ResolveUpdateCandidates compares lock entries against upstream skills
-// and returns update candidates sorted by name.
+// and returns update candidates sorted by name. An entry resolves to the
+// skill at its skillPath; when that path is gone or unrecorded, to the only
+// upstream skill with its name.
 func ResolveUpdateCandidates(entries map[string]lock.Entry, upstream []DiscoveredSkill) []UpdateCandidate {
-	upstreamByName := make(map[string]DiscoveredSkill, len(upstream))
-	for _, s := range upstream {
-		upstreamByName[s.Name] = s
-	}
-
 	candidates := make([]UpdateCandidate, 0, len(entries))
 	for name, entry := range entries {
-		up, found := upstreamByName[name]
-		if !found {
-			candidates = append(candidates, UpdateCandidate{
-				SkillName:   name,
-				Source:      entry.Source,
-				Ref:         entry.Ref,
-				CurrentHash: entry.ComputedHash,
-				Status:      StatusCheckFailed,
-				Reason:      fmt.Sprintf("skill %q not found in upstream source", name),
-			})
-			continue
-		}
-
-		status := StatusUpToDate
-		if entry.ComputedHash != up.ComputedHash {
-			status = StatusUpdateAvailable
-		}
-
-		candidates = append(candidates, UpdateCandidate{
+		candidate := UpdateCandidate{
 			SkillName:   name,
 			Source:      entry.Source,
 			Ref:         entry.Ref,
 			CurrentHash: entry.ComputedHash,
-			LatestHash:  up.ComputedHash,
-			Status:      status,
-			StagedDir:   up.Dir,
-		})
+		}
+		up, err := resolveUpstream(name, entry, upstream)
+		if err != nil {
+			candidate.Status, candidate.Reason = StatusCheckFailed, err.Error()
+			candidates = append(candidates, candidate)
+			continue
+		}
+		candidate.LatestHash = up.ComputedHash
+		candidate.StagedDir = up.Dir
+		candidate.SkillPath = up.SkillMDPath()
+		candidate.Status = StatusUpToDate
+		if entry.ComputedHash != up.ComputedHash {
+			candidate.Status = StatusUpdateAvailable
+		}
+		candidates = append(candidates, candidate)
 	}
 
 	sortCandidates(candidates)
 	return candidates
+}
+
+func resolveUpstream(name string, entry lock.Entry, upstream []DiscoveredSkill) (DiscoveredSkill, error) {
+	if i := slices.IndexFunc(upstream, func(s DiscoveredSkill) bool { return s.SkillMDPath() == entry.SkillPath }); i >= 0 {
+		return upstream[i], nil
+	}
+	var named []DiscoveredSkill
+	for _, s := range upstream {
+		if s.Name == name {
+			named = append(named, s)
+		}
+	}
+	switch len(named) {
+	case 0:
+		return DiscoveredSkill{}, fmt.Errorf("skill %q not found in upstream source", name)
+	case 1:
+		return named[0], nil
+	}
+	paths := make([]string, len(named))
+	for i, s := range named {
+		paths[i] = s.SkillMDPath()
+	}
+	return DiscoveredSkill{}, fmt.Errorf("skill %q is ambiguous upstream: %s", name, strings.Join(paths, ", "))
 }
 
 // FilterCandidates returns only candidates whose names are in filter. Empty filter returns all.
@@ -115,14 +123,15 @@ func FilterCandidates(candidates []UpdateCandidate, filter []string) []UpdateCan
 	return result
 }
 
-// FilterDiscoveredSkills returns only skills whose names are in filter. Empty filter returns all.
+// FilterDiscoveredSkills returns the skills named in filter, or the default
+// skills when filter is empty. Of skills sharing a name, the first wins.
 func FilterDiscoveredSkills(skills []DiscoveredSkill, filter []string) []DiscoveredSkill {
-	if len(filter) == 0 {
-		return skills
-	}
 	var result []DiscoveredSkill
 	for _, s := range skills {
-		if slices.Contains(filter, s.Name) {
+		if slices.ContainsFunc(result, func(r DiscoveredSkill) bool { return r.Name == s.Name }) {
+			continue
+		}
+		if len(filter) == 0 && s.Default || slices.Contains(filter, s.Name) {
 			result = append(result, s)
 		}
 	}

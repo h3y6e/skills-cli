@@ -16,6 +16,9 @@ import (
 type skillReplacement struct {
 	Name      string
 	SourceDir string
+	// Vercel leaves out the files vercel-labs/skills skips when it copies a
+	// skill, for skills recorded in the lockfile.
+	Vercel bool
 }
 
 type stagedSkillReplacement struct {
@@ -41,7 +44,7 @@ func InstallSkills(skills []DiscoveredSkill, ref SourceRef, layout lock.Layout) 
 		return fmt.Errorf("no skills to install")
 	}
 
-	tx, err := stageSkillReplacements(layout, discoveredSkillReplacements(skills))
+	tx, err := stageSkillReplacements(layout, discoveredSkillReplacements(skills, true))
 	if err != nil {
 		return err
 	}
@@ -61,6 +64,7 @@ func InstallSkills(skills []DiscoveredSkill, ref SourceRef, layout lock.Layout) 
 			Source:       ref.CanonicalSource,
 			Ref:          ref.Ref,
 			SourceType:   ref.SourceType,
+			SkillPath:    s.SkillMDPath(),
 			ComputedHash: s.ComputedHash,
 		}
 	}
@@ -86,7 +90,7 @@ func InstallTrackedSkills(ctx context.Context, skills []DiscoveredSkill, repoRoo
 		return fmt.Errorf("gh skill format supports only github sources, got %q", ref.SourceType)
 	}
 
-	tx, err := stageSkillReplacements(layout, discoveredSkillReplacements(skills))
+	tx, err := stageSkillReplacements(layout, discoveredSkillReplacements(skills, false))
 	if err != nil {
 		return err
 	}
@@ -130,10 +134,12 @@ func ApplyCandidateUpdates(lf lock.File, candidates []UpdateCandidate, layout lo
 		replacements = append(replacements, skillReplacement{
 			Name:      c.SkillName,
 			SourceDir: c.StagedDir,
+			Vercel:    true,
 		})
 
 		entry := updated.Skills[c.SkillName]
 		entry.ComputedHash = c.LatestHash
+		entry.SkillPath = c.SkillPath
 		updated.Skills[c.SkillName] = entry
 		appliedNames = append(appliedNames, c.SkillName)
 	}
@@ -173,13 +179,10 @@ func ReplaceSkill(skillName, stagedDir string, layout lock.Layout) error {
 	return tx.Apply()
 }
 
-func discoveredSkillReplacements(skills []DiscoveredSkill) []skillReplacement {
+func discoveredSkillReplacements(skills []DiscoveredSkill, vercel bool) []skillReplacement {
 	replacements := make([]skillReplacement, 0, len(skills))
 	for _, s := range skills {
-		replacements = append(replacements, skillReplacement{
-			Name:      s.Name,
-			SourceDir: s.Dir,
-		})
+		replacements = append(replacements, skillReplacement{Name: s.Name, SourceDir: s.Dir, Vercel: vercel})
 	}
 	return replacements
 }
@@ -201,7 +204,7 @@ func stageSkillReplacements(layout lock.Layout, replacements []skillReplacement)
 			return nil, fmt.Errorf("create staged directory for %q: %w", replacement.Name, err)
 		}
 
-		if err := copyDir(replacement.SourceDir, stagedDir); err != nil {
+		if err := copyDir(replacement.SourceDir, stagedDir, replacement.Vercel); err != nil {
 			tx.Cleanup()
 			return nil, fmt.Errorf("stage skill %q: %w", replacement.Name, err)
 		}
@@ -345,10 +348,27 @@ func rollbackAfterLockFailure(tx *replacementTxn, err error) error {
 	return fmt.Errorf("%w (rollback: %v)", err, rollbackErr)
 }
 
-func copyDir(src, dst string) error {
+// skipCopy reports whether a copy of a skill leaves d out: .git always, and
+// with vercel what vercel-labs/skills skips when it installs a skill.
+func skipCopy(d os.DirEntry, vercel bool) bool {
+	if d.IsDir() {
+		return d.Name() == ".git" || vercel && (d.Name() == "__pycache__" || d.Name() == "__pypackages__")
+	}
+	return vercel && d.Name() == "metadata.json"
+}
+
+// copyDir copies src into dst, leaving out dst itself and what skipCopy
+// skips.
+func copyDir(src, dst string, vercel bool) error {
 	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if path == dst || skipCopy(d, vercel) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 
 		rel, err := filepath.Rel(src, path)

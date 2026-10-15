@@ -608,3 +608,48 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 		}
 	})
 }
+
+func TestResolveUpdateCandidatesBySkillPath(t *testing.T) {
+	t.Parallel()
+	at := func(name, path, hash string) skill.DiscoveredSkill {
+		return skill.DiscoveredSkill{Name: name, Path: path, ComputedHash: hash, Dir: "/clone/" + path}
+	}
+
+	for _, tc := range []struct {
+		name       string
+		entry      lock.Entry
+		upstream   []skill.DiscoveredSkill
+		wantStatus skill.Status
+		wantPath   string
+	}{
+		{
+			"when the entry's skillPath exists upstream, the skill at that path is compared even if another directory shares its name",
+			lock.Entry{SkillPath: ".claude/skills/dup/SKILL.md", ComputedHash: "b"},
+			[]skill.DiscoveredSkill{at("dup", "skills/dup", "a"), at("dup", ".claude/skills/dup", "b")},
+			skill.StatusUpToDate, ".claude/skills/dup/SKILL.md",
+		},
+		{
+			"when the entry's skillPath is gone and one upstream skill has its name, that skill is followed",
+			lock.Entry{SkillPath: "old/dup/SKILL.md", ComputedHash: "a"},
+			[]skill.DiscoveredSkill{at("dup", "skills/dup", "a")},
+			skill.StatusUpToDate, "skills/dup/SKILL.md",
+		},
+		{
+			"when the entry has no skillPath and two upstream skills share its name, the check fails as ambiguous",
+			lock.Entry{ComputedHash: "a"},
+			[]skill.DiscoveredSkill{at("dup", "skills/dup", "a"), at("dup", ".claude/skills/dup", "b")},
+			skill.StatusCheckFailed, "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			// Act
+			got := skill.ResolveUpdateCandidates(map[string]lock.Entry{"dup": tc.entry}, tc.upstream)
+
+			// Assert
+			if len(got) != 1 || got[0].Status != tc.wantStatus || got[0].SkillPath != tc.wantPath {
+				t.Errorf("candidates = %+v, want status %s and skillPath %q", got, tc.wantStatus, tc.wantPath)
+			}
+		})
+	}
+}

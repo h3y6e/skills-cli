@@ -136,7 +136,7 @@ func TestDiscoverSkills(t *testing.T) {
 		}
 	})
 
-	t.Run("when two namespaces contain the same leaf name, discovery returns an error", func(t *testing.T) {
+	t.Run("when two namespaces contain the same leaf name, both are found and selection takes the first", func(t *testing.T) {
 		t.Parallel()
 
 		// Arrange
@@ -147,11 +147,15 @@ func TestDiscoverSkills(t *testing.T) {
 		})
 
 		// Act
-		_, err := skill.DiscoverSkills(root)
+		skills, err := skill.DiscoverSkills(root)
 
 		// Assert
-		if err == nil {
-			t.Fatal("DiscoverSkills() expected error, got nil")
+		if err != nil {
+			t.Fatal(err)
+		}
+		picked := skill.FilterDiscoveredSkills(skills, nil)
+		if len(skills) != 2 || len(picked) != 1 || picked[0].Path != "skills/a/code-review" {
+			t.Errorf("skills = %+v, picked = %+v, want both found and skills/a/code-review picked", skills, picked)
 		}
 	})
 
@@ -187,23 +191,24 @@ func TestDiscoverSkills(t *testing.T) {
 		}
 	})
 
-	t.Run("skills/ takes priority over root-level", func(t *testing.T) {
+	t.Run("when skills/ and a root-level directory both hold skills, both are defaults", func(t *testing.T) {
 		t.Parallel()
+		// Arrange
 		root := t.TempDir()
 		writeFiles(t, root, map[string]string{
 			"skills/preferred/SKILL.md": "# Preferred\n",
 			"root-skill/SKILL.md":       "# Root\n",
 		})
 
+		// Act
 		skills, err := skill.DiscoverSkills(root)
+
+		// Assert
 		if err != nil {
-			t.Fatalf("DiscoverSkills() error = %v", err)
+			t.Fatal(err)
 		}
-		if len(skills) != 1 {
-			t.Fatalf("expected 1 skill (skills/ priority), got %d", len(skills))
-		}
-		if skills[0].Name != "preferred" {
-			t.Errorf("Name = %q, want %q", skills[0].Name, "preferred")
+		if len(skills) != 2 || !skills[0].Default || !skills[1].Default {
+			t.Errorf("skills = %+v, want preferred and root-skill as defaults", skills)
 		}
 	})
 
@@ -243,23 +248,24 @@ func TestDiscoverSkills(t *testing.T) {
 		}
 	})
 
-	t.Run("does not recurse into nested subdirectories", func(t *testing.T) {
+	t.Run("when a skill holds another SKILL.md one level down, gh skill reads it as namespaced, so both are defaults", func(t *testing.T) {
 		t.Parallel()
+		// Arrange
 		root := t.TempDir()
 		writeFiles(t, root, map[string]string{
 			"skills/top/SKILL.md":        "# Top\n",
 			"skills/top/nested/SKILL.md": "# Nested\n",
 		})
 
+		// Act
 		skills, err := skill.DiscoverSkills(root)
+
+		// Assert
 		if err != nil {
-			t.Fatalf("DiscoverSkills() error = %v", err)
+			t.Fatal(err)
 		}
-		if len(skills) != 1 {
-			t.Fatalf("expected 1 skill (no recursion), got %d", len(skills))
-		}
-		if skills[0].Name != "top" {
-			t.Errorf("Name = %q, want %q", skills[0].Name, "top")
+		if len(skills) != 2 || skills[0].Name != "top" || !skills[0].Default || skills[1].Name != "nested" || !skills[1].Default {
+			t.Errorf("skills = %+v, want nested and top as defaults", skills)
 		}
 	})
 

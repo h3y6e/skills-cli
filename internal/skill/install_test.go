@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/h3y6e/skolar/internal/lock"
@@ -223,4 +224,58 @@ func TestReplaceSkill(t *testing.T) {
 			t.Errorf("SKILL.md = %q, want %q", string(data), "# Brand New\n")
 		}
 	})
+}
+
+func TestInstallRootSkill(t *testing.T) {
+	t.Parallel()
+
+	files := map[string]string{
+		"SKILL.md":            "---\nname: whole\ndescription: d\n---\n",
+		"references/notes.md": "notes\n",
+		"metadata.json":       "{}\n",
+		"__pycache__/x.pyc":   "x\n",
+		".git/HEAD":           "ref: refs/heads/main\n",
+	}
+
+	t.Run("when a lockfile skill is the repository root, the install leaves out .git and the files vercel-labs/skills skips", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		srcDir := t.TempDir()
+		writeFiles(t, srcDir, files)
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		discovered, err := skill.DiscoverSkills(srcDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Act
+		err = skill.InstallSkills(discovered, skill.SourceRef{CanonicalSource: "o/r", SourceType: "github"}, lock.NewLayout(skillsDir))
+
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := listFiles(t, filepath.Join(skillsDir, "whole"))
+		if want := []string{"SKILL.md", "references/notes.md"}; !slices.Equal(got, want) {
+			t.Errorf("installed files = %v, want %v", got, want)
+		}
+	})
+}
+
+func listFiles(t *testing.T, dir string) []string {
+	t.Helper()
+	var files []string
+	err := filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(dir, p)
+		files = append(files, filepath.ToSlash(rel))
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(files)
+	return files
 }

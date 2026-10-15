@@ -47,8 +47,10 @@ func runVerify(cmd *cobra.Command, skillsDir string, skillFilter []string, jsonF
 
 	fns, cleanup := NewUpstreamFuncs(cmd.Context(), "skolar-verify-*")
 	defer cleanup()
+	cloneFn, cloneCleanup := skill.NewCloneFunc(cmd.Context(), "skolar-verify-lock-*")
+	defer cloneCleanup()
 
-	all := slices.Concat(skill.VerifyLocked(layout, entries), skill.VerifyTracked(foreign, fns), unrecorded)
+	all := slices.Concat(skill.VerifyLocked(layout, entries, cloneFn), skill.VerifyTracked(foreign, fns), unrecorded)
 	slices.SortFunc(all, func(a, b skill.VerifyResult) int { return cmp.Compare(a.SkillName, b.SkillName) })
 	var failed []skill.VerifyResult
 	for _, r := range all {

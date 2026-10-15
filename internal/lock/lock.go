@@ -23,6 +23,7 @@ type Entry struct {
 	Source       string `json:"source"`
 	Ref          string `json:"ref,omitempty"`
 	SourceType   string `json:"sourceType"`
+	SkillPath    string `json:"skillPath,omitempty"`
 	ComputedHash string `json:"computedHash"`
 }
 

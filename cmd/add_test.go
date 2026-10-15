@@ -506,3 +506,51 @@ func TestAddOverwrite(t *testing.T) {
 		}
 	})
 }
+
+func TestAddSelection(t *testing.T) {
+	t.Parallel()
+	bareURL := initBareRepo(t, map[string]string{
+		"skills/near/SKILL.md":     "# Near\n",
+		"extras/deep/far/SKILL.md": "# Far\n",
+	})
+
+	t.Run("when no skill is named, add installs only the skills either tool finds by default", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		dir := filepath.Join(t.TempDir(), ".agents", "skills")
+
+		// Act
+		addSkillsTo(t, "-d", dir, bareURL)
+
+		// Assert
+		if _, err := os.Stat(filepath.Join(dir, "near")); err != nil {
+			t.Errorf("near should be installed: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "far")); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("far should not be installed by default: %v", err)
+		}
+	})
+
+	t.Run("when a skill outside the defaults is named, add installs it", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		dir := filepath.Join(t.TempDir(), ".agents", "skills")
+
+		// Act
+		addSkillsTo(t, "-s", "far", "-d", dir, bareURL)
+
+		// Assert
+		if _, err := os.Stat(filepath.Join(dir, "far", "SKILL.md")); err != nil {
+			t.Errorf("far should be installed: %v", err)
+		}
+	})
+}
+
+func addSkillsTo(t *testing.T, args ...string) {
+	t.Helper()
+	root := cmd.NewRootCmd("test")
+	root.SetArgs(append([]string{"add", "-y"}, args...))
+	if err := root.Execute(); err != nil {
+		t.Fatalf("add %v: %v", args, err)
+	}
+}

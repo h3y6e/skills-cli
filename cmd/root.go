@@ -301,7 +301,7 @@ func newVerifyCmd() *cobra.Command {
 		Short: "Verify installed skills against their records",
 		Long: `Verify installed skills against their records.
 
-Lockfile skills are hashed on disk and compared with computedHash, offline.
+Lockfile skills are hashed on disk and compared with computedHash, offline; on a mismatch the source is cloned to compare file by file.
 gh skill metadata is compared file by file with the tree github-tree-sha names, fetched at github-ref.
 Exits 1 when a skill is modified or cannot be verified.`,
 		Annotations: map[string]string{recordKey: "results"},
