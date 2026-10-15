@@ -22,7 +22,7 @@ func TestDiscoverSkills(t *testing.T) {
 			"README.md":                       "# Repo\n",
 		})
 
-		skills, err := skill.DiscoverSkills(root)
+		skills, err := skill.DiscoverSkills(os.DirFS(root))
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
@@ -40,12 +40,8 @@ func TestDiscoverSkills(t *testing.T) {
 		}
 
 		for _, s := range skills {
-			if s.ComputedHash == "" {
-				t.Errorf("skill %q has empty ComputedHash", s.Name)
-			}
-
-			if s.Dir == "" {
-				t.Errorf("skill %q has empty Dir", s.Name)
+			if hash, err := s.Hash(); err != nil || hash == "" {
+				t.Errorf("skill %q hash = %q, %v", s.Name, hash, err)
 			}
 		}
 	})
@@ -58,7 +54,7 @@ func TestDiscoverSkills(t *testing.T) {
 			"README.md":         "# Repo\n",
 		})
 
-		skills, err := skill.DiscoverSkills(root)
+		skills, err := skill.DiscoverSkills(os.DirFS(root))
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
@@ -83,7 +79,7 @@ func TestDiscoverSkills(t *testing.T) {
 		})
 
 		// Act
-		skills, err := skill.DiscoverSkills(root)
+		skills, err := skill.DiscoverSkills(os.DirFS(root))
 		// Assert
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
@@ -113,7 +109,7 @@ func TestDiscoverSkills(t *testing.T) {
 		})
 
 		// Act
-		skills, err := skill.DiscoverSkills(root)
+		skills, err := skill.DiscoverSkills(os.DirFS(root))
 		// Assert
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
@@ -143,7 +139,7 @@ func TestDiscoverSkills(t *testing.T) {
 		})
 
 		// Act
-		skills, err := skill.DiscoverSkills(root)
+		skills, err := skill.DiscoverSkills(os.DirFS(root))
 		// Assert
 		if err != nil {
 			t.Fatal(err)
@@ -169,12 +165,12 @@ func TestDiscoverSkills(t *testing.T) {
 		})
 
 		// Act
-		fromSkillsDir, err := skill.DiscoverSkills(skillsRoot)
+		fromSkillsDir, err := skill.DiscoverSkills(os.DirFS(skillsRoot))
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
 
-		fromFlat, err := skill.DiscoverSkills(flatRoot)
+		fromFlat, err := skill.DiscoverSkills(os.DirFS(flatRoot))
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
@@ -199,7 +195,7 @@ func TestDiscoverSkills(t *testing.T) {
 		})
 
 		// Act
-		skills, err := skill.DiscoverSkills(root)
+		skills, err := skill.DiscoverSkills(os.DirFS(root))
 		// Assert
 		if err != nil {
 			t.Fatal(err)
@@ -218,7 +214,7 @@ func TestDiscoverSkills(t *testing.T) {
 			"skills/invalid/README.md": "# Not a skill\n",
 		})
 
-		skills, err := skill.DiscoverSkills(root)
+		skills, err := skill.DiscoverSkills(os.DirFS(root))
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
@@ -239,7 +235,7 @@ func TestDiscoverSkills(t *testing.T) {
 			"README.md": "# Empty Repo\n",
 		})
 
-		skills, err := skill.DiscoverSkills(root)
+		skills, err := skill.DiscoverSkills(os.DirFS(root))
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
@@ -259,7 +255,7 @@ func TestDiscoverSkills(t *testing.T) {
 		})
 
 		// Act
-		skills, err := skill.DiscoverSkills(root)
+		skills, err := skill.DiscoverSkills(os.DirFS(root))
 		// Assert
 		if err != nil {
 			t.Fatal(err)
@@ -277,23 +273,23 @@ func TestDiscoverSkills(t *testing.T) {
 			"skills/s1/SKILL.md": "# S1\n",
 		})
 
-		skills1, err := skill.DiscoverSkills(root)
+		skills1, err := skill.DiscoverSkills(os.DirFS(root))
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		hash1 := skills1[0].ComputedHash
+		hash1 := mustHash(t, skills1[0])
 
 		testutil.WriteFiles(t, root, map[string]string{
 			"skills/s1/extra.md": "extra content\n",
 		})
 
-		skills2, err := skill.DiscoverSkills(root)
+		skills2, err := skill.DiscoverSkills(os.DirFS(root))
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		hash2 := skills2[0].ComputedHash
+		hash2 := mustHash(t, skills2[0])
 
 		if hash1 == hash2 {
 			t.Error("expected hash to change when file added")
@@ -308,12 +304,12 @@ func TestComputeHashIsDeterministicAndContentSensitive(t *testing.T) {
 	})
 	skillPath := filepath.Join(root, "spec-plan")
 
-	first, err := skill.ComputeHash(skillPath)
+	first, err := skill.ComputeHash(os.DirFS(skillPath))
 	if err != nil {
 		t.Fatalf("ComputeHash() error = %v", err)
 	}
 
-	second, err := skill.ComputeHash(skillPath)
+	second, err := skill.ComputeHash(os.DirFS(skillPath))
 	if err != nil {
 		t.Fatalf("ComputeHash() second call error = %v", err)
 	}
@@ -327,7 +323,7 @@ func TestComputeHashIsDeterministicAndContentSensitive(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	third, err := skill.ComputeHash(skillPath)
+	third, err := skill.ComputeHash(os.DirFS(skillPath))
 	if err != nil {
 		t.Fatalf("ComputeHash() third call error = %v", err)
 	}
@@ -364,7 +360,7 @@ func TestComputeHashMatchesVercel(t *testing.T) {
 		}
 
 		// Act
-		got, err := skill.ComputeHash(dir)
+		got, err := skill.ComputeHash(os.DirFS(dir))
 		// Assert
 		if err != nil {
 			t.Fatal(err)

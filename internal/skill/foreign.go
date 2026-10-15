@@ -5,10 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
-	"sync"
 
 	"github.com/h3y6e/skolar/internal/git"
 	"github.com/h3y6e/skolar/internal/lock"
@@ -125,68 +125,38 @@ func FilterInstalledBySource(installed []InstalledSkill, source string) ([]Insta
 // UpstreamFuncs groups the git operations used to probe upstream
 // repositories. Replaceable in tests.
 type UpstreamFuncs struct {
-	// FetchLatest checks out the latest ref of repoURL (gh skill semantics:
-	// latest release, then default branch) into a new directory whose parent
-	// is free for staging.
+	// FetchLatest fetches the latest ref of repoURL (gh skill semantics:
+	// latest release, then default branch).
 	FetchLatest func(repoURL string) (git.Snapshot, error)
-	// FetchRef checks out repoURL at ref into a new directory whose parent is
-	// free for staging.
+	// FetchRef fetches repoURL at ref.
 	FetchRef func(repoURL, ref string) (git.Snapshot, error)
 }
 
 // NewUpstreamFuncs returns the production UpstreamFuncs along with a cleanup
-// function removing all cloned temp directories.
-func NewUpstreamFuncs(ctx context.Context, tmpPrefix string) (UpstreamFuncs, func()) {
-	var (
-		dirs []string
-		mu   sync.Mutex
-	)
-
-	tempDir := func() (string, error) {
-		dir, err := os.MkdirTemp("", tmpPrefix)
-		if err != nil {
-			return "", fmt.Errorf("create temp dir: %w", err)
-		}
-
-		mu.Lock()
-		defer mu.Unlock()
-
-		dirs = append(dirs, dir)
-
-		return dir, nil
-	}
-
-	checkout := func(repoURL string, resolved git.ResolvedRef, err error) (git.Snapshot, error) {
-		if err != nil {
-			return git.Snapshot{}, err
-		}
-
-		tmpDir, err := tempDir()
-		if err != nil {
-			return git.Snapshot{}, err
-		}
-
-		return git.Checkout(ctx, repoURL, resolved, filepath.Join(tmpDir, "repo"))
-	}
+// function releasing what they fetched.
+func NewUpstreamFuncs(ctx context.Context) (UpstreamFuncs, func()) {
+	var snaps snapshots
 
 	fns := UpstreamFuncs{
 		FetchLatest: func(repoURL string) (git.Snapshot, error) {
 			resolved, err := git.ResolveLatest(ctx, repoURL, "")
-			return checkout(repoURL, resolved, err)
+			if err != nil {
+				return git.Snapshot{}, err
+			}
+
+			return snaps.add(git.Fetch(ctx, repoURL, resolved))
 		},
 		FetchRef: func(repoURL, ref string) (git.Snapshot, error) {
 			resolved, err := git.ResolveDefault(ctx, repoURL, ref)
-			return checkout(repoURL, resolved, err)
+			if err != nil {
+				return git.Snapshot{}, err
+			}
+
+			return snaps.add(git.Fetch(ctx, repoURL, resolved))
 		},
 	}
 
-	cleanup := func() {
-		for _, d := range dirs {
-			os.RemoveAll(d)
-		}
-	}
-
-	return fns, cleanup
+	return fns, snaps.close
 }
 
 // partitionInstalled reports pinned, local and unlocatable gh skill installs
@@ -250,7 +220,7 @@ func resolveRepoCandidates(group []InstalledSkill, fns UpstreamFuncs) []UpdateCa
 		candidate := trackedCandidate(s)
 		candidate.Ref = snap.Ref.Full
 
-		up, err := resolveTrackedUpstream(s, snap.Dir, upstream)
+		up, err := resolveTrackedUpstream(s, snap.FS, upstream)
 		switch {
 		case errors.Is(err, errRemoved):
 			candidate.Status, candidate.PreviousPath = StatusRemoved, s.Meta.Path
@@ -269,11 +239,11 @@ func resolveRepoCandidates(group []InstalledSkill, fns UpstreamFuncs) []UpdateCa
 }
 
 // resolveTrackedUpstream finds the upstream skill at github-path even when
-// discovery skips it, so that it fails on its own content rather than
-// passing for removed.
-func resolveTrackedUpstream(s InstalledSkill, cloneDir string, upstream []DiscoveredSkill) (DiscoveredSkill, error) {
-	if hasSkillMD(cloneDir, s.Meta.Path) {
-		return DiscoveredSkill{Name: s.Name, Dir: filepath.Join(cloneDir, filepath.FromSlash(s.Meta.Path)), Path: s.Meta.Path}, nil
+// discovery skips it or it is not a directory, so that it fails on its own
+// content rather than passing for removed.
+func resolveTrackedUpstream(s InstalledSkill, repo fs.FS, upstream []DiscoveredSkill) (DiscoveredSkill, error) {
+	if mode, ok := lstat(repo, s.Meta.Path); ok && fs.ValidPath(s.Meta.Path) && (!mode.IsDir() || hasSkillMD(repo, s.Meta.Path)) {
+		return DiscoveredSkill{Name: s.Name, Path: s.Meta.Path, FS: subFS(repo, s.Meta.Path)}, nil
 	}
 
 	return resolveUpstream(s.Name, s.Meta.Path, upstream)
@@ -290,7 +260,7 @@ func fetchRepo(repoURL string, fns UpstreamFuncs) (git.Snapshot, []DiscoveredSki
 		return git.Snapshot{}, nil, fmt.Errorf("fetch %s: %w", source, err)
 	}
 
-	upstream, err := DiscoverSkills(snap.Dir)
+	upstream, err := DiscoverSkills(snap.FS)
 	if err != nil {
 		return git.Snapshot{}, nil, fmt.Errorf("discover skills in %s: %w", source, err)
 	}
@@ -308,14 +278,14 @@ func resolveTracked(candidate UpdateCandidate, s InstalledSkill, up DiscoveredSk
 		return candidate
 	}
 
-	candidate.Path, candidate.LatestHash, candidate.StagedDir = up.Path, treeSHA, up.Dir
+	candidate.Path, candidate.LatestHash = up.Path, treeSHA
 	candidate.Status, candidate.PreviousPath = changeStatus(s.Meta.Path, up.Path, treeSHA != s.Meta.TreeSHA)
 
 	if !candidate.Applicable() {
 		return candidate
 	}
 
-	candidate.StagedDir, err = stageWithMetadata(snap.Dir, up.Dir, SourceMetadata{
+	candidate.Upstream, err = withMetadata(up.FS, SourceMetadata{
 		RepoURL: s.Meta.RepoURL,
 		Ref:     snap.Ref.Full,
 		TreeSHA: treeSHA,
@@ -339,46 +309,4 @@ func pinnedCandidate(s InstalledSkill) UpdateCandidate {
 		Reason:    s.Meta.Pinned,
 		Foreign:   true,
 	}
-}
-
-func stageWithMetadata(cloneDir, srcDir string, meta SourceMetadata) (string, error) {
-	stagedDir, err := copyToStaging(cloneDir, srcDir)
-	if err != nil {
-		return "", fmt.Errorf("stage: %w", err)
-	}
-
-	if err := injectStagedMetadata(stagedDir, meta); err != nil {
-		return "", fmt.Errorf("stage metadata: %w", err)
-	}
-
-	return stagedDir, nil
-}
-
-// injectStagedMetadata merges gh source metadata into the staged SKILL.md so
-// the installed result stays updatable by gh skill.
-func injectStagedMetadata(stagedDir string, meta SourceMetadata) error {
-	path := filepath.Join(stagedDir, "SKILL.md")
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-
-	injected, err := InjectSourceMetadata(string(data), meta)
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(path, []byte(injected), 0o644)
-}
-
-// copyToStaging copies srcDir, a directory within cloneDir, beside the clone
-// so that no staged copy ends up inside another skill's tree.
-func copyToStaging(cloneDir, srcDir string) (string, error) {
-	dir, err := os.MkdirTemp(filepath.Dir(cloneDir), "staged-*")
-	if err != nil {
-		return "", err
-	}
-
-	return dir, copyDir(srcDir, dir, false)
 }

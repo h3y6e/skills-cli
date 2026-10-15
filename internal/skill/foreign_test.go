@@ -2,6 +2,7 @@ package skill_test
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -137,10 +138,10 @@ func collectTracked(installed []skill.InstalledSkill, fns skill.UpstreamFuncs) [
 	return candidates
 }
 
-func readMeta(t *testing.T, dir string) skill.SourceMetadata {
+func readMeta(t *testing.T, fsys fs.FS) skill.SourceMetadata {
 	t.Helper()
 
-	data, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
+	data, err := fs.ReadFile(fsys, "SKILL.md")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +281,7 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 			t.Errorf("Ref = %q", c.Ref)
 		}
 
-		data, readErr := os.ReadFile(filepath.Join(c.StagedDir, "SKILL.md"))
+		data, readErr := fs.ReadFile(c.Upstream, "SKILL.md")
 		if readErr != nil {
 			t.Fatalf("expected staged SKILL.md: %v", readErr)
 		}
@@ -378,7 +379,7 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 			t.Errorf("foo = %+v, want moved from skills/old/foo to skills/foo", foo)
 		}
 
-		if got := readMeta(t, foo.StagedDir).Path; got != "skills/foo" {
+		if got := readMeta(t, foo.Upstream).Path; got != "skills/foo" {
 			t.Errorf("staged github-path = %q, want skills/foo", got)
 		}
 

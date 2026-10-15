@@ -24,7 +24,7 @@ func initGitRepo(t *testing.T, files map[string]string) string {
 
 func TestMain(m *testing.M) { testutil.Main(m) }
 
-// checkoutRepo checks out the default branch of the repository at dir.
+// checkoutRepo fetches the default branch of the repository at dir.
 func checkoutRepo(t *testing.T, dir string) git.Snapshot {
 	t.Helper()
 
@@ -33,16 +33,18 @@ func checkoutRepo(t *testing.T, dir string) git.Snapshot {
 		t.Fatal(err)
 	}
 
-	snap, err := git.Checkout(t.Context(), dir, ref, filepath.Join(t.TempDir(), "repo"))
+	snap, err := git.Fetch(t.Context(), dir, ref)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	t.Cleanup(func() { _ = snap.Close() })
+
 	return snap
 }
 
-// snapshotOf presents dir as a checkout of refs/tags/v2.0.0 whose every
-// directory has the tree SHA tree.
+// snapshotOf presents dir, read without following links out of it, as
+// refs/tags/v2.0.0 whose every directory has the tree SHA tree.
 func snapshotOf(t *testing.T, dir, tree string) git.Snapshot {
 	t.Helper()
 
@@ -59,7 +61,14 @@ func snapshotOf(t *testing.T, dir, tree string) git.Snapshot {
 		t.Fatal(err)
 	}
 
-	return git.Snapshot{Dir: dir, Ref: git.ResolvedRef{Full: "refs/tags/v2.0.0"}, Trees: trees}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = root.Close() })
+
+	return git.Snapshot{FS: root.FS(), Ref: git.ResolvedRef{Full: "refs/tags/v2.0.0"}, Trees: trees}
 }
 
 func installTracked(t *testing.T, repo string, ref skill.SourceRef, resolved git.ResolvedRef, skillsDir string) []skill.DiscoveredSkill {
@@ -68,7 +77,7 @@ func installTracked(t *testing.T, repo string, ref skill.SourceRef, resolved git
 	snap := checkoutRepo(t, repo)
 	snap.Ref = resolved
 
-	discovered, err := skill.DiscoverSkills(snap.Dir)
+	discovered, err := skill.DiscoverSkills(snap.FS)
 	if err != nil {
 		t.Fatalf("DiscoverSkills() error = %v", err)
 	}
@@ -177,13 +186,13 @@ func TestInstallTrackedSkills(t *testing.T) {
 		ref := skill.SourceRef{SourceType: "gitlab", CanonicalSource: "h3y6e/agent-skills"}
 		resolved := git.ResolvedRef{Full: "refs/heads/main"}
 
-		discovered, err := skill.DiscoverSkills(repoRoot)
+		discovered, err := skill.DiscoverSkills(os.DirFS(repoRoot))
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
 
 		// Act
-		err = skill.InstallTrackedSkills(discovered, git.Snapshot{Dir: repoRoot, Ref: resolved}, ref, lock.NewLayout(skillsDir))
+		err = skill.InstallTrackedSkills(discovered, git.Snapshot{FS: os.DirFS(repoRoot), Ref: resolved}, ref, lock.NewLayout(skillsDir))
 
 		// Assert
 		if err == nil {

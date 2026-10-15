@@ -69,10 +69,10 @@ func runVerify(cmd *cobra.Command, opts verifyOptions) (err error) {
 		unrecorded = slices.DeleteFunc(unrecorded, func(r skill.VerifyResult) bool { return !slices.Contains(skillFilter, r.SkillName) })
 	}
 
-	fns, cleanup := NewUpstreamFuncs(cmd.Context(), "skolar-verify-*")
+	fns, cleanup := NewUpstreamFuncs(cmd.Context())
 	defer cleanup()
 
-	cloneFn, cloneCleanup := skill.NewCloneFunc(cmd.Context(), "skolar-verify-lock-*")
+	cloneFn, cloneCleanup := skill.NewCloneFunc(cmd.Context())
 	defer cloneCleanup()
 
 	all := slices.Concat(skill.VerifyLocked(layout, entries, cloneFn), skill.VerifyTracked(foreign, fns), unrecorded)

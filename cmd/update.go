@@ -80,7 +80,7 @@ func runUpdate(cmd *cobra.Command, source string, opts updateOptions) (err error
 		return err
 	}
 
-	results = planUpdates(cmd.Context(), inv.layout, candidates)
+	results = planUpdates(inv.layout, candidates)
 	if !opts.json {
 		renderPlan(cmd.OutOrStdout(), results)
 		printHints(cmd.ErrOrStderr(), results, inv.layout.Dir)
@@ -153,8 +153,8 @@ func updateCandidates(cmd *cobra.Command, inv inventory, source string, skills [
 func collectCandidates(
 	ctx context.Context, stderr io.Writer, entries map[string]lock.Entry, foreign []skill.InstalledSkill,
 ) ([]skill.UpdateCandidate, []skill.SkippedEntry, func()) {
-	cloneFn, cloneCleanup := skill.NewCloneFunc(ctx, "skolar-update-*")
-	fns, upstreamCleanup := NewUpstreamFuncs(ctx, "skolar-update-foreign-*")
+	cloneFn, cloneCleanup := skill.NewCloneFunc(ctx)
+	fns, upstreamCleanup := NewUpstreamFuncs(ctx)
 
 	candidates, skipped := skill.CollectUpdateCandidates(entries, foreign, cloneFn, fns, progress(stderr))
 
@@ -180,13 +180,13 @@ func progress(w io.Writer) func(n, total int) {
 
 // planUpdates describes each candidate, counting what applying it changes.
 // A candidate whose changes cannot be counted fails its check.
-func planUpdates(ctx context.Context, layout lock.Layout, candidates []skill.UpdateCandidate) []updateResult {
+func planUpdates(layout lock.Layout, candidates []skill.UpdateCandidate) []updateResult {
 	results := make([]updateResult, len(candidates))
 	for i, c := range candidates {
 		var diff *diffStat
 
 		if c.Applicable() {
-			stat, err := skill.DiffStat(ctx, c, layout.SkillDir(c.SkillName))
+			stat, err := skill.DiffStat(c, layout.SkillDir(c.SkillName))
 			if err != nil {
 				candidates[i].Status, candidates[i].Reason = skill.StatusCheckFailed, fmt.Sprintf("count changes: %v", err)
 			} else {
@@ -239,7 +239,7 @@ func applyUpdates(inv inventory, candidates []skill.UpdateCandidate, apply []int
 			continue
 		}
 
-		if err := skill.ReplaceSkill(c.SkillName, c.StagedDir, inv.layout); err != nil {
+		if err := skill.ReplaceSkill(c.SkillName, c.Upstream, inv.layout); err != nil {
 			return fmt.Errorf("update %s: %w", c.SkillName, err)
 		}
 

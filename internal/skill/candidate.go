@@ -5,9 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
+	"io/fs"
 	"path"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -41,7 +40,8 @@ type UpdateCandidate struct {
 	CurrentHash string
 	LatestHash  string
 	Status      Status
-	StagedDir   string
+	// Upstream holds what update installs, metadata included.
+	Upstream fs.FS
 	// Path is the repo-relative upstream directory the skill resolved to.
 	Path string
 	// PreviousPath is the directory recorded at install, for a skill that
@@ -61,8 +61,8 @@ func (c UpdateCandidate) Applicable() bool {
 	return c.Status == StatusUpdateAvailable || c.Status == StatusMoved
 }
 
-// CloneFunc clones a source and returns the directory path. Caller must clean up.
-type CloneFunc func(source string) (string, error)
+// CloneFunc returns the files of a source at its ref.
+type CloneFunc func(source string) (fs.FS, error)
 
 // SkippedEntry is a lock entry skipped due to an unsupported source type.
 type SkippedEntry struct {
@@ -99,8 +99,13 @@ func ResolveUpdateCandidates(entries map[string]lock.Entry, upstream []Discovere
 		case err != nil:
 			candidate.Status, candidate.Reason = StatusCheckFailed, err.Error()
 		default:
-			candidate.Path, candidate.LatestHash, candidate.StagedDir = up.Path, up.ComputedHash, up.Dir
-			candidate.Status, candidate.PreviousPath = changeStatus(recorded, up.Path, entry.ComputedHash != up.ComputedHash)
+			candidate.Path, candidate.Upstream = up.Path, up.FS
+			if candidate.LatestHash, err = up.Hash(); err != nil {
+				candidate.Status, candidate.Reason = StatusCheckFailed, err.Error()
+				break
+			}
+
+			candidate.Status, candidate.PreviousPath = changeStatus(recorded, up.Path, entry.ComputedHash != candidate.LatestHash)
 		}
 
 		candidates = append(candidates, candidate)
@@ -291,11 +296,11 @@ func dropInstalledNews(candidates []UpdateCandidate) []UpdateCandidate {
 }
 
 func resolveSourceCandidates(source string, group map[string]lock.Entry, cloneFn CloneFunc) []UpdateCandidate {
-	cloneDir, upstream, err := cloneAndDiscover(source, cloneFn)
+	repo, upstream, err := cloneAndDiscover(source, cloneFn)
 	if err == nil {
 		candidates := ResolveUpdateCandidates(group, upstream)
 		for i, c := range candidates {
-			if c.Status == StatusRemoved && c.PreviousPath != "" && hasSkillMD(cloneDir, c.PreviousPath) {
+			if c.Status == StatusRemoved && c.PreviousPath != "" && hasSkillMD(repo, c.PreviousPath) {
 				candidates[i].Status = StatusCheckFailed
 				candidates[i].Reason = fmt.Sprintf("upstream %s/SKILL.md is not a valid skill", c.PreviousPath)
 			}
@@ -319,75 +324,76 @@ func resolveSourceCandidates(source string, group map[string]lock.Entry, cloneFn
 	return candidates
 }
 
-func cloneAndDiscover(source string, cloneFn CloneFunc) (string, []DiscoveredSkill, error) {
-	cloneDir, err := cloneFn(source)
+func cloneAndDiscover(source string, cloneFn CloneFunc) (fs.FS, []DiscoveredSkill, error) {
+	repo, err := cloneFn(source)
 	if err != nil {
-		return "", nil, fmt.Errorf("clone %s: %w", source, err)
+		return nil, nil, fmt.Errorf("fetch %s: %w", source, err)
 	}
 
-	upstream, err := DiscoverSkills(cloneDir)
+	upstream, err := DiscoverSkills(repo)
 	if err != nil {
-		return "", nil, fmt.Errorf("discover skills in %s: %w", source, err)
+		return nil, nil, fmt.Errorf("discover skills in %s: %w", source, err)
 	}
 
-	return cloneDir, upstream, nil
+	return repo, upstream, nil
 }
 
-func hasSkillMD(cloneDir, dir string) bool {
-	_, err := os.Lstat(filepath.Join(cloneDir, filepath.FromSlash(dir), "SKILL.md"))
+func hasSkillMD(repo fs.FS, dir string) bool {
+	_, err := fs.Stat(repo, path.Join(dir, "SKILL.md"))
 
 	return err == nil
 }
 
-// NewCloneFunc returns a CloneFunc that shallow-clones into temp directories,
-// and a cleanup function that removes all created temp directories.
-func NewCloneFunc(ctx context.Context, prefix string) (CloneFunc, func()) {
-	var (
-		dirs []string
-		mu   sync.Mutex
-	)
+// NewCloneFunc returns a CloneFunc that fetches sources, and a cleanup
+// function that releases what it fetched.
+func NewCloneFunc(ctx context.Context) (CloneFunc, func()) {
+	var snaps snapshots
 
-	cloneFn := func(source string) (string, error) {
+	cloneFn := func(source string) (fs.FS, error) {
 		ref, err := ParseSource(source)
 		if err != nil {
-			return "", err
-		}
-
-		tmpDir, err := os.MkdirTemp("", prefix)
-		if err != nil {
-			return "", fmt.Errorf("create temp dir: %w", err)
+			return nil, err
 		}
 
 		resolved, err := git.ResolveDefault(ctx, ref.CloneURL, ref.Ref)
-		if err == nil {
-			_, err = git.Checkout(ctx, ref.CloneURL, resolved, tmpDir)
-		}
-
 		if err != nil {
-			os.RemoveAll(tmpDir)
-			return "", err
+			return nil, err
 		}
 
-		mu.Lock()
+		snap, err := snaps.add(git.Fetch(ctx, ref.CloneURL, resolved))
 
-		dirs = append(dirs, tmpDir)
-		mu.Unlock()
-
-		return tmpDir, nil
+		return snap.FS, err
 	}
 
-	cleanup := func() {
-		mu.Lock()
+	return cloneFn, snaps.close
+}
 
-		cleanupDirs := append([]string(nil), dirs...)
-		mu.Unlock()
+// snapshots collects fetched snapshots to close them together.
+type snapshots struct {
+	mu   sync.Mutex
+	list []git.Snapshot
+}
 
-		for _, d := range cleanupDirs {
-			os.RemoveAll(d)
-		}
+func (s *snapshots) add(snap git.Snapshot, err error) (git.Snapshot, error) {
+	if err != nil {
+		return snap, err
 	}
 
-	return cloneFn, cleanup
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.list = append(s.list, snap)
+
+	return snap, nil
+}
+
+func (s *snapshots) close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, snap := range s.list {
+		_ = snap.Close()
+	}
 }
 
 func sortCandidates(c []UpdateCandidate) {

@@ -25,7 +25,7 @@ func TestInstallSkills(t *testing.T) {
 			"skills/my-skill/ref.md":   "reference\n",
 		})
 
-		discovered, err := skill.DiscoverSkills(srcDir)
+		discovered, err := skill.DiscoverSkills(os.DirFS(srcDir))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -70,7 +70,7 @@ func TestInstallSkills(t *testing.T) {
 			"skills/alpha/SKILL.md": "# Alpha\n",
 		})
 
-		discovered, err := skill.DiscoverSkills(srcDir)
+		discovered, err := skill.DiscoverSkills(os.DirFS(srcDir))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -137,7 +137,7 @@ func TestInstallSkills(t *testing.T) {
 			t.Fatalf("write existing lockfile: %v", err)
 		}
 
-		discovered, err := skill.DiscoverSkills(srcDir)
+		discovered, err := skill.DiscoverSkills(os.DirFS(srcDir))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -196,7 +196,7 @@ func TestReplaceSkill(t *testing.T) {
 			"new-file": "new content\n",
 		})
 
-		err := skill.ReplaceSkill("my-skill", stagedDir, lock.NewLayout(skillsDir))
+		err := skill.ReplaceSkill("my-skill", os.DirFS(stagedDir), lock.NewLayout(skillsDir))
 		if err != nil {
 			t.Fatalf("ReplaceSkill() error = %v", err)
 		}
@@ -234,7 +234,7 @@ func TestReplaceSkill(t *testing.T) {
 			"SKILL.md": "# Brand New\n",
 		})
 
-		err := skill.ReplaceSkill("brand-new", stagedDir, lock.NewLayout(skillsDir))
+		err := skill.ReplaceSkill("brand-new", os.DirFS(stagedDir), lock.NewLayout(skillsDir))
 		if err != nil {
 			t.Fatalf("ReplaceSkill() error = %v", err)
 		}
@@ -268,7 +268,7 @@ func TestInstallRootSkill(t *testing.T) {
 		testutil.WriteFiles(t, srcDir, files)
 		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
-		discovered, err := skill.DiscoverSkills(srcDir)
+		discovered, err := skill.DiscoverSkills(os.DirFS(srcDir))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -307,7 +307,7 @@ func TestInstallSkipsSymlinks(t *testing.T) {
 
 		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
-		discovered, err := skill.DiscoverSkills(srcDir)
+		discovered, err := skill.DiscoverSkills(os.DirFS(srcDir))
 		if err != nil {
 			t.Fatal(err)
 		}

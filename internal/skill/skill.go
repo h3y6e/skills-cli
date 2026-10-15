@@ -6,66 +6,49 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
+	"io/fs"
 	"slices"
 
 	"golang.org/x/text/collate"
 	"golang.org/x/text/language"
 )
 
-// ComputeHash returns the computedHash vercel-labs/skills records for dir:
-// SHA-256 over the paths and contents of regular files in locale order,
-// skipping .git and node_modules.
-func ComputeHash(dir string) (string, error) {
+// ComputeHash returns the computedHash vercel-labs/skills records for the
+// skill in fsys: SHA-256 over the paths and contents of regular files in
+// locale order, skipping .git and node_modules.
+func ComputeHash(fsys fs.FS) (string, error) {
 	var files []string
 
-	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
-		if d.IsDir() {
-			if path != dir && (d.Name() == ".git" || d.Name() == "node_modules") {
-				return filepath.SkipDir
-			}
-
-			return nil
+		if d.IsDir() && p != "." && (d.Name() == ".git" || d.Name() == "node_modules") {
+			return fs.SkipDir
 		}
 
-		if !d.Type().IsRegular() {
-			return nil
+		if d.Type().IsRegular() {
+			files = append(files, p)
 		}
-
-		rel, err := filepath.Rel(dir, path)
-		if err != nil {
-			return err
-		}
-
-		files = append(files, filepath.ToSlash(rel))
 
 		return nil
 	})
 	if err != nil {
-		return "", fmt.Errorf("compute hash for %q: %w", dir, err)
+		return "", fmt.Errorf("compute hash: %w", err)
 	}
 
 	slices.SortFunc(files, collate.New(language.Und).CompareString)
 
 	h := sha256.New()
-	for _, rel := range files {
-		if _, err := io.WriteString(h, rel); err != nil {
-			return "", fmt.Errorf("write path %q to hash: %w", rel, err)
-		}
-
-		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
+	for _, p := range files {
+		data, err := fs.ReadFile(fsys, p)
 		if err != nil {
-			return "", fmt.Errorf("read file %q: %w", rel, err)
+			return "", fmt.Errorf("compute hash: %w", err)
 		}
 
-		if _, err := h.Write(data); err != nil {
-			return "", fmt.Errorf("write file %q to hash: %w", rel, err)
-		}
+		_, _ = io.WriteString(h, p)
+		_, _ = h.Write(data)
 	}
 
 	return hex.EncodeToString(h.Sum(nil)), nil

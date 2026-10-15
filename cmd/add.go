@@ -65,18 +65,13 @@ func runAdd(cmd *cobra.Command, source string, opts addOptions) error {
 		return fmt.Errorf("resolve ref for %s: %w", ref.CanonicalSource, err)
 	}
 
-	tmpDir, err := os.MkdirTemp("", "skolar-add-*")
-	if err != nil {
-		return fmt.Errorf("create temp dir: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	snap, err := git.Checkout(ctx, ref.CloneURL, resolved, tmpDir)
+	snap, err := git.Fetch(ctx, ref.CloneURL, resolved)
 	if err != nil {
 		return fmt.Errorf("fetch %s: %w", ref.CanonicalSource, err)
 	}
+	defer snap.Close()
 
-	discovered, err := skill.DiscoverSkills(snap.Dir)
+	discovered, err := skill.DiscoverSkills(snap.FS)
 	if err != nil {
 		return fmt.Errorf("discover skills: %w", err)
 	}

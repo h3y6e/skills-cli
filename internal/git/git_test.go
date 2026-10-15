@@ -2,10 +2,12 @@ package git_test
 
 import (
 	"context"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -16,7 +18,7 @@ import (
 
 func TestMain(m *testing.M) { testutil.Main(m) }
 
-func checkout(t *testing.T, url, ref string) (git.Snapshot, error) {
+func fetch(t *testing.T, url, ref string) (git.Snapshot, error) {
 	t.Helper()
 
 	resolved, err := git.ResolveDefault(t.Context(), url, ref)
@@ -24,13 +26,18 @@ func checkout(t *testing.T, url, ref string) (git.Snapshot, error) {
 		return git.Snapshot{}, err
 	}
 
-	return git.Checkout(t.Context(), url, resolved, filepath.Join(t.TempDir(), "dest"))
+	s, err := git.Fetch(t.Context(), url, resolved)
+	if err == nil {
+		t.Cleanup(func() { _ = s.Close() })
+	}
+
+	return s, err
 }
 
 func readSkill(t *testing.T, s git.Snapshot) string {
 	t.Helper()
 
-	data, err := os.ReadFile(filepath.Join(s.Dir, "skills", "my-skill", "SKILL.md"))
+	data, err := fs.ReadFile(s.FS, "skills/my-skill/SKILL.md")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,17 +45,17 @@ func readSkill(t *testing.T, s git.Snapshot) string {
 	return string(data)
 }
 
-func TestCheckout(t *testing.T) {
+func TestFetch(t *testing.T) {
 	t.Parallel()
 
-	t.Run("when no ref is given, checkout writes the default branch without .git", func(t *testing.T) {
+	t.Run("when no ref is given, fetching reads the default branch", func(t *testing.T) {
 		t.Parallel()
 
 		// Arrange
 		repo := initTaggedRepo(t)
 
 		// Act
-		s, err := checkout(t, repo, "")
+		s, err := fetch(t, repo, "")
 		// Assert
 		if err != nil {
 			t.Fatal(err)
@@ -57,13 +64,54 @@ func TestCheckout(t *testing.T) {
 		if got := readSkill(t, s); got != "# v2.0.0-rc.1\n" {
 			t.Errorf("SKILL.md = %q, want the main branch content", got)
 		}
+	})
 
-		if _, err := os.Stat(filepath.Join(s.Dir, ".git")); !os.IsNotExist(err) {
-			t.Errorf("stat .git = %v, want not exist", err)
+	t.Run("when the commit holds links and executables, the files keep their modes and links are never followed", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		work := testutil.InitWorkRepo(t)
+		testutil.WriteFiles(t, work, map[string]string{"skills/a/SKILL.md": "# A\n", "skills/a/run.sh": "#!/bin/sh\n"})
+		if err := os.Chmod(filepath.Join(work, "skills", "a", "run.sh"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.Symlink("../../../etc", filepath.Join(work, "skills", "a", "escape")); err != nil {
+			t.Fatal(err)
+		}
+
+		testutil.Git(t, work, "add", "-A")
+		testutil.Git(t, work, "commit", "-m", "init")
+
+		// Act
+		s, err := fetch(t, "file://"+work, "")
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var walked []string
+
+		_ = fs.WalkDir(s.FS, "skills", func(p string, d fs.DirEntry, err error) error {
+			walked = append(walked, p+" "+d.Type().String())
+			return err
+		})
+
+		want := []string{"skills d---------", "skills/a d---------", "skills/a/SKILL.md ----------", "skills/a/escape L---------", "skills/a/run.sh ----------"}
+		if !slices.Equal(walked, want) {
+			t.Errorf("walked %q, want %q", walked, want)
+		}
+
+		if info, err := fs.Stat(s.FS, "skills/a/run.sh"); err != nil || info.Mode().Perm() != 0o755 {
+			t.Errorf("run.sh mode = %v, %v, want 0755", info, err)
+		}
+
+		if _, err := s.FS.Open("skills/a/escape/passwd"); err == nil {
+			t.Error("opened a path through a link")
 		}
 	})
 
-	t.Run("when a branch, a lightweight tag or an annotated tag is given, checkout writes its content", func(t *testing.T) {
+	t.Run("when a branch, a lightweight tag or an annotated tag is given, fetching reads its content", func(t *testing.T) {
 		t.Parallel()
 
 		// Arrange
@@ -71,7 +119,7 @@ func TestCheckout(t *testing.T) {
 
 		for ref, want := range map[string]string{"feature/install": "# Feature\n", "v1.0.0": "# v1.0.0\n", "annotated": "# v1.9.0\n"} {
 			// Act
-			s, err := checkout(t, repo, ref)
+			s, err := fetch(t, repo, ref)
 			// Assert
 			if err != nil {
 				t.Fatalf("%s: %v", ref, err)
@@ -83,14 +131,14 @@ func TestCheckout(t *testing.T) {
 		}
 	})
 
-	t.Run("when a name matches both a branch and a tag, checkout writes the branch", func(t *testing.T) {
+	t.Run("when a name matches both a branch and a tag, fetching reads the branch", func(t *testing.T) {
 		t.Parallel()
 
 		// Arrange
 		repo := initTaggedRepo(t)
 
 		// Act
-		s, err := checkout(t, repo, "collide")
+		s, err := fetch(t, repo, "collide")
 		// Assert
 		if err != nil {
 			t.Fatal(err)
@@ -101,7 +149,7 @@ func TestCheckout(t *testing.T) {
 		}
 	})
 
-	t.Run("when the ref is a commit SHA, checkout writes that commit", func(t *testing.T) {
+	t.Run("when the ref is a commit SHA, fetching reads that commit", func(t *testing.T) {
 		t.Parallel()
 
 		// Arrange
@@ -109,7 +157,7 @@ func TestCheckout(t *testing.T) {
 		sha := strings.TrimSpace(testutil.Git(t, strings.TrimPrefix(repo, "file://"), "rev-parse", "v1.0.0"))
 
 		// Act
-		s, err := checkout(t, repo, sha)
+		s, err := fetch(t, repo, sha)
 		// Assert
 		if err != nil {
 			t.Fatal(err)
@@ -120,7 +168,7 @@ func TestCheckout(t *testing.T) {
 		}
 	})
 
-	t.Run("when a commit was fetched before, checkout writes it without the remote", func(t *testing.T) {
+	t.Run("when a commit was fetched before, fetching reads it without the remote", func(t *testing.T) {
 		t.Parallel()
 
 		// Arrange
@@ -131,16 +179,20 @@ func TestCheckout(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if _, err := git.Checkout(t.Context(), repo, ref, filepath.Join(t.TempDir(), "first")); err != nil {
+		first, err := git.Fetch(t.Context(), repo, ref)
+		if err != nil {
 			t.Fatal(err)
 		}
+
+		_ = first.Close()
 
 		if err := os.RemoveAll(strings.TrimPrefix(repo, "file://")); err != nil {
 			t.Fatal(err)
 		}
 
 		// Act
-		s, err := git.Checkout(t.Context(), repo, ref, filepath.Join(t.TempDir(), "second"))
+		s, err := git.Fetch(t.Context(), repo, ref)
+		t.Cleanup(func() { _ = s.Close() })
 		// Assert
 		if err != nil {
 			t.Fatal(err)
@@ -151,7 +203,7 @@ func TestCheckout(t *testing.T) {
 		}
 	})
 
-	t.Run("when the same remote is checked out concurrently, every checkout succeeds", func(t *testing.T) {
+	t.Run("when the same remote is fetched concurrently, every fetch succeeds", func(t *testing.T) {
 		t.Parallel()
 
 		// Arrange
@@ -162,7 +214,7 @@ func TestCheckout(t *testing.T) {
 		// Act
 		var wg sync.WaitGroup
 		for i, ref := range refs {
-			wg.Go(func() { _, errs[i] = checkout(t, repo, ref) })
+			wg.Go(func() { _, errs[i] = fetch(t, repo, ref) })
 		}
 
 		wg.Wait()
@@ -175,7 +227,7 @@ func TestCheckout(t *testing.T) {
 		}
 	})
 
-	t.Run("when checked out, Trees holds the tree SHA of the root and every directory", func(t *testing.T) {
+	t.Run("when fetched, Trees holds the tree SHA of the root and every directory", func(t *testing.T) {
 		t.Parallel()
 
 		// Arrange
@@ -183,7 +235,7 @@ func TestCheckout(t *testing.T) {
 		bare := strings.TrimPrefix(repo, "file://")
 
 		// Act
-		s, err := checkout(t, repo, "v1.0.0")
+		s, err := fetch(t, repo, "v1.0.0")
 		// Assert
 		if err != nil {
 			t.Fatal(err)
@@ -196,19 +248,19 @@ func TestCheckout(t *testing.T) {
 		}
 	})
 
-	t.Run("when the remote does not exist, checkout fails", func(t *testing.T) {
+	t.Run("when the remote does not exist, fetching fails", func(t *testing.T) {
 		t.Parallel()
 
 		// Act
-		_, err := checkout(t, "/nonexistent/repo", "")
+		_, err := fetch(t, "/nonexistent/repo", "")
 
 		// Assert
 		if err == nil {
-			t.Fatal("checkout succeeded without a remote")
+			t.Fatal("fetch succeeded without a remote")
 		}
 	})
 
-	t.Run("when the context is cancelled, checkout fails", func(t *testing.T) {
+	t.Run("when the context is cancelled, fetching fails", func(t *testing.T) {
 		t.Parallel()
 
 		// Arrange
@@ -219,41 +271,16 @@ func TestCheckout(t *testing.T) {
 		cancel()
 
 		// Act
-		_, err := git.Checkout(ctx, repo, ref, t.TempDir())
+		_, err := git.Fetch(ctx, repo, ref)
 
 		// Assert
 		if err == nil {
-			t.Fatal("checkout succeeded with a cancelled context")
+			t.Fatal("fetch succeeded with a cancelled context")
 		}
 	})
 }
 
-func TestNumStat(t *testing.T) {
-	t.Parallel()
-
-	t.Run("when text and binary files change, only text lines are counted", func(t *testing.T) {
-		t.Parallel()
-		// Arrange
-		dir := t.TempDir()
-		testutil.WriteFiles(t, dir, map[string]string{
-			"a/file.txt": "one\ntwo\n",
-			"b/file.txt": "one\nthree\nfour\n",
-			"b/new.md":   "added\n",
-			"a/bin":      "\x00a",
-			"b/bin":      "\x00b",
-		})
-
-		// Act
-		added, deleted, err := git.NumStat(t.Context(), filepath.Join(dir, "a"), filepath.Join(dir, "b"))
-
-		// Assert
-		if err != nil || added != 3 || deleted != 1 {
-			t.Errorf("NumStat() = +%d -%d, %v, want +3 -1", added, deleted, err)
-		}
-	})
-}
-
-func TestCheckoutUntrustedInput(t *testing.T) {
+func TestFetchUntrustedInput(t *testing.T) {
 	t.Parallel()
 
 	t.Run("when the ref looks like an option, git does not run it as one", func(t *testing.T) {
@@ -263,7 +290,7 @@ func TestCheckoutUntrustedInput(t *testing.T) {
 		marker := filepath.Join(t.TempDir(), "pwned")
 
 		// Act
-		_, _ = checkout(t, bare, "--upload-pack=touch "+marker)
+		_, _ = fetch(t, bare, "--upload-pack=touch "+marker)
 
 		// Assert
 		if _, err := os.Stat(marker); !os.IsNotExist(err) {
@@ -281,16 +308,16 @@ func TestCheckoutUntrustedInput(t *testing.T) {
 		t.Cleanup(srv.Close)
 
 		// Act
-		_, err := checkout(t, srv.URL+"/o/r.git", "")
+		_, err := fetch(t, srv.URL+"/o/r.git", "")
 
 		// Assert
 		if err == nil || !strings.Contains(err.Error(), "terminal prompts disabled") {
-			t.Errorf("checkout error = %v, want terminal prompts disabled", err)
+			t.Errorf("fetch error = %v, want terminal prompts disabled", err)
 		}
 	})
 }
 
-func TestCheckoutIgnoresAskpass(t *testing.T) {
+func TestFetchIgnoresAskpass(t *testing.T) {
 	t.Run("when an askpass program is configured, resolving fails without running it", func(t *testing.T) {
 		// Arrange
 		marker := filepath.Join(t.TempDir(), "asked")
@@ -309,11 +336,11 @@ func TestCheckoutIgnoresAskpass(t *testing.T) {
 		t.Cleanup(srv.Close)
 
 		// Act
-		_, err := checkout(t, srv.URL+"/o/r.git", "")
+		_, err := fetch(t, srv.URL+"/o/r.git", "")
 
 		// Assert
 		if err == nil {
-			t.Fatal("checkout succeeded against a remote that rejects every request")
+			t.Fatal("fetch succeeded against a remote that rejects every request")
 		}
 
 		if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {

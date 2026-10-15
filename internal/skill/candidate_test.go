@@ -2,8 +2,11 @@ package skill_test
 
 import (
 	"errors"
+	"io/fs"
+	"os"
 	"slices"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/h3y6e/skolar/internal/git"
@@ -22,16 +25,12 @@ func TestResolveUpdateCandidates(t *testing.T) {
 			"my-skill": {
 				Source:       "h3y6e/spec-skills",
 				SourceType:   "github",
-				ComputedHash: "abc123",
+				ComputedHash: hashOf("abc123"),
 			},
 		}
 
 		upstream := []skill.DiscoveredSkill{
-			{
-				Name:         "my-skill",
-				Dir:          "/tmp/staged/my-skill",
-				ComputedHash: "abc123",
-			},
+			fakeSkill("my-skill", "", "abc123"),
 		}
 
 		candidates := skill.ResolveUpdateCandidates(lockEntries, upstream)
@@ -49,12 +48,12 @@ func TestResolveUpdateCandidates(t *testing.T) {
 			t.Errorf("Status = %q, want %q", c.Status, skill.StatusUpToDate)
 		}
 
-		if c.CurrentHash != "abc123" {
-			t.Errorf("CurrentHash = %q, want %q", c.CurrentHash, "abc123")
+		if c.CurrentHash != hashOf("abc123") {
+			t.Errorf("CurrentHash = %q, want %q", c.CurrentHash, hashOf("abc123"))
 		}
 
-		if c.LatestHash != "abc123" {
-			t.Errorf("LatestHash = %q, want %q", c.LatestHash, "abc123")
+		if c.LatestHash != hashOf("abc123") {
+			t.Errorf("LatestHash = %q, want %q", c.LatestHash, hashOf("abc123"))
 		}
 	})
 
@@ -65,16 +64,12 @@ func TestResolveUpdateCandidates(t *testing.T) {
 			"my-skill": {
 				Source:       "h3y6e/spec-skills",
 				SourceType:   "github",
-				ComputedHash: "old-hash",
+				ComputedHash: hashOf("old-hash"),
 			},
 		}
 
 		upstream := []skill.DiscoveredSkill{
-			{
-				Name:         "my-skill",
-				Dir:          "/tmp/staged/my-skill",
-				ComputedHash: "new-hash",
-			},
+			fakeSkill("my-skill", "", "new-hash"),
 		}
 
 		candidates := skill.ResolveUpdateCandidates(lockEntries, upstream)
@@ -88,16 +83,16 @@ func TestResolveUpdateCandidates(t *testing.T) {
 			t.Errorf("Status = %q, want %q", c.Status, skill.StatusUpdateAvailable)
 		}
 
-		if c.CurrentHash != "old-hash" {
-			t.Errorf("CurrentHash = %q, want %q", c.CurrentHash, "old-hash")
+		if c.CurrentHash != hashOf("old-hash") {
+			t.Errorf("CurrentHash = %q, want %q", c.CurrentHash, hashOf("old-hash"))
 		}
 
-		if c.LatestHash != "new-hash" {
-			t.Errorf("LatestHash = %q, want %q", c.LatestHash, "new-hash")
+		if c.LatestHash != hashOf("new-hash") {
+			t.Errorf("LatestHash = %q, want %q", c.LatestHash, hashOf("new-hash"))
 		}
 
-		if c.StagedDir != "/tmp/staged/my-skill" {
-			t.Errorf("StagedDir = %q, want %q", c.StagedDir, "/tmp/staged/my-skill")
+		if c.Upstream == nil {
+			t.Error("Upstream = nil, want the upstream skill")
 		}
 	})
 
@@ -108,18 +103,18 @@ func TestResolveUpdateCandidates(t *testing.T) {
 			"skill-a": {
 				Source:       "h3y6e/spec-skills",
 				SourceType:   "github",
-				ComputedHash: "hash-a",
+				ComputedHash: hashOf("hash-a"),
 			},
 			"skill-b": {
 				Source:       "h3y6e/spec-skills",
 				SourceType:   "github",
-				ComputedHash: "hash-b-old",
+				ComputedHash: hashOf("hash-b-old"),
 			},
 		}
 
 		upstream := []skill.DiscoveredSkill{
-			{Name: "skill-a", Dir: "/tmp/a", ComputedHash: "hash-a"},
-			{Name: "skill-b", Dir: "/tmp/b", ComputedHash: "hash-b-new"},
+			fakeSkill("skill-a", "", "hash-a"),
+			fakeSkill("skill-b", "", "hash-b-new"),
 		}
 
 		candidates := skill.ResolveUpdateCandidates(lockEntries, upstream)
@@ -146,13 +141,13 @@ func TestResolveUpdateCandidates(t *testing.T) {
 		t.Parallel()
 
 		lockEntries := map[string]lock.Entry{
-			"zeta":  {Source: "o/r", SourceType: "github", ComputedHash: "h1"},
-			"alpha": {Source: "o/r", SourceType: "github", ComputedHash: "h2"},
+			"zeta":  {Source: "o/r", SourceType: "github", ComputedHash: hashOf("h1")},
+			"alpha": {Source: "o/r", SourceType: "github", ComputedHash: hashOf("h2")},
 		}
 
 		upstream := []skill.DiscoveredSkill{
-			{Name: "zeta", Dir: "/tmp/z", ComputedHash: "h1"},
-			{Name: "alpha", Dir: "/tmp/a", ComputedHash: "h2"},
+			fakeSkill("zeta", "", "h1"),
+			fakeSkill("alpha", "", "h2"),
 		}
 
 		candidates := skill.ResolveUpdateCandidates(lockEntries, upstream)
@@ -241,12 +236,12 @@ func TestCollectUpdateCandidates(t *testing.T) {
 			"skills/skill-y/SKILL.md": "# Skill Y same\n",
 		})
 
-		discoveredA, err := skill.DiscoverSkills(srcA)
+		discoveredA, err := skill.DiscoverSkills(os.DirFS(srcA))
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		discoveredB, err := skill.DiscoverSkills(srcB)
+		discoveredB, err := skill.DiscoverSkills(os.DirFS(srcB))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -255,12 +250,12 @@ func TestCollectUpdateCandidates(t *testing.T) {
 			"skill-x": {
 				Source:       "h3y6e/skills-a",
 				SourceType:   "github",
-				ComputedHash: "old-hash-x",
+				ComputedHash: hashOf("old-hash-x"),
 			},
 			"skill-y": {
 				Source:       "h3y6e/skills-b",
 				SourceType:   "github",
-				ComputedHash: discoveredB[0].ComputedHash,
+				ComputedHash: mustHash(t, discoveredB[0]),
 			},
 		}
 
@@ -268,13 +263,13 @@ func TestCollectUpdateCandidates(t *testing.T) {
 			"h3y6e/skills-a": srcA,
 			"h3y6e/skills-b": srcB,
 		}
-		cloneFn := func(source string) (string, error) {
+		cloneFn := func(source string) (fs.FS, error) {
 			dir, ok := cloneDirs[source]
 			if !ok {
 				t.Fatalf("unexpected clone for source %q", source)
 			}
 
-			return dir, nil
+			return os.DirFS(dir), nil
 		}
 
 		candidates, _ := collectLocked(entries, cloneFn)
@@ -292,8 +287,8 @@ func TestCollectUpdateCandidates(t *testing.T) {
 			t.Errorf("skill-x Status = %q, want %q", byName["skill-x"].Status, skill.StatusUpdateAvailable)
 		}
 
-		if byName["skill-x"].LatestHash != discoveredA[0].ComputedHash {
-			t.Errorf("skill-x LatestHash = %q, want %q", byName["skill-x"].LatestHash, discoveredA[0].ComputedHash)
+		if byName["skill-x"].LatestHash != mustHash(t, discoveredA[0]) {
+			t.Errorf("skill-x LatestHash = %q, want %q", byName["skill-x"].LatestHash, mustHash(t, discoveredA[0]))
 		}
 
 		if byName["skill-y"].Status != skill.StatusUpToDate {
@@ -314,12 +309,12 @@ func TestCollectUpdateCandidates(t *testing.T) {
 			"skills/shared-feature/SKILL.md": "# Feature\n",
 		})
 
-		discoveredMain, err := skill.DiscoverSkills(srcMain)
+		discoveredMain, err := skill.DiscoverSkills(os.DirFS(srcMain))
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		discoveredFeature, err := skill.DiscoverSkills(srcFeature)
+		discoveredFeature, err := skill.DiscoverSkills(os.DirFS(srcFeature))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -329,13 +324,13 @@ func TestCollectUpdateCandidates(t *testing.T) {
 				Source:       "h3y6e/spec-skills",
 				Ref:          "main",
 				SourceType:   "github",
-				ComputedHash: "stale-main",
+				ComputedHash: hashOf("stale-main"),
 			},
 			"shared-feature": {
 				Source:       "h3y6e/spec-skills",
 				Ref:          "feature/install",
 				SourceType:   "github",
-				ComputedHash: "stale-feature",
+				ComputedHash: hashOf("stale-feature"),
 			},
 		}
 
@@ -343,13 +338,13 @@ func TestCollectUpdateCandidates(t *testing.T) {
 			"h3y6e/spec-skills#main":            srcMain,
 			"h3y6e/spec-skills#feature/install": srcFeature,
 		}
-		cloneFn := func(source string) (string, error) {
+		cloneFn := func(source string) (fs.FS, error) {
 			dir, ok := cloneDirs[source]
 			if !ok {
 				t.Fatalf("unexpected clone for source %q", source)
 			}
 
-			return dir, nil
+			return os.DirFS(dir), nil
 		}
 
 		candidates, _ := collectLocked(entries, cloneFn)
@@ -367,16 +362,16 @@ func TestCollectUpdateCandidates(t *testing.T) {
 			t.Errorf("shared-main Ref = %q, want %q", byName["shared-main"].Ref, "main")
 		}
 
-		if byName["shared-main"].LatestHash != discoveredMain[0].ComputedHash {
-			t.Errorf("shared-main LatestHash = %q, want %q", byName["shared-main"].LatestHash, discoveredMain[0].ComputedHash)
+		if byName["shared-main"].LatestHash != mustHash(t, discoveredMain[0]) {
+			t.Errorf("shared-main LatestHash = %q, want %q", byName["shared-main"].LatestHash, mustHash(t, discoveredMain[0]))
 		}
 
 		if byName["shared-feature"].Ref != "feature/install" {
 			t.Errorf("shared-feature Ref = %q, want %q", byName["shared-feature"].Ref, "feature/install")
 		}
 
-		if byName["shared-feature"].LatestHash != discoveredFeature[0].ComputedHash {
-			t.Errorf("shared-feature LatestHash = %q, want %q", byName["shared-feature"].LatestHash, discoveredFeature[0].ComputedHash)
+		if byName["shared-feature"].LatestHash != mustHash(t, discoveredFeature[0]) {
+			t.Errorf("shared-feature LatestHash = %q, want %q", byName["shared-feature"].LatestHash, mustHash(t, discoveredFeature[0]))
 		}
 	})
 
@@ -389,14 +384,14 @@ func TestCollectUpdateCandidates(t *testing.T) {
 			"skills/alpha/SKILL.md": "# Alpha\n",
 		})
 
-		discovered, err := skill.DiscoverSkills(srcDir)
+		discovered, err := skill.DiscoverSkills(os.DirFS(srcDir))
 		if err != nil {
 			t.Fatal(err)
 		}
 
 		hashByName := map[string]string{}
 		for _, d := range discovered {
-			hashByName[d.Name] = d.ComputedHash
+			hashByName[d.Name] = mustHash(t, d)
 		}
 
 		entries := map[string]lock.Entry{
@@ -404,8 +399,8 @@ func TestCollectUpdateCandidates(t *testing.T) {
 			"alpha": {Source: "o/r", SourceType: "github", ComputedHash: hashByName["alpha"]},
 		}
 
-		cloneFn := func(_ string) (string, error) {
-			return srcDir, nil
+		cloneFn := func(_ string) (fs.FS, error) {
+			return os.DirFS(srcDir), nil
 		}
 
 		candidates, _ := collectLocked(entries, cloneFn)
@@ -437,8 +432,8 @@ func TestCollectUpdateCandidates(t *testing.T) {
 		})
 
 		entries := map[string]lock.Entry{
-			"alpha": {Source: "h3y6e/skills-a", SourceType: "github", ComputedHash: "stale-a"},
-			"beta":  {Source: "h3y6e/skills-b", SourceType: "github", ComputedHash: "stale-b"},
+			"alpha": {Source: "h3y6e/skills-a", SourceType: "github", ComputedHash: hashOf("stale-a")},
+			"beta":  {Source: "h3y6e/skills-b", SourceType: "github", ComputedHash: hashOf("stale-b")},
 		}
 
 		cloneDirs := map[string]string{
@@ -448,7 +443,7 @@ func TestCollectUpdateCandidates(t *testing.T) {
 		started := make(chan string, len(cloneDirs))
 		release := make(chan struct{})
 
-		cloneFn := func(source string) (string, error) {
+		cloneFn := func(source string) (fs.FS, error) {
 			dir, ok := cloneDirs[source]
 			if !ok {
 				t.Fatalf("unexpected clone for source %q", source)
@@ -458,7 +453,7 @@ func TestCollectUpdateCandidates(t *testing.T) {
 
 			<-release
 
-			return dir, nil
+			return os.DirFS(dir), nil
 		}
 
 		done := make(chan struct{})
@@ -499,10 +494,10 @@ func TestCollectUpdateCandidates(t *testing.T) {
 		src := t.TempDir()
 		testutil.WriteFiles(t, src, map[string]string{"skills/a/SKILL.md": "---\nname: a\ncompatibility: MCP (tools: x)\n---\n"})
 
-		entries := map[string]lock.Entry{"a": {Source: "o/r", SourceType: "github", SkillPath: "skills/a/SKILL.md", ComputedHash: "h"}}
+		entries := map[string]lock.Entry{"a": {Source: "o/r", SourceType: "github", SkillPath: "skills/a/SKILL.md", ComputedHash: hashOf("h")}}
 
 		// Act
-		candidates, _ := collectLocked(entries, func(string) (string, error) { return src, nil })
+		candidates, _ := collectLocked(entries, func(string) (fs.FS, error) { return os.DirFS(src), nil })
 
 		// Assert
 		if len(candidates) != 1 || candidates[0].Status != skill.StatusCheckFailed {
@@ -529,7 +524,7 @@ func TestCollectUpdateCandidates(t *testing.T) {
 		}
 
 		// Act
-		candidates, _ := skill.CollectUpdateCandidates(entries, installed, func(string) (string, error) { return src, nil }, fns, func(int, int) {})
+		candidates, _ := skill.CollectUpdateCandidates(entries, installed, func(string) (fs.FS, error) { return os.DirFS(src), nil }, fns, func(int, int) {})
 
 		// Assert
 		var news []string
@@ -552,15 +547,15 @@ func TestCollectUpdateCandidates(t *testing.T) {
 		testutil.WriteFiles(t, good, map[string]string{"skills/b/SKILL.md": "# B\n"})
 
 		entries := map[string]lock.Entry{
-			"a": {Source: "bad/source", SourceType: "github", ComputedHash: "h"},
-			"b": {Source: "good/source", SourceType: "github", ComputedHash: "h"},
+			"a": {Source: "bad/source", SourceType: "github", ComputedHash: hashOf("h")},
+			"b": {Source: "good/source", SourceType: "github", ComputedHash: hashOf("h")},
 		}
-		cloneFn := func(source string) (string, error) {
+		cloneFn := func(source string) (fs.FS, error) {
 			if source == "bad/source" {
-				return "", errors.New("clone failed")
+				return nil, errors.New("clone failed")
 			}
 
-			return good, nil
+			return os.DirFS(good), nil
 		}
 
 		// Act
@@ -576,9 +571,9 @@ func TestCollectUpdateCandidates(t *testing.T) {
 	t.Run("empty lockfile returns empty candidates", func(t *testing.T) {
 		t.Parallel()
 
-		cloneFn := func(_ string) (string, error) {
+		cloneFn := func(_ string) (fs.FS, error) {
 			t.Fatal("should not be called")
-			return "", nil
+			return nil, nil
 		}
 
 		candidates, _ := collectLocked(map[string]lock.Entry{}, cloneFn)
@@ -600,12 +595,12 @@ func TestCollectUpdateCandidates(t *testing.T) {
 			"skills/local-skill/SKILL.md": "# Local\n",
 		})
 
-		discovered, err := skill.DiscoverSkills(srcDir)
+		discovered, err := skill.DiscoverSkills(os.DirFS(srcDir))
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		localDiscovered, err := skill.DiscoverSkills(localSrcDir)
+		localDiscovered, err := skill.DiscoverSkills(os.DirFS(localSrcDir))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -614,37 +609,37 @@ func TestCollectUpdateCandidates(t *testing.T) {
 			"supported-skill": {
 				Source:       "h3y6e/spec-skills",
 				SourceType:   "github",
-				ComputedHash: discovered[0].ComputedHash,
+				ComputedHash: mustHash(t, discovered[0]),
 			},
 			"local-skill": {
 				Source:       localSrcDir,
 				SourceType:   "local",
-				ComputedHash: localDiscovered[0].ComputedHash,
+				ComputedHash: mustHash(t, localDiscovered[0]),
 			},
 			"wellknown-skill": {
 				Source:       "mintlify/docs",
 				SourceType:   "well-known",
-				ComputedHash: "wkhash",
+				ComputedHash: hashOf("wkhash"),
 			},
 			"npm-skill": {
 				Source:       "my-npm-pkg",
 				SourceType:   "node_modules",
-				ComputedHash: "npmhash",
+				ComputedHash: hashOf("npmhash"),
 			},
 		}
 
-		cloneFn := func(source string) (string, error) {
+		cloneFn := func(source string) (fs.FS, error) {
 			if source == "h3y6e/spec-skills" {
-				return srcDir, nil
+				return os.DirFS(srcDir), nil
 			}
 
 			if source == localSrcDir {
-				return localSrcDir, nil
+				return os.DirFS(localSrcDir), nil
 			}
 
 			t.Fatalf("unexpected clone for source %q", source)
 
-			return "", nil
+			return nil, nil
 		}
 
 		candidates, skipped := collectLocked(entries, cloneFn)
@@ -689,7 +684,10 @@ func TestResolveUpdateCandidatesBySkillPath(t *testing.T) {
 	t.Parallel()
 
 	at := func(name, path, hash string) skill.DiscoveredSkill {
-		return skill.DiscoveredSkill{Name: name, Path: path, ComputedHash: hash, Dir: "/clone/" + path, Default: true}
+		s := fakeSkill(name, path, hash)
+		s.Default = true
+
+		return s
 	}
 
 	type want struct {
@@ -706,31 +704,31 @@ func TestResolveUpdateCandidatesBySkillPath(t *testing.T) {
 	}{
 		{
 			"when the entry's skillPath exists upstream, the skill at that path is compared even if another directory shares its name",
-			lock.Entry{SkillPath: ".claude/skills/dup/SKILL.md", ComputedHash: "b"},
+			lock.Entry{SkillPath: ".claude/skills/dup/SKILL.md", ComputedHash: hashOf("b")},
 			[]skill.DiscoveredSkill{at("dup", "skills/dup", "a"), at("dup", ".claude/skills/dup", "b")},
 			[]want{{"dup", skill.StatusUpToDate, ".claude/skills/dup"}},
 		},
 		{
 			"when the entry's skillPath is gone and one upstream skill has its name, the skill has moved there",
-			lock.Entry{SkillPath: "old/dup/SKILL.md", ComputedHash: "a"},
+			lock.Entry{SkillPath: "old/dup/SKILL.md", ComputedHash: hashOf("a")},
 			[]skill.DiscoveredSkill{at("dup", "skills/dup", "a")},
 			[]want{{"dup", skill.StatusMoved, "skills/dup"}},
 		},
 		{
 			"when the entry's skillPath is gone and no upstream skill has its name, the skill was removed upstream",
-			lock.Entry{SkillPath: "skills/dup/SKILL.md", ComputedHash: "a"},
+			lock.Entry{SkillPath: "skills/dup/SKILL.md", ComputedHash: hashOf("a")},
 			[]skill.DiscoveredSkill{at("other", "skills/other", "a")},
 			[]want{{"dup", skill.StatusRemoved, ""}, {"other", skill.StatusNew, "skills/other"}},
 		},
 		{
 			"when an installed skill's path is another upstream skill's name, that skill is still new",
-			lock.Entry{SkillPath: "other/SKILL.md", ComputedHash: "a"},
+			lock.Entry{SkillPath: "other/SKILL.md", ComputedHash: hashOf("a")},
 			[]skill.DiscoveredSkill{at("dup", "other", "a"), at("other", "skills/other", "b")},
 			[]want{{"dup", skill.StatusUpToDate, "other"}, {"other", skill.StatusNew, "skills/other"}},
 		},
 		{
 			"when the entry has no skillPath and two upstream skills share its name, the check fails as ambiguous",
-			lock.Entry{ComputedHash: "a"},
+			lock.Entry{ComputedHash: hashOf("a")},
 			[]skill.DiscoveredSkill{at("dup", "skills/dup", "a"), at("dup", ".claude/skills/dup", "b")},
 			[]want{{"dup", skill.StatusCheckFailed, ""}},
 		},
@@ -751,4 +749,30 @@ func TestResolveUpdateCandidatesBySkillPath(t *testing.T) {
 			}
 		})
 	}
+}
+
+// fakeSkill returns an upstream skill at path whose SKILL.md is content.
+func fakeSkill(name, path, content string) skill.DiscoveredSkill {
+	return skill.DiscoveredSkill{Name: name, Path: path, FS: fstest.MapFS{"SKILL.md": {Data: []byte(content)}}}
+}
+
+// hashOf returns the computedHash of a skill whose SKILL.md is content.
+func hashOf(content string) string {
+	hash, err := skill.ComputeHash(fstest.MapFS{"SKILL.md": {Data: []byte(content)}})
+	if err != nil {
+		panic(err)
+	}
+
+	return hash
+}
+
+func mustHash(t *testing.T, s skill.DiscoveredSkill) string {
+	t.Helper()
+
+	hash, err := s.Hash()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return hash
 }

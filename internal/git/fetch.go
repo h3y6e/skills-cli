@@ -6,24 +6,27 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-// Snapshot is a commit of a remote repository checked out without .git.
+// Snapshot is a commit of a remote repository, read from the cache.
 type Snapshot struct {
-	Dir string
 	Ref ResolvedRef
+	// FS holds the files of the commit; Fetch makes it a *Tree.
+	FS fs.FS
 	// Trees maps each repo-relative directory, "." for the root, to its git
 	// tree SHA.
 	Trees map[string]string
 }
 
-// Checkout checks out ref of cloneURL into dir, fetching through a cache of
-// the remote's objects shared across runs: a commit fetched before is
-// checked out offline.
-func Checkout(ctx context.Context, cloneURL string, ref ResolvedRef, dir string) (Snapshot, error) {
+// Fetch reads ref of cloneURL through a cache of the remote's objects shared
+// across runs: a commit fetched before is read offline. Close the snapshot
+// when done.
+func Fetch(ctx context.Context, cloneURL string, ref ResolvedRef) (Snapshot, error) {
 	gitDir, err := cacheRepo(cloneURL)
 	if err != nil {
 		return Snapshot{}, err
@@ -34,32 +37,29 @@ func Checkout(ctx context.Context, cloneURL string, ref ResolvedRef, dir string)
 		return Snapshot{}, err
 	}
 
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return Snapshot{}, err
-	}
-
-	// A private index keeps concurrent checkouts off the cache's index.lock.
-	index := filepath.Clean(dir) + ".index"
-	defer os.Remove(index)
-
-	restore, err := gitCommand(ctx, "--git-dir", gitDir, "--work-tree", dir, "restore", "--source", commit, "--worktree", "--", ":/")
+	t, err := openTree(ctx, gitDir, commit)
 	if err != nil {
 		return Snapshot{}, err
 	}
 
-	restore.Env = append(restore.Env, "GIT_INDEX_FILE="+index)
-	if out, err := restore.CombinedOutput(); err != nil {
-		return Snapshot{}, fmt.Errorf("git restore: %w\n%s", err, out)
+	trees := map[string]string{".": tree}
+
+	for name, e := range t.entries {
+		if e.mode.IsDir() && name != "." {
+			trees[name] = e.oid
+		}
 	}
 
-	trees, err := listTrees(ctx, gitDir, commit)
-	if err != nil {
-		return Snapshot{}, err
+	return Snapshot{Ref: ref, FS: t, Trees: trees}, nil
+}
+
+// Close releases the snapshot's files.
+func (s Snapshot) Close() error {
+	if c, ok := s.FS.(io.Closer); ok {
+		return c.Close()
 	}
 
-	trees["."] = tree
-
-	return Snapshot{Dir: dir, Ref: ref, Trees: trees}, nil
+	return nil
 }
 
 // cacheDir returns the directory of the object caches. Replaceable for testing.
@@ -142,24 +142,6 @@ func peel(ctx context.Context, gitDir, object string) (string, string, error) {
 	}
 
 	return names[0], names[1], nil
-}
-
-func listTrees(ctx context.Context, gitDir, commit string) (map[string]string, error) {
-	out, err := runGit(ctx, "--git-dir", gitDir, "ls-tree", "-r", "-d", "-z", commit)
-	if err != nil {
-		return nil, err
-	}
-
-	trees := map[string]string{}
-
-	for entry := range strings.SplitSeq(strings.TrimSuffix(string(out), "\x00"), "\x00") {
-		info, path, ok := strings.Cut(entry, "\t")
-		if fields := strings.Fields(info); ok && len(fields) == 3 && fields[1] == "tree" {
-			trees[path] = fields[2]
-		}
-	}
-
-	return trees, nil
 }
 
 // Tree returns the tree SHA of the repo-relative directory path.
