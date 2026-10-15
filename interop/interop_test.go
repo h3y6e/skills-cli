@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -29,6 +30,12 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
+	// The sandboxed HOME hides gh's stored login, so pass it as GH_TOKEN.
+	if os.Getenv("GH_TOKEN") == "" {
+		if token, err := exec.Command("gh", "auth", "token").Output(); err == nil {
+			os.Setenv("GH_TOKEN", strings.TrimSpace(string(token)))
+		}
+	}
 	skolar = filepath.Join(dir, "skolar")
 	build := exec.Command("go", "build", "-o", skolar, "github.com/h3y6e/skolar")
 	build.Stdout, build.Stderr = os.Stdout, os.Stderr
@@ -40,18 +47,49 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func run(t *testing.T, dir, name string, args ...string) string {
+var homes sync.Map
+
+// env gives each scenario's subprocesses a HOME of their own, so gh skill's
+// global lock and other user state stay out of the real home directory.
+func env(t *testing.T) []string {
+	t.Helper()
+	home, _ := homes.LoadOrStore(t.Name(), t.TempDir())
+	h := home.(string)
+	return append(os.Environ(),
+		"HOME="+h, "XDG_CONFIG_HOME="+filepath.Join(h, ".config"), "XDG_STATE_HOME="+filepath.Join(h, ".local", "state"),
+		"DO_NOT_TRACK=1", "DISABLE_TELEMETRY=1", "NO_COLOR=1")
+}
+
+func runStderr(t *testing.T, dir, name string, args ...string) (string, string) {
 	t.Helper()
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "DO_NOT_TRACK=1", "DISABLE_TELEMETRY=1", "NO_COLOR=1")
+	cmd.Env = env(t)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("%s %s: %v\nstdout:\n%s\nstderr:\n%s", name, strings.Join(args, " "), err, out, stderr.String())
 	}
-	return string(out)
+	return string(out), stderr.String()
+}
+
+func run(t *testing.T, dir, name string, args ...string) string {
+	t.Helper()
+	out, _ := runStderr(t, dir, name, args...)
+	return out
+}
+
+// ghUpdate runs gh skill update and fails on the warnings gh prints when it
+// skips a skill, since it still exits 0.
+func ghUpdate(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	_, stderr := runStderr(t, filepath.Dir(dir), "gh", append([]string{"skill", "update", "--dir", dir}, args...)...)
+	for line := range strings.Lines(stderr) {
+		if strings.HasPrefix(line, "!") {
+			t.Errorf("gh skill update warned: %s", strings.TrimSpace(line))
+		}
+	}
 }
 
 func vercelAdd(t *testing.T, project string) {
@@ -138,8 +176,12 @@ func assertAllUpToDate(t *testing.T, dest string) {
 	if err := json.Unmarshal([]byte(run(t, filepath.Dir(filepath.Dir(dest)), skolar, "check", "-d", dest, "--json")), &record); err != nil {
 		t.Fatal(err)
 	}
-	if len(record.Results) == 0 {
-		t.Fatal("skolar check found no skills")
+	var checked []string
+	for _, r := range record.Results {
+		checked = append(checked, r.SkillName)
+	}
+	if installed := skillNames(t, dest); !slices.Equal(slices.Sorted(slices.Values(checked)), installed) {
+		t.Fatalf("skolar check covered %v, want every installed skill %v", checked, installed)
 	}
 	for _, r := range record.Results {
 		if r.Status != "up-to-date" {
@@ -292,7 +334,7 @@ func TestGhFormat(t *testing.T) {
 		// Act
 		run(t, filepath.Dir(own), skolar, "add", fixtureRepo, "-d", own, "-y")
 		installed := snapshot(t, own)
-		run(t, filepath.Dir(own), "gh", "skill", "update", "--dir", own, "--all")
+		ghUpdate(t, own, "--all")
 
 		// Assert
 		want := snapshot(t, gh)
@@ -311,7 +353,7 @@ func TestGhFormat(t *testing.T) {
 		}
 
 		// Act
-		run(t, filepath.Dir(gh), "gh", "skill", "update", "--dir", gh, "--all")
+		ghUpdate(t, gh, "--all")
 		run(t, filepath.Dir(own), skolar, "update", "-d", own, "-y")
 
 		// Assert
@@ -327,7 +369,7 @@ func TestGhFormat(t *testing.T) {
 		before := snapshot(t, dest)
 
 		// Act
-		run(t, filepath.Dir(dest), "gh", "skill", "update", "--dir", dest, "--all")
+		ghUpdate(t, dest, "--all")
 
 		// Assert
 		assertSameFiles(t, before, snapshot(t, dest))
@@ -342,7 +384,7 @@ func TestGhFormat(t *testing.T) {
 		run(t, filepath.Dir(own), skolar, "update", "-d", own, "-y")
 
 		// Act
-		run(t, filepath.Dir(own), "gh", "skill", "update", "--dir", own, "--all", "--force")
+		ghUpdate(t, own, "--all", "--force")
 
 		// Assert
 		assertSameFiles(t, snapshot(t, gh), snapshot(t, own))
@@ -381,7 +423,7 @@ func TestGhUndiscoverableLayouts(t *testing.T) {
 			before := snapshot(t, dir)
 
 			// Act
-			run(t, filepath.Dir(dir), "gh", "skill", "update", "--dir", dir, "--all")
+			ghUpdate(t, dir, "--all")
 
 			// Assert
 			if got := metadataValue(before[tc.skill+"/SKILL.md"], "github-path"); got != tc.path {
