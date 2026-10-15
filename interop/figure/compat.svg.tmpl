@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 {{.Card}}" width="900" height="{{.Card}}" role="img" aria-labelledby="t d">
+  <title id="t">skolar alongside vercel-labs/skills and gh skill</title>
+  <desc id="d">{{.Readout}}, with {{.Versions}}.{{range .Rows}}{{$label := .Label}}{{range $i, $c := .Cells}}{{range $c.Cases}}
+{{(index $.Tools $i).Name}}, {{$label}} ({{.Status}}): {{html .Sentence}}{{end}}{{end}}{{end}}
+</desc>
+  <style>
+    {{template "style"}}
+    .glyph { font-size: 11px; font-weight: 700; fill: #ffffff; }
+    .pass { fill: #0ca30c; }
+    .gap { fill: #fab219; }
+    .gap + .glyph { fill: #18181a; }
+    .fail { fill: #d03b3b; }
+    .none { fill: none; stroke: #b4b4b8; stroke-width: .6; }
+    .none + .glyph { fill: #8c8c90; font-weight: 400; }
+    @media (prefers-color-scheme: dark) {
+      .rule { stroke: #222222; }
+      .none { stroke: #3e3e3e; }
+      .none + .glyph { fill: #6e6e6e; }
+    }
+  </style>
+  <rect class="card" x=".5" y=".5" width="899" height="{{sub .Card 1}}"/>
+  <text class="corner" x="34" y="44">{{.Versions}}</text>
+{{- range .Tools}}
+  <text class="h" x="{{.X}}" y="44" text-anchor="middle">{{.Name}}</text>
+{{- end}}
+{{- range .Rows}}
+  {{- $label := .Label}}{{$y := .Y}}
+  <line class="rule" x1="34" x2="866" y1="{{sub $y 16}}" y2="{{sub $y 16}}"/>
+  <text x="34" y="{{add $y 4}}">{{$label}}</text>
+  {{- range $i, $c := .Cells}}{{$x := (index $.Tools $i).X}}
+  <g><title>{{(index $.Tools $i).Name}}, {{$label}}: {{$c.Status}}</title><rect class="{{css $c.Status}}" x="{{sub $x 8}}" y="{{sub $y 8}}" width="16" height="16" rx="4"/><text class="glyph" x="{{$x}}" y="{{add $y 4}}" text-anchor="middle">{{glyph $c.Status}}</text></g>
+  {{- end}}
+{{- end}}
+  <g transform="translate(34 {{sub .Card 24}})">
+    <rect class="pass" width="12" height="12" rx="3" y="-10"/><text class="corner" x="18">PASS</text>
+    <rect class="gap" width="12" height="12" rx="3" y="-10" x="80"/><text class="corner" x="98">GAP IN THE TOOL</text>
+    <rect class="fail" width="12" height="12" rx="3" y="-10" x="232"/><text class="corner" x="250">FAIL</text>
+    <rect class="none" width="12" height="12" rx="3" y="-10" x="312"/><text class="corner" x="330">NOT COVERED</text>
+  </g>
+</svg>
