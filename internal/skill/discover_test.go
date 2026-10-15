@@ -192,6 +192,28 @@ func TestDiscoverSkillsEdges(t *testing.T) {
 		}
 	})
 
+	t.Run("when a SKILL.md names a path instead of a skill, it is skipped", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		root := writeRepo(t, map[string]string{
+			"skills/good/SKILL.md": fm("good"),
+			"skills/up/SKILL.md":   fm("../../escape"),
+			"skills/abs/SKILL.md":  fm("/tmp/escape"),
+			"skills/deep/SKILL.md": fm("a/b"),
+		})
+
+		// Act
+		skills, err := skill.DiscoverSkills(root)
+
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := discoveredPaths(t, skills, false); !maps.Equal(got, map[string]string{"good": "skills/good"}) {
+			t.Errorf("DiscoverSkills() = %v", got)
+		}
+	})
+
 	t.Run("when a skill only vercel-labs/skills finds is marked internal, it is found but not a default", func(t *testing.T) {
 		// Arrange
 		t.Setenv("INSTALL_INTERNAL_SKILLS", "")

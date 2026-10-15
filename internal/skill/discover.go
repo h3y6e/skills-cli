@@ -138,6 +138,9 @@ func readSkillDir(dir, rel string) (skillDir, bool) {
 		return skillDir{}, false
 	}
 	name, _ := raw["name"].(string)
+	if name != "" && (!filepath.IsLocal(name) || filepath.Base(name) != name) {
+		return skillDir{}, false
+	}
 	description, _ := raw["description"].(string)
 	metadata, _ := raw["metadata"].(map[string]any)
 	internal := metadata["internal"] == true && !slices.Contains([]string{"1", "true"}, os.Getenv("INSTALL_INTERNAL_SKILLS"))
