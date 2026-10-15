@@ -349,3 +349,31 @@ func TestShallowCloneUntrustedInput(t *testing.T) {
 		}
 	})
 }
+
+func TestShallowCloneIgnoresAskpass(t *testing.T) {
+	t.Run("when an askpass program is configured, cloning fails without running it", func(t *testing.T) {
+		// Arrange
+		marker := filepath.Join(t.TempDir(), "asked")
+		askpass := filepath.Join(t.TempDir(), "askpass")
+		if err := os.WriteFile(askpass, []byte("#!/bin/sh\ntouch "+marker+"\necho x\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("GIT_ASKPASS", askpass)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("WWW-Authenticate", `Basic realm="x"`)
+			w.WriteHeader(http.StatusUnauthorized)
+		}))
+		t.Cleanup(srv.Close)
+
+		// Act
+		err := git.ShallowClone(t.Context(), srv.URL+"/o/r.git", "", filepath.Join(t.TempDir(), "dest"))
+
+		// Assert
+		if err == nil {
+			t.Fatal("ShallowClone() succeeded against a remote that rejects every request")
+		}
+		if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
+			t.Errorf("askpass ran: stat %s = %v", marker, statErr)
+		}
+	})
+}

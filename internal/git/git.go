@@ -13,7 +13,7 @@ func gitCommand(ctx context.Context, args ...string) (*exec.Cmd, error) {
 		return nil, fmt.Errorf("git not found: %w", err)
 	}
 	cmd := exec.CommandContext(ctx, gitPath, args...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=")
 	return cmd, nil
 }
 
