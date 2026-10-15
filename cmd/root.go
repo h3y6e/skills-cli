@@ -33,7 +33,7 @@ func NewRootCmd(version string) *cobra.Command {
 
 Every flag except --help and --version can also be set with a SKOLAR_<FLAG> environment variable, e.g. SKOLAR_DIR.
 
-Fetched repositories are cached in the user cache directory, e.g. ~/.cache/skolar.
+Fetched repositories are cached in $XDG_CACHE_HOME/skolar, or else the user cache directory: ~/Library/Caches/skolar on macOS, %LocalAppData%\skolar on Windows, ~/.cache/skolar elsewhere.
 
 Exit status: 0 on success, 1 on failure (including a skill that could not be checked), 2 on usage errors or a missing --yes.`,
 		Version:       resolveVersion(version),

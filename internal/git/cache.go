@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -182,7 +183,7 @@ type repo struct {
 }
 
 func openRepo(ctx context.Context, key string) (*repo, error) {
-	base, err := os.UserCacheDir()
+	base, err := cacheRoot()
 	if err != nil {
 		return nil, fmt.Errorf("locate cache: %w", err)
 	}
@@ -223,6 +224,22 @@ func openRepo(ctx context.Context, key string) (*repo, error) {
 	r.close = sync.OnceValue(func() error { return errors.Join(r.in.Close(), cmd.Wait()) })
 
 	return r, nil
+}
+
+// cacheRoot follows an absolute XDG_CACHE_HOME on every platform, and
+// otherwise the platform's user cache directory.
+func cacheRoot() (string, error) {
+	if dir := os.Getenv("XDG_CACHE_HOME"); filepath.IsAbs(dir) {
+		return dir, nil
+	}
+
+	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+		return os.UserCacheDir()
+	}
+
+	home, err := os.UserHomeDir()
+
+	return filepath.Join(home, ".cache"), err
 }
 
 func (r *repo) init(ctx context.Context) error {

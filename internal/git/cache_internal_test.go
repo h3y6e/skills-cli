@@ -123,3 +123,33 @@ func TestCacheRepo(t *testing.T) {
 		}
 	})
 }
+
+func TestCacheRoot(t *testing.T) {
+	// Not parallel: sets XDG_CACHE_HOME.
+	t.Run("when XDG_CACHE_HOME is absolute, the cache lives there", func(t *testing.T) {
+		// Arrange
+		want := t.TempDir()
+		t.Setenv("XDG_CACHE_HOME", want)
+
+		// Act
+		got, err := cacheRoot()
+
+		// Assert
+		if err != nil || got != want {
+			t.Errorf("cacheRoot() = %q, %v, want %q", got, err, want)
+		}
+	})
+
+	t.Run("when XDG_CACHE_HOME is relative, it is ignored", func(t *testing.T) {
+		// Arrange
+		t.Setenv("XDG_CACHE_HOME", "relative")
+
+		// Act
+		got, err := cacheRoot()
+
+		// Assert
+		if err != nil || !filepath.IsAbs(got) {
+			t.Errorf("cacheRoot() = %q, %v, want the absolute platform cache directory", got, err)
+		}
+	})
+}
