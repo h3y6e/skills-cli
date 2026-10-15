@@ -109,10 +109,6 @@ func applyUpdates(w io.Writer, inv inventory, locked, tracked []skill.UpdateCand
 	return nil
 }
 
-// reviewUpdates prints each candidate's status, with a diff when an update
-// is available, and splits the updates by how they are recorded: in the
-// lockfile, or in gh skill metadata. failed names the skills that could not
-// be checked or diffed.
 func reviewUpdates(
 	ctx context.Context, w io.Writer, layout lock.Layout, candidates []skill.UpdateCandidate,
 ) (locked, tracked []skill.UpdateCandidate, failed []string) {

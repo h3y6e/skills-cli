@@ -39,8 +39,6 @@ func ParseSource(raw string) (SourceRef, error) {
 	return SourceRef{Raw: raw, SourceType: sourceType, CanonicalSource: canonical, CloneURL: cloneURL, Ref: ref}, nil
 }
 
-// parseLocation returns the source type, canonical source and clone URL of a
-// source without its #ref fragment.
 func parseLocation(location string) (lock.SourceType, string, string, error) {
 	if looksLikeLocalPath(location) {
 		return lock.SourceLocal, filepath.Clean(location), filepath.Clean(location), nil

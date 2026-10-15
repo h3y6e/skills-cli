@@ -172,8 +172,6 @@ func bindDirFlag(c *cobra.Command, target *string) {
 	c.Flags().StringVarP(target, "dir", "d", lock.DefaultDir, "Skill directory; .agents/skills beside a skills-lock.json uses the lockfile, others SKILL.md metadata")
 }
 
-// inventory is what a skills directory records: its lockfile skills and the
-// skills carrying gh skill metadata instead.
 type inventory struct {
 	layout   lock.Layout
 	lockFile lock.File
@@ -204,9 +202,6 @@ func (inv inventory) recorded(name string) bool {
 	return inv.locked(name) || slices.ContainsFunc(inv.foreign, func(s skill.InstalledSkill) bool { return s.Name == name })
 }
 
-// collectCandidates clones the sources of entries and foreign skills and
-// resolves their update candidates. cleanup removes the clones, which the
-// candidates' staged directories point into.
 func collectCandidates(
 	ctx context.Context, prefix string, entries map[string]lock.Entry, foreign []skill.InstalledSkill,
 ) (candidates []skill.UpdateCandidate, skipped []skill.SkippedEntry, cleanup func(), err error) {

@@ -100,8 +100,6 @@ func runAdd(cmd *cobra.Command, source string, opts addOptions) error {
 	return skill.InstallSkills(discovered, ref, layout)
 }
 
-// installsTracked reports whether ref is installed in gh skill format rather
-// than recorded in the lockfile.
 func installsTracked(layout lock.Layout, ref skill.SourceRef) (bool, error) {
 	lockfileExists := false
 	if layout.UsesLockfile() {
@@ -118,8 +116,6 @@ func installsTracked(layout lock.Layout, ref skill.SourceRef) (bool, error) {
 	return tracked, nil
 }
 
-// printInstallPlan prints where each skill goes and reports whether any
-// overwrites an installed skill.
 func printInstallPlan(w io.Writer, layout lock.Layout, skills []skill.DiscoveredSkill) bool {
 	overwrite := false
 	for _, s := range skills {
