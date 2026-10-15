@@ -163,18 +163,23 @@ func fetchCached(ctx context.Context, gitDir, cloneURL string, ref ResolvedRef) 
 		}
 	}
 
-	if commit, tree, err := peel(ctx, gitDir, ref.Object); err == nil {
-		return commit, tree, nil
+	// Only an object ID names what the remote holds now; a name the remote
+	// no longer advertises may still name a stale ref in the cache.
+	if isObjectID(ref.Object) {
+		if commit, tree, err := peel(ctx, gitDir, ref.Object); err == nil {
+			return commit, tree, nil
+		}
 	}
 
-	// Each fetched ref keeps its own name, so the cache can hold many refs.
-	local := ref.Full
-	if !strings.HasPrefix(local, "refs/") {
-		local = "refs/commits/" + local
-	}
+	// A ref per fetched ref keeps its objects from gc; a flat name keeps it
+	// from clashing with another, even on a case-insensitive file system.
+	sum := sha256.Sum256([]byte(ref.Full))
+	local := "refs/skolar/" + hex.EncodeToString(sum[:12])
 
-	if _, err := runGit(ctx, "-C", gitDir, "fetch", "--quiet", "--no-auto-gc", "--depth", "1", "--no-tags",
-		"--no-write-fetch-head", "--", cloneURL, "+"+ref.Full+":"+local); err != nil {
+	// With every fetch in one pack, which git writes whole, an interrupted
+	// fetch leaves no objects behind, so a cached commit is complete.
+	if _, err := runGit(ctx, "-C", gitDir, "-c", "fetch.unpackLimit=1", "-c", "gc.autoDetach=false",
+		"fetch", "--quiet", "--depth", "1", "--no-tags", "--no-write-fetch-head", "--", cloneURL, "+"+ref.Full+":"+local); err != nil {
 		return "", "", err
 	}
 

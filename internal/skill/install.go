@@ -341,6 +341,10 @@ func copyDir(src fs.FS, dst string, vercel bool) error {
 			return err
 		}
 
+		if !filepath.IsLocal(filepath.FromSlash(rel)) {
+			return fmt.Errorf("copy %q: not a local path", rel)
+		}
+
 		target := filepath.Join(dst, filepath.FromSlash(rel))
 
 		if skipCopy(d, vercel) {

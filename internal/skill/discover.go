@@ -131,7 +131,12 @@ func findSkillDirs(repo fs.FS) (map[string]skillDir, error) {
 		}
 
 		if isRegular(repo, path.Join(p, "SKILL.md")) {
-			if dir, ok := readSkillDir(repo, p); ok {
+			data, err := fs.ReadFile(repo, path.Join(p, "SKILL.md"))
+			if err != nil {
+				return err
+			}
+
+			if dir, ok := readSkillDir(data, p); ok {
 				dirs[dir.path] = dir
 			}
 		}
@@ -146,14 +151,9 @@ func findSkillDirs(repo fs.FS) (map[string]skillDir, error) {
 	return dirs, err
 }
 
-// readSkillDir reads a skill's SKILL.md, reporting false when it is
-// unreadable or its frontmatter is malformed, which vercel-labs/skills skips.
-func readSkillDir(repo fs.FS, rel string) (skillDir, bool) {
-	data, err := fs.ReadFile(repo, path.Join(rel, "SKILL.md"))
-	if err != nil {
-		return skillDir{}, false
-	}
-
+// readSkillDir reads a skill's SKILL.md, reporting false when its
+// frontmatter is malformed, which vercel-labs/skills skips.
+func readSkillDir(data []byte, rel string) (skillDir, bool) {
 	raw, _, err := parseFrontmatter(string(data))
 	if err != nil {
 		return skillDir{}, false

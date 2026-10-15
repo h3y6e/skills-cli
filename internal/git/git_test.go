@@ -205,6 +205,26 @@ func TestFetch(t *testing.T) {
 		}
 	})
 
+	t.Run("when a fetched branch is deleted upstream, fetching it fails instead of reading the cached copy", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		repo := initTaggedRepo(t)
+		if _, err := fetch(t, repo, "feature/install"); err != nil {
+			t.Fatal(err)
+		}
+
+		testutil.Git(t, strings.TrimPrefix(repo, "file://"), "branch", "-D", "feature/install")
+
+		// Act
+		_, err := fetch(t, repo, "feature/install")
+
+		// Assert
+		if err == nil {
+			t.Fatal("fetched a branch the remote deleted")
+		}
+	})
+
 	t.Run("when the same remote is fetched concurrently, every fetch succeeds", func(t *testing.T) {
 		t.Parallel()
 
