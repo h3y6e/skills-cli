@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"time"
 )
 
 func gitCommand(ctx context.Context, args ...string) (*exec.Cmd, error) {
@@ -15,7 +16,9 @@ func gitCommand(ctx context.Context, args ...string) (*exec.Cmd, error) {
 	}
 
 	cmd := exec.CommandContext(ctx, gitPath, args...)
-
+	// Interrupting rather than killing git lets it remove its lock files.
+	cmd.Cancel = func() error { return cmd.Process.Signal(os.Interrupt) }
+	cmd.WaitDelay = 10 * time.Second
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=")
 
 	return cmd, nil

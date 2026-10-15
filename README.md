@@ -45,6 +45,7 @@ skolar remove spec-plan
 - `add`, `update`, and `remove` take `--dry-run`, and confirm before overwriting or deleting; pass `-y` without a TTY.
 - `update` lists only changed skills: `M` changed, `R` moved (followed), `D` removed upstream (kept), `A` not installed, `!` unchecked.
 - `list --json` and `update --json` print `{"skills": [...]}` and `{"results": [...]}`, plus `"error": {"code", "message", "fix"}` on failure.
+- Fetched repositories are cached in the user cache directory, e.g. `~/.cache/skolar`, so later runs fetch only what changed upstream.
 - Any flag except `--help` and `--version` can be set as `SKOLAR_<FLAG>`, e.g. `SKOLAR_DIR`.
 - Exit status: 0 success, 1 failure (including a skill that could not be checked), 2 usage error or missing `-y`.
 
