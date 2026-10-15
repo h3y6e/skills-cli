@@ -55,7 +55,6 @@ func approve(cmd *cobra.Command, yes bool, question string) error {
 	}
 }
 
-// status shows a transient line on a terminal, erasing it when given "".
 func status(w io.Writer) func(string) {
 	f, ok := w.(*os.File)
 	if !ok || !term.IsTerminal(int(f.Fd())) || os.Getenv("TERM") == "dumb" {

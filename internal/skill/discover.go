@@ -15,8 +15,7 @@ import (
 type DiscoveredSkill struct {
 	Name string
 	Path string // repo-relative directory of the skill, "." for the root
-	// FS holds the skill's files.
-	FS fs.FS
+	FS   fs.FS
 	// Default reports whether vercel-labs/skills or gh skill finds the skill
 	// without being told where to look.
 	Default bool
@@ -33,7 +32,6 @@ func (s DiscoveredSkill) Hash() (string, error) {
 	return ComputeHash(s.FS)
 }
 
-// subFS returns the directory dir of fsys.
 func subFS(fsys fs.FS, dir string) fs.FS {
 	if dir == "." {
 		return fsys

@@ -16,8 +16,7 @@ import (
 // Snapshot is a commit of a remote repository, read from the cache.
 type Snapshot struct {
 	Ref ResolvedRef
-	// FS holds the files of the commit; Fetch makes it a *Tree.
-	FS fs.FS
+	FS  fs.FS
 	// Trees maps each repo-relative directory, "." for the root, to its git
 	// tree SHA.
 	Trees map[string]string
@@ -127,8 +126,7 @@ func (s Snapshot) Close() error {
 	return nil
 }
 
-// cacheDir returns the directory of the object caches. Replaceable for testing.
-var cacheDir = func() (string, error) {
+func cacheDir() (string, error) {
 	dir, err := os.UserCacheDir()
 	if err != nil {
 		return "", err
@@ -148,8 +146,6 @@ func cacheRepo(cloneURL string) (string, error) {
 	return filepath.Join(root, hex.EncodeToString(sum[:12])+".git"), nil
 }
 
-// fetchCached returns the commit and root tree ref names in gitDir, fetching
-// them from cloneURL unless gitDir already holds them.
 func fetchCached(ctx context.Context, gitDir, cloneURL string, ref ResolvedRef) (string, string, error) {
 	unlock, err := lock(gitDir + ".lock")
 	if err != nil {
@@ -186,7 +182,6 @@ func fetchCached(ctx context.Context, gitDir, cloneURL string, ref ResolvedRef) 
 	return peel(ctx, gitDir, local)
 }
 
-// peel returns the commit and root tree object names gitDir holds for object.
 func peel(ctx context.Context, gitDir, object string) (string, string, error) {
 	cmd, err := gitCommand(ctx, "--git-dir", gitDir, "cat-file", "--batch-check")
 	if err != nil {

@@ -368,7 +368,6 @@ func NewCloneFunc(ctx context.Context) (CloneFunc, func()) {
 	return cloneFn, snaps.close
 }
 
-// snapshots collects fetched snapshots to close them together.
 type snapshots struct {
 	mu   sync.Mutex
 	list []git.Snapshot

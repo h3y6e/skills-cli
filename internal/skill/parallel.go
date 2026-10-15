@@ -27,7 +27,6 @@ func parallelMap[T, R any](items []T, f func(T) R) []R {
 	return results
 }
 
-// onceMap runs a function once per key, sharing its result with every caller.
 type onceMap[K comparable, V any] struct {
 	mu sync.Mutex
 	m  map[K]func() (V, error)

@@ -14,14 +14,12 @@ import (
 )
 
 type listEntryJSON struct {
-	SkillName    string          `json:"skillName"`
-	Source       string          `json:"source"`
-	Ref          string          `json:"ref,omitempty"`
-	SourceType   lock.SourceType `json:"sourceType"`
-	ComputedHash string          `json:"computedHash"`
-	// reinstall is the add argument that installs the skill again, and
-	// installed the ref it was installed at, when recorded.
-	reinstall, installed string
+	SkillName            string          `json:"skillName"`
+	Source               string          `json:"source"`
+	Ref                  string          `json:"ref,omitempty"`
+	SourceType           lock.SourceType `json:"sourceType"`
+	ComputedHash         string          `json:"computedHash"`
+	addArg, installedRef string
 }
 
 type listOptions struct {
@@ -69,7 +67,7 @@ func runList(cmd *cobra.Command, opts listOptions) (err error) {
 			Ref:          entry.Ref,
 			SourceType:   entry.SourceType,
 			ComputedHash: entry.ComputedHash,
-			reinstall:    skill.SourceInput(entry),
+			addArg:       skill.SourceInput(entry),
 		})
 	}
 
@@ -80,8 +78,8 @@ func runList(cmd *cobra.Command, opts listOptions) (err error) {
 			Ref:          s.Meta.Ref,
 			SourceType:   foreignSourceType(s.Meta),
 			ComputedHash: s.Meta.TreeSHA,
-			reinstall:    skill.FormatSourceInput(foreignSource(s.Meta), s.Meta.Pinned),
-			installed:    shortRef(s.Meta.Ref),
+			addArg:       skill.FormatSourceInput(foreignSource(s.Meta), s.Meta.Pinned),
+			installedRef: shortRef(s.Meta.Ref),
 		})
 	}
 
@@ -100,14 +98,12 @@ func runList(cmd *cobra.Command, opts listOptions) (err error) {
 
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	for _, e := range payload {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", e.SkillName, e.reinstall, e.installed, shortHash(e.ComputedHash))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", e.SkillName, e.addArg, e.installedRef, shortHash(e.ComputedHash))
 	}
 
 	return tw.Flush()
 }
 
-// shortRef names a ref as a person would: a branch or tag by its name, a
-// commit by its short hash.
 func shortRef(ref string) string {
 	for _, prefix := range []string{"refs/heads/", "refs/tags/"} {
 		if name, ok := strings.CutPrefix(ref, prefix); ok {

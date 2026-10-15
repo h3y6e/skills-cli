@@ -227,7 +227,6 @@ func (inv inventory) locked(name string) bool {
 	return ok
 }
 
-// names returns the recorded skills, sorted.
 func (inv inventory) names() []string {
 	names := slices.Collect(maps.Keys(inv.entries))
 	for _, s := range inv.foreign {
