@@ -14,6 +14,7 @@ import (
 	"github.com/h3y6e/skolar/cmd"
 	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
+	"github.com/h3y6e/skolar/internal/testutil"
 )
 
 type verifyRecord struct {
@@ -53,7 +54,7 @@ func addSkills(t *testing.T, args ...string) {
 
 func TestVerifyLockfile(t *testing.T) {
 	t.Parallel()
-	bareURL := initBareRepo(t, map[string]string{"skills/alpha/SKILL.md": "# Alpha\n"})
+	bareURL := testutil.BareRepo(t, map[string]string{"skills/alpha/SKILL.md": "# Alpha\n"})
 
 	t.Run("when a lockfile skill is untouched, verify reports it verified", func(t *testing.T) {
 		t.Parallel()
@@ -283,7 +284,7 @@ func TestVerifyFix(t *testing.T) {
 
 func TestVerifyLockfileExcludedFiles(t *testing.T) {
 	t.Parallel()
-	bareURL := initBareRepo(t, map[string]string{
+	bareURL := testutil.BareRepo(t, map[string]string{
 		"skills/alpha/SKILL.md":      "# Alpha\n",
 		"skills/alpha/metadata.json": "{}\n",
 	})

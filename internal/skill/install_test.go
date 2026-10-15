@@ -9,6 +9,7 @@ import (
 
 	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
+	"github.com/h3y6e/skolar/internal/testutil"
 )
 
 func TestInstallSkills(t *testing.T) {
@@ -19,12 +20,15 @@ func TestInstallSkills(t *testing.T) {
 
 		srcDir := t.TempDir()
 		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
-		writeFiles(t, srcDir, map[string]string{
+		testutil.WriteFiles(t, srcDir, map[string]string{
 			"skills/my-skill/SKILL.md": "# My Skill\n",
 			"skills/my-skill/ref.md":   "reference\n",
 		})
 
-		discovered, _ := skill.DiscoverSkills(srcDir)
+		discovered, err := skill.DiscoverSkills(srcDir)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		ref := skill.SourceRef{
 			Raw:             "h3y6e/spec-skills",
@@ -33,7 +37,7 @@ func TestInstallSkills(t *testing.T) {
 			CloneURL:        "https://github.com/h3y6e/spec-skills.git",
 		}
 
-		err := skill.InstallSkills(discovered, ref, lock.NewLayout(skillsDir))
+		err = skill.InstallSkills(discovered, ref, lock.NewLayout(skillsDir))
 		if err != nil {
 			t.Fatalf("InstallSkills() error = %v", err)
 		}
@@ -60,11 +64,14 @@ func TestInstallSkills(t *testing.T) {
 
 		srcDir := t.TempDir()
 		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
-		writeFiles(t, srcDir, map[string]string{
+		testutil.WriteFiles(t, srcDir, map[string]string{
 			"skills/alpha/SKILL.md": "# Alpha\n",
 		})
 
-		discovered, _ := skill.DiscoverSkills(srcDir)
+		discovered, err := skill.DiscoverSkills(srcDir)
+		if err != nil {
+			t.Fatal(err)
+		}
 		ref := skill.SourceRef{
 			CanonicalSource: "h3y6e/spec-skills",
 			SourceType:      "github",
@@ -103,7 +110,7 @@ func TestInstallSkills(t *testing.T) {
 
 		srcDir := t.TempDir()
 		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
-		writeFiles(t, srcDir, map[string]string{
+		testutil.WriteFiles(t, srcDir, map[string]string{
 			"skills/new-skill/SKILL.md": "# New\n",
 		})
 
@@ -122,7 +129,10 @@ func TestInstallSkills(t *testing.T) {
 			t.Fatalf("write existing lockfile: %v", err)
 		}
 
-		discovered, _ := skill.DiscoverSkills(srcDir)
+		discovered, err := skill.DiscoverSkills(srcDir)
+		if err != nil {
+			t.Fatal(err)
+		}
 		ref := skill.SourceRef{
 			CanonicalSource: "h3y6e/spec-skills",
 			SourceType:      "github",
@@ -165,12 +175,12 @@ func TestReplaceSkill(t *testing.T) {
 		skillsDir := t.TempDir()
 		stagedDir := t.TempDir()
 
-		writeFiles(t, skillsDir, map[string]string{
+		testutil.WriteFiles(t, skillsDir, map[string]string{
 			"my-skill/SKILL.md": "# Old\n",
 			"my-skill/old-file": "old content\n",
 		})
 
-		writeFiles(t, stagedDir, map[string]string{
+		testutil.WriteFiles(t, stagedDir, map[string]string{
 			"SKILL.md": "# New\n",
 			"new-file": "new content\n",
 		})
@@ -207,7 +217,7 @@ func TestReplaceSkill(t *testing.T) {
 		skillsDir := t.TempDir()
 		stagedDir := t.TempDir()
 
-		writeFiles(t, stagedDir, map[string]string{
+		testutil.WriteFiles(t, stagedDir, map[string]string{
 			"SKILL.md": "# Brand New\n",
 		})
 
@@ -241,7 +251,7 @@ func TestInstallRootSkill(t *testing.T) {
 		t.Parallel()
 		// Arrange
 		srcDir := t.TempDir()
-		writeFiles(t, srcDir, files)
+		testutil.WriteFiles(t, srcDir, files)
 		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 		discovered, err := skill.DiscoverSkills(srcDir)
 		if err != nil {
@@ -269,7 +279,7 @@ func TestInstallSkipsSymlinks(t *testing.T) {
 		t.Parallel()
 		// Arrange
 		srcDir := t.TempDir()
-		writeFiles(t, srcDir, map[string]string{"skills/s/SKILL.md": "---\nname: s\ndescription: d\n---\n"})
+		testutil.WriteFiles(t, srcDir, map[string]string{"skills/s/SKILL.md": "---\nname: s\ndescription: d\n---\n"})
 		secret := filepath.Join(t.TempDir(), "secret")
 		if err := os.WriteFile(secret, []byte("secret\n"), 0o600); err != nil {
 			t.Fatal(err)

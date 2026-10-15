@@ -5,12 +5,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/h3y6e/skolar/internal/git"
+	"github.com/h3y6e/skolar/internal/testutil"
 )
 
 func TestMain(m *testing.M) {
@@ -19,109 +19,25 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func gitInDir(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
-		"GIT_CONFIG_GLOBAL=/dev/null",
-		"GIT_CONFIG_SYSTEM=/dev/null",
-	)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v failed: %v\n%s", args, err, out)
-	}
-	return string(out)
-}
-
-func initBareRepo(t *testing.T, files map[string]string) string {
-	t.Helper()
-
-	work := t.TempDir()
-
-	gitInDir(t, work, "init", "-b", "main")
-	gitInDir(t, work, "config", "user.email", "test@test.com")
-	gitInDir(t, work, "config", "user.name", "Test")
-
-	base := filepath.Join(work, ".gitkeep")
-	if err := os.WriteFile(base, []byte(""), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	gitInDir(t, work, "add", "-A")
-	gitInDir(t, work, "commit", "-m", "base")
-
-	for name, content := range files {
-		p := filepath.Join(work, name)
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	gitInDir(t, work, "add", "-A")
-	gitInDir(t, work, "commit", "-m", "add files")
-
-	bare := t.TempDir()
-	cmd := exec.Command("git", "clone", "--bare", work, bare)
-	cmd.Env = append(os.Environ(),
-		"GIT_CONFIG_GLOBAL=/dev/null",
-		"GIT_CONFIG_SYSTEM=/dev/null",
-	)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git clone --bare failed: %v\n%s", err, out)
-	}
-
-	return "file://" + bare
-}
-
 func initBareRepoWithRefs(t *testing.T) string {
 	t.Helper()
 
-	work := t.TempDir()
+	work := testutil.InitWorkRepo(t)
+	skillFile := "skills/my-skill/SKILL.md"
+	testutil.Commit(t, work, "main", map[string]string{skillFile: "# Main\n"})
+	testutil.Git(t, work, "tag", "v1.0.0")
 
-	gitInDir(t, work, "init", "-b", "main")
-	gitInDir(t, work, "config", "user.email", "test@test.com")
-	gitInDir(t, work, "config", "user.name", "Test")
+	testutil.Git(t, work, "checkout", "-b", "feature/install")
+	testutil.Commit(t, work, "feature", map[string]string{skillFile: "# Feature\n"})
+	testutil.Git(t, work, "checkout", "main")
 
-	base := filepath.Join(work, "skills", "my-skill", "SKILL.md")
-	if err := os.MkdirAll(filepath.Dir(base), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(base, []byte("# Main\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	gitInDir(t, work, "add", "-A")
-	gitInDir(t, work, "commit", "-m", "main")
-	gitInDir(t, work, "tag", "v1.0.0")
-
-	gitInDir(t, work, "checkout", "-b", "feature/install")
-	if err := os.WriteFile(base, []byte("# Feature\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	gitInDir(t, work, "add", "-A")
-	gitInDir(t, work, "commit", "-m", "feature")
-	gitInDir(t, work, "checkout", "main")
-
-	bare := t.TempDir()
-	cmd := exec.Command("git", "clone", "--bare", work, bare)
-	cmd.Env = append(os.Environ(),
-		"GIT_CONFIG_GLOBAL=/dev/null",
-		"GIT_CONFIG_SYSTEM=/dev/null",
-	)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git clone --bare failed: %v\n%s", err, out)
-	}
-
-	return "file://" + bare
+	return testutil.BareClone(t, work)
 }
 
 func TestShallowClone(t *testing.T) {
 	t.Parallel()
 
-	bareRepo := initBareRepo(t, map[string]string{
+	bareRepo := testutil.BareRepo(t, map[string]string{
 		"skills/my-skill/SKILL.md": "# My Skill\n",
 		"README.md":                "hello\n",
 	})
@@ -130,7 +46,7 @@ func TestShallowClone(t *testing.T) {
 		t.Parallel()
 		dest := filepath.Join(t.TempDir(), "clone-dest")
 
-		err := git.ShallowClone(context.Background(), bareRepo, "", dest)
+		err := git.ShallowClone(t.Context(), bareRepo, "", dest)
 		if err != nil {
 			t.Fatalf("ShallowClone() error = %v", err)
 		}
@@ -149,11 +65,11 @@ func TestShallowClone(t *testing.T) {
 		t.Parallel()
 		dest := filepath.Join(t.TempDir(), "shallow-check")
 
-		if err := git.ShallowClone(context.Background(), bareRepo, "", dest); err != nil {
+		if err := git.ShallowClone(t.Context(), bareRepo, "", dest); err != nil {
 			t.Fatalf("ShallowClone() error = %v", err)
 		}
 
-		out := gitInDir(t, dest, "rev-list", "--count", "HEAD")
+		out := testutil.Git(t, dest, "rev-list", "--count", "HEAD")
 		count := strings.TrimSpace(out)
 		if count != "1" {
 			t.Errorf("expected 1 commit in shallow clone, got %s", count)
@@ -164,7 +80,7 @@ func TestShallowClone(t *testing.T) {
 		t.Parallel()
 		dest := filepath.Join(t.TempDir(), "bad-clone")
 
-		err := git.ShallowClone(context.Background(), "/nonexistent/repo", "", dest)
+		err := git.ShallowClone(t.Context(), "/nonexistent/repo", "", dest)
 		if err == nil {
 			t.Fatal("expected error for invalid clone URL, got nil")
 		}
@@ -174,7 +90,7 @@ func TestShallowClone(t *testing.T) {
 		t.Parallel()
 		dest := filepath.Join(t.TempDir(), "cancelled")
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 
 		err := git.ShallowClone(ctx, bareRepo, "", dest)
@@ -189,7 +105,7 @@ func TestShallowClone(t *testing.T) {
 		bareWithRefs := initBareRepoWithRefs(t)
 		dest := filepath.Join(t.TempDir(), "branch-clone")
 
-		if err := git.ShallowClone(context.Background(), bareWithRefs, "feature/install", dest); err != nil {
+		if err := git.ShallowClone(t.Context(), bareWithRefs, "feature/install", dest); err != nil {
 			t.Fatalf("ShallowClone() error = %v", err)
 		}
 
@@ -200,7 +116,7 @@ func TestShallowClone(t *testing.T) {
 		if string(data) != "# Feature\n" {
 			t.Errorf("branch clone content = %q, want %q", string(data), "# Feature\n")
 		}
-		out := gitInDir(t, dest, "rev-list", "--count", "HEAD")
+		out := testutil.Git(t, dest, "rev-list", "--count", "HEAD")
 		if strings.TrimSpace(out) != "1" {
 			t.Errorf("expected shallow branch clone, got %s commits", strings.TrimSpace(out))
 		}
@@ -212,7 +128,7 @@ func TestShallowClone(t *testing.T) {
 		bareWithRefs := initBareRepoWithRefs(t)
 		dest := filepath.Join(t.TempDir(), "tag-clone")
 
-		if err := git.ShallowClone(context.Background(), bareWithRefs, "v1.0.0", dest); err != nil {
+		if err := git.ShallowClone(t.Context(), bareWithRefs, "v1.0.0", dest); err != nil {
 			t.Fatalf("ShallowClone() error = %v", err)
 		}
 
@@ -235,12 +151,9 @@ func TestDiffNoIndex(t *testing.T) {
 		dir := t.TempDir()
 		a := filepath.Join(dir, "a")
 		b := filepath.Join(dir, "b")
-		os.MkdirAll(a, 0o755)
-		os.MkdirAll(b, 0o755)
-		os.WriteFile(filepath.Join(a, "file.txt"), []byte("same\n"), 0o644)
-		os.WriteFile(filepath.Join(b, "file.txt"), []byte("same\n"), 0o644)
+		testutil.WriteFiles(t, dir, map[string]string{"a/file.txt": "same\n", "b/file.txt": "same\n"})
 
-		output, hasDiff, err := git.DiffNoIndex(context.Background(), a, b)
+		output, hasDiff, err := git.DiffNoIndex(t.Context(), a, b)
 		if err != nil {
 			t.Fatalf("DiffNoIndex() error = %v", err)
 		}
@@ -255,12 +168,9 @@ func TestDiffNoIndex(t *testing.T) {
 		dir := t.TempDir()
 		a := filepath.Join(dir, "a")
 		b := filepath.Join(dir, "b")
-		os.MkdirAll(a, 0o755)
-		os.MkdirAll(b, 0o755)
-		os.WriteFile(filepath.Join(a, "file.txt"), []byte("old\n"), 0o644)
-		os.WriteFile(filepath.Join(b, "file.txt"), []byte("new\n"), 0o644)
+		testutil.WriteFiles(t, dir, map[string]string{"a/file.txt": "old\n", "b/file.txt": "new\n"})
 
-		output, hasDiff, err := git.DiffNoIndex(context.Background(), a, b)
+		output, hasDiff, err := git.DiffNoIndex(t.Context(), a, b)
 		if err != nil {
 			t.Fatalf("DiffNoIndex() error = %v", err)
 		}
@@ -278,11 +188,12 @@ func TestDiffNoIndex(t *testing.T) {
 		dir := t.TempDir()
 		a := filepath.Join(dir, "a")
 		b := filepath.Join(dir, "b")
-		os.MkdirAll(a, 0o755)
-		os.MkdirAll(b, 0o755)
-		os.WriteFile(filepath.Join(b, "new-file.txt"), []byte("added\n"), 0o644)
+		if err := os.MkdirAll(a, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		testutil.WriteFiles(t, dir, map[string]string{"b/new-file.txt": "added\n"})
 
-		output, hasDiff, err := git.DiffNoIndex(context.Background(), a, b)
+		output, hasDiff, err := git.DiffNoIndex(t.Context(), a, b)
 		if err != nil {
 			t.Fatalf("DiffNoIndex() error = %v", err)
 		}
@@ -300,10 +211,14 @@ func TestDiffNoIndex(t *testing.T) {
 		dir := t.TempDir()
 		a := filepath.Join(dir, "a")
 		b := filepath.Join(dir, "b")
-		os.MkdirAll(a, 0o755)
-		os.MkdirAll(b, 0o755)
+		if err := os.MkdirAll(a, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(b, 0o755); err != nil {
+			t.Fatal(err)
+		}
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 
 		_, _, err := git.DiffNoIndex(ctx, a, b)
@@ -319,7 +234,7 @@ func TestShallowCloneUntrustedInput(t *testing.T) {
 	t.Run("when the ref looks like an option, git does not run it as one", func(t *testing.T) {
 		t.Parallel()
 		// Arrange
-		bare := initBareRepo(t, map[string]string{"SKILL.md": "# S\n"})
+		bare := testutil.BareRepo(t, map[string]string{"SKILL.md": "# S\n"})
 		marker := filepath.Join(t.TempDir(), "pwned")
 
 		// Act

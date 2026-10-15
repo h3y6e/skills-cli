@@ -1,13 +1,13 @@
 package git_test
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/h3y6e/skolar/internal/git"
+	"github.com/h3y6e/skolar/internal/testutil"
 )
 
 // initTaggedRepo creates a bare repo on branch main with:
@@ -16,51 +16,27 @@ import (
 func initTaggedRepo(t *testing.T) string {
 	t.Helper()
 
-	work := t.TempDir()
+	work := testutil.InitWorkRepo(t)
+	skillFile := "skills/my-skill/SKILL.md"
 
-	gitInDir(t, work, "init", "-b", "main")
-	gitInDir(t, work, "config", "user.email", "test@test.com")
-	gitInDir(t, work, "config", "user.name", "Test")
+	testutil.Commit(t, work, "v1.0.0", map[string]string{skillFile: "# v1.0.0\n"})
+	testutil.Git(t, work, "tag", "v1.0.0")
 
-	write := func(name, content string) {
-		p := filepath.Join(work, name)
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	testutil.Commit(t, work, "v1.9.0", map[string]string{skillFile: "# v1.9.0\n"})
+	testutil.Git(t, work, "tag", "v1.9.0")
+	testutil.Git(t, work, "tag", "note")
 
-	write("skills/my-skill/SKILL.md", "# v1.0.0\n")
-	gitInDir(t, work, "add", "-A")
-	gitInDir(t, work, "commit", "-m", "v1.0.0")
-	gitInDir(t, work, "tag", "v1.0.0")
+	testutil.Commit(t, work, "v2.0.0-rc.1", map[string]string{skillFile: "# v2.0.0-rc.1\n"})
+	testutil.Git(t, work, "tag", "v2.0.0-rc.1")
+	testutil.Git(t, work, "tag", "collide")
 
-	write("skills/my-skill/SKILL.md", "# v1.9.0\n")
-	gitInDir(t, work, "add", "-A")
-	gitInDir(t, work, "commit", "-m", "v1.9.0")
-	gitInDir(t, work, "tag", "v1.9.0")
-	gitInDir(t, work, "tag", "note")
+	testutil.Git(t, work, "checkout", "-b", "feature/install")
+	testutil.Commit(t, work, "feature", map[string]string{skillFile: "# Feature\n"})
 
-	write("skills/my-skill/SKILL.md", "# v2.0.0-rc.1\n")
-	gitInDir(t, work, "add", "-A")
-	gitInDir(t, work, "commit", "-m", "v2.0.0-rc.1")
-	gitInDir(t, work, "tag", "v2.0.0-rc.1")
-	gitInDir(t, work, "tag", "collide")
+	testutil.Git(t, work, "checkout", "-b", "collide")
+	testutil.Git(t, work, "checkout", "main")
 
-	gitInDir(t, work, "checkout", "-b", "feature/install")
-	write("skills/my-skill/SKILL.md", "# Feature\n")
-	gitInDir(t, work, "add", "-A")
-	gitInDir(t, work, "commit", "-m", "feature")
-
-	gitInDir(t, work, "checkout", "-b", "collide")
-	gitInDir(t, work, "checkout", "main")
-
-	bare := t.TempDir()
-	gitInDir(t, work, "clone", "--bare", work, bare)
-
-	return "file://" + bare
+	return testutil.BareClone(t, work)
 }
 
 func TestResolveRef(t *testing.T) {
@@ -73,7 +49,7 @@ func TestResolveRef(t *testing.T) {
 		repo := initTaggedRepo(t)
 
 		// Act
-		got, err := git.ResolveRef(context.Background(), repo, "feature/install")
+		got, err := git.ResolveRef(t.Context(), repo, "feature/install")
 
 		// Assert
 		if err != nil {
@@ -91,7 +67,7 @@ func TestResolveRef(t *testing.T) {
 		repo := initTaggedRepo(t)
 
 		// Act
-		got, err := git.ResolveRef(context.Background(), repo, "v1.0.0")
+		got, err := git.ResolveRef(t.Context(), repo, "v1.0.0")
 
 		// Assert
 		if err != nil {
@@ -110,11 +86,11 @@ func TestResolveRef(t *testing.T) {
 		dest := t.TempDir()
 
 		// Act
-		got, err := git.ResolveRef(context.Background(), repo, "collide")
+		got, err := git.ResolveRef(t.Context(), repo, "collide")
 		if err != nil {
 			t.Fatalf("ResolveRef() error = %v", err)
 		}
-		if err := git.ShallowClone(context.Background(), repo, got.Full, dest); err != nil {
+		if err := git.ShallowClone(t.Context(), repo, got.Full, dest); err != nil {
 			t.Fatalf("ShallowClone() error = %v", err)
 		}
 
@@ -139,7 +115,7 @@ func TestResolveRef(t *testing.T) {
 		sha := "329042b24ebc70240bb382a932a94bb90747622c"
 
 		// Act
-		got, err := git.ResolveRef(context.Background(), repo, sha)
+		got, err := git.ResolveRef(t.Context(), repo, sha)
 
 		// Assert
 		if err != nil {
@@ -157,7 +133,7 @@ func TestResolveRef(t *testing.T) {
 		repo := initTaggedRepo(t)
 
 		// Act
-		got, err := git.ResolveRef(context.Background(), repo, "")
+		got, err := git.ResolveRef(t.Context(), repo, "")
 
 		// Assert
 		if err != nil {
@@ -172,10 +148,10 @@ func TestResolveRef(t *testing.T) {
 		t.Parallel()
 
 		// Arrange
-		repo := initBareRepo(t, map[string]string{"README.md": "hello\n"})
+		repo := testutil.BareRepo(t, map[string]string{"README.md": "hello\n"})
 
 		// Act
-		got, err := git.ResolveRef(context.Background(), repo, "")
+		got, err := git.ResolveRef(t.Context(), repo, "")
 
 		// Assert
 		if err != nil {
@@ -196,13 +172,13 @@ func TestTreeSHA(t *testing.T) {
 		// Arrange
 		repo := initTaggedRepo(t)
 		clone := filepath.Join(t.TempDir(), "clone")
-		if err := git.ShallowClone(context.Background(), repo, "v1.0.0", clone); err != nil {
+		if err := git.ShallowClone(t.Context(), repo, "v1.0.0", clone); err != nil {
 			t.Fatalf("ShallowClone() error = %v", err)
 		}
-		want := strings.TrimSpace(gitInDir(t, clone, "rev-parse", "HEAD:skills/my-skill"))
+		want := strings.TrimSpace(testutil.Git(t, clone, "rev-parse", "HEAD:skills/my-skill"))
 
 		// Act
-		got, err := git.TreeSHA(context.Background(), clone, "skills/my-skill")
+		got, err := git.TreeSHA(t.Context(), clone, "skills/my-skill")
 
 		// Assert
 		if err != nil {
@@ -219,13 +195,13 @@ func TestTreeSHA(t *testing.T) {
 		// Arrange
 		repo := initTaggedRepo(t)
 		clone := filepath.Join(t.TempDir(), "clone")
-		if err := git.ShallowClone(context.Background(), repo, "v1.0.0", clone); err != nil {
+		if err := git.ShallowClone(t.Context(), repo, "v1.0.0", clone); err != nil {
 			t.Fatalf("ShallowClone() error = %v", err)
 		}
-		want := strings.TrimSpace(gitInDir(t, clone, "rev-parse", "HEAD^{tree}"))
+		want := strings.TrimSpace(testutil.Git(t, clone, "rev-parse", "HEAD^{tree}"))
 
 		// Act
-		got, err := git.TreeSHA(context.Background(), clone, ".")
+		got, err := git.TreeSHA(t.Context(), clone, ".")
 
 		// Assert
 		if err != nil || got != want {
@@ -239,12 +215,12 @@ func TestTreeSHA(t *testing.T) {
 		// Arrange
 		repo := initTaggedRepo(t)
 		clone := filepath.Join(t.TempDir(), "clone")
-		if err := git.ShallowClone(context.Background(), repo, "", clone); err != nil {
+		if err := git.ShallowClone(t.Context(), repo, "", clone); err != nil {
 			t.Fatalf("ShallowClone() error = %v", err)
 		}
 
 		// Act
-		_, err := git.TreeSHA(context.Background(), clone, "skills/no-such-skill")
+		_, err := git.TreeSHA(t.Context(), clone, "skills/no-such-skill")
 
 		// Assert
 		if err == nil {

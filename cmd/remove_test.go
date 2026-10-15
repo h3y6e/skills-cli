@@ -13,6 +13,7 @@ import (
 	"github.com/h3y6e/skolar/cmd"
 	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
+	"github.com/h3y6e/skolar/internal/testutil"
 )
 
 func TestRemoveFlags(t *testing.T) {
@@ -33,7 +34,7 @@ func TestRemoveFlags(t *testing.T) {
 func TestRemoveAlias(t *testing.T) {
 	t.Parallel()
 
-	bareURL := initBareRepo(t, map[string]string{
+	bareURL := testutil.BareRepo(t, map[string]string{
 		"skills/alpha/SKILL.md": "# Alpha\n",
 	})
 
@@ -76,7 +77,7 @@ func TestRemove(t *testing.T) {
 	t.Run("removes skill directory and lockfile entry", func(t *testing.T) {
 		t.Parallel()
 
-		bareURL := initBareRepo(t, map[string]string{
+		bareURL := testutil.BareRepo(t, map[string]string{
 			"skills/alpha/SKILL.md": "# Alpha\n",
 			"skills/beta/SKILL.md":  "# Beta\n",
 		})
@@ -163,7 +164,9 @@ func TestRemove(t *testing.T) {
 				"alpha": {Source: "h3y6e/spec-skills", SourceType: "github", ComputedHash: "abc123"},
 			},
 		}
-		lock.WriteFile(lock.FilePath(skillsDir), lf)
+		if err := lock.WriteFile(lock.FilePath(skillsDir), lf); err != nil {
+			t.Fatal(err)
+		}
 
 		// Try to remove a skill that doesn't exist.
 		root := cmd.NewRootCmd("test")
@@ -322,7 +325,7 @@ func TestRemoveConfirmation(t *testing.T) {
 		skillsDir := filepath.Join(t.TempDir(), "skills")
 		writeTrackedSkill(t, skillsDir, "alpha")
 		stdin, _ := io.Pipe()
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		root := cmd.NewRootCmd("test")
 		root.SetOut(&bytes.Buffer{})
 		root.SetErr(&bytes.Buffer{})

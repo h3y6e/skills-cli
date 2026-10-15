@@ -10,6 +10,7 @@ import (
 
 	"github.com/h3y6e/skolar/cmd"
 	"github.com/h3y6e/skolar/internal/lock"
+	"github.com/h3y6e/skolar/internal/testutil"
 )
 
 func TestE2ELifecycle(t *testing.T) {
@@ -21,7 +22,7 @@ func TestE2ELifecycle(t *testing.T) {
 	skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 	// --- Step 1: Create source repo with initial content ---
-	bareURL := initBareRepo(t, map[string]string{
+	bareURL := testutil.BareRepo(t, map[string]string{
 		"skills/alpha/SKILL.md": "# Alpha v1\n",
 		"skills/beta/SKILL.md":  "# Beta v1\n",
 	})
@@ -174,7 +175,7 @@ func TestE2ELifecycle(t *testing.T) {
 func TestE2EUpdateWithDiff(t *testing.T) {
 	t.Parallel()
 
-	bareURL := initBareRepo(t, map[string]string{
+	bareURL := testutil.BareRepo(t, map[string]string{
 		"skills/alpha/SKILL.md": "# Alpha v2\n",
 	})
 
@@ -188,15 +189,20 @@ func TestE2EUpdateWithDiff(t *testing.T) {
 	}
 
 	// Tamper the installed content to simulate an outdated install.
-	os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("# Alpha v1\n"), 0o644)
+	testutil.WriteFiles(t, skillsDir, map[string]string{"alpha/SKILL.md": "# Alpha v1\n"})
 
 	// Tamper the lockfile hash to simulate a stale entry.
 	lockPath := lock.FilePath(skillsDir)
-	lf, _ := lock.ReadFile(lockPath)
+	lf, err := lock.ReadFile(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	entry := lf.Skills["alpha"]
 	entry.ComputedHash = "stale-hash"
 	lf.Skills["alpha"] = entry
-	lock.WriteFile(lockPath, lf)
+	if err := lock.WriteFile(lockPath, lf); err != nil {
+		t.Fatal(err)
+	}
 
 	// Check should show update-available.
 	var checkOut bytes.Buffer

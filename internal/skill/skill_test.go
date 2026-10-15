@@ -6,21 +6,8 @@ import (
 	"testing"
 
 	"github.com/h3y6e/skolar/internal/skill"
+	"github.com/h3y6e/skolar/internal/testutil"
 )
-
-// writeFiles creates files for testing.
-func writeFiles(t *testing.T, base string, files map[string]string) {
-	t.Helper()
-	for name, content := range files {
-		p := filepath.Join(base, name)
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
 
 func TestDiscoverSkills(t *testing.T) {
 	t.Parallel()
@@ -28,7 +15,7 @@ func TestDiscoverSkills(t *testing.T) {
 	t.Run("discovers skills under skills/ directory", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"skills/my-skill/SKILL.md":        "# My Skill\n",
 			"skills/other-skill/SKILL.md":     "# Other\n",
 			"skills/other-skill/reference.md": "ref\n",
@@ -63,7 +50,7 @@ func TestDiscoverSkills(t *testing.T) {
 	t.Run("falls back to root when no skills/ directory", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"my-skill/SKILL.md": "# Root Skill\n",
 			"README.md":         "# Repo\n",
 		})
@@ -85,7 +72,7 @@ func TestDiscoverSkills(t *testing.T) {
 
 		// Arrange
 		root := t.TempDir()
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"skills/engineering/codebase-design/SKILL.md": "# Codebase Design\n",
 			"skills/writing/writing-japanese/SKILL.md":    "# Writing Japanese\n",
 		})
@@ -113,7 +100,7 @@ func TestDiscoverSkills(t *testing.T) {
 
 		// Arrange
 		root := t.TempDir()
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"skills/cxg/SKILL.md":                         "# cxg\n",
 			"skills/engineering/diagnosing-bugs/SKILL.md": "# Diagnosing Bugs\n",
 		})
@@ -141,7 +128,7 @@ func TestDiscoverSkills(t *testing.T) {
 
 		// Arrange
 		root := t.TempDir()
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"skills/a/code-review/SKILL.md": "# A\n",
 			"skills/b/code-review/SKILL.md": "# B\n",
 		})
@@ -164,11 +151,11 @@ func TestDiscoverSkills(t *testing.T) {
 
 		// Arrange
 		skillsRoot := t.TempDir()
-		writeFiles(t, skillsRoot, map[string]string{
+		testutil.WriteFiles(t, skillsRoot, map[string]string{
 			"skills/my-skill/SKILL.md": "# My Skill\n",
 		})
 		flatRoot := t.TempDir()
-		writeFiles(t, flatRoot, map[string]string{
+		testutil.WriteFiles(t, flatRoot, map[string]string{
 			"my-skill/SKILL.md": "# My Skill\n",
 		})
 
@@ -195,7 +182,7 @@ func TestDiscoverSkills(t *testing.T) {
 		t.Parallel()
 		// Arrange
 		root := t.TempDir()
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"skills/preferred/SKILL.md": "# Preferred\n",
 			"root-skill/SKILL.md":       "# Root\n",
 		})
@@ -215,7 +202,7 @@ func TestDiscoverSkills(t *testing.T) {
 	t.Run("ignores directories without SKILL.md", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"skills/valid/SKILL.md":    "# Valid\n",
 			"skills/invalid/README.md": "# Not a skill\n",
 		})
@@ -235,7 +222,7 @@ func TestDiscoverSkills(t *testing.T) {
 	t.Run("returns empty for repo with no skills", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"README.md": "# Empty Repo\n",
 		})
 
@@ -252,7 +239,7 @@ func TestDiscoverSkills(t *testing.T) {
 		t.Parallel()
 		// Arrange
 		root := t.TempDir()
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"skills/top/SKILL.md":        "# Top\n",
 			"skills/top/nested/SKILL.md": "# Nested\n",
 		})
@@ -272,18 +259,24 @@ func TestDiscoverSkills(t *testing.T) {
 	t.Run("hash includes all files in skill directory", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"skills/s1/SKILL.md": "# S1\n",
 		})
 
-		skills1, _ := skill.DiscoverSkills(root)
+		skills1, err := skill.DiscoverSkills(root)
+		if err != nil {
+			t.Fatal(err)
+		}
 		hash1 := skills1[0].ComputedHash
 
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"skills/s1/extra.md": "extra content\n",
 		})
 
-		skills2, _ := skill.DiscoverSkills(root)
+		skills2, err := skill.DiscoverSkills(root)
+		if err != nil {
+			t.Fatal(err)
+		}
 		hash2 := skills2[0].ComputedHash
 
 		if hash1 == hash2 {
@@ -294,7 +287,7 @@ func TestDiscoverSkills(t *testing.T) {
 
 func TestComputeHashIsDeterministicAndContentSensitive(t *testing.T) {
 	root := t.TempDir()
-	writeFiles(t, root, map[string]string{
+	testutil.WriteFiles(t, root, map[string]string{
 		"spec-plan/SKILL.md": "# My Skill\n",
 	})
 	skillPath := filepath.Join(root, "spec-plan")

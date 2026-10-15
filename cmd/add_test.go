@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/h3y6e/skolar/cmd"
 	"github.com/h3y6e/skolar/internal/lock"
+	"github.com/h3y6e/skolar/internal/testutil"
 )
 
 func TestMain(m *testing.M) {
@@ -22,170 +22,38 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// initBareRepo creates a bare git repo with the given files (2 commits for
-// shallow clone compatibility). Returns a file:// URL.
-func initBareRepo(t *testing.T, files map[string]string) string {
-	t.Helper()
-
-	work := t.TempDir()
-	gitRun := func(args ...string) {
-		t.Helper()
-		c := exec.Command("git", args...)
-		c.Dir = work
-		c.Env = append(os.Environ(),
-			"GIT_CONFIG_GLOBAL=/dev/null",
-			"GIT_CONFIG_SYSTEM=/dev/null",
-		)
-		out, err := c.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
-
-	gitRun("init", "-b", "main")
-	gitRun("config", "user.email", "test@test.com")
-	gitRun("config", "user.name", "Test")
-
-	os.WriteFile(filepath.Join(work, ".gitkeep"), []byte(""), 0o644)
-	gitRun("add", "-A")
-	gitRun("commit", "-m", "base")
-
-	for name, content := range files {
-		p := filepath.Join(work, name)
-		os.MkdirAll(filepath.Dir(p), 0o755)
-		os.WriteFile(p, []byte(content), 0o644)
-	}
-	gitRun("add", "-A")
-	gitRun("commit", "-m", "add files")
-
-	bare := t.TempDir()
-	c := exec.Command("git", "clone", "--bare", work, bare)
-	c.Env = append(os.Environ(),
-		"GIT_CONFIG_GLOBAL=/dev/null",
-		"GIT_CONFIG_SYSTEM=/dev/null",
-	)
-	out, err := c.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git clone --bare: %v\n%s", err, out)
-	}
-	return "file://" + bare
-}
-
 func initBareRepoWithRefs(t *testing.T) string {
 	t.Helper()
 
-	work := t.TempDir()
-	gitRun := func(args ...string) {
-		t.Helper()
-		c := exec.Command("git", args...)
-		c.Dir = work
-		c.Env = append(os.Environ(),
-			"GIT_CONFIG_GLOBAL=/dev/null",
-			"GIT_CONFIG_SYSTEM=/dev/null",
-		)
-		out, err := c.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
+	work := testutil.InitWorkRepo(t)
+	skillFile := "skills/alpha/SKILL.md"
+	testutil.Commit(t, work, "main", map[string]string{skillFile: "# Alpha main\n"})
+	testutil.Git(t, work, "tag", "v1.0.0")
 
-	gitRun("init", "-b", "main")
-	gitRun("config", "user.email", "test@test.com")
-	gitRun("config", "user.name", "Test")
+	testutil.Git(t, work, "checkout", "-b", "feature/install")
+	testutil.Commit(t, work, "feature", map[string]string{skillFile: "# Alpha feature\n"})
+	testutil.Git(t, work, "checkout", "main")
 
-	skillPath := filepath.Join(work, "skills", "alpha", "SKILL.md")
-	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(skillPath, []byte("# Alpha main\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	gitRun("add", "-A")
-	gitRun("commit", "-m", "main")
-	gitRun("tag", "v1.0.0")
-
-	gitRun("checkout", "-b", "feature/install")
-	if err := os.WriteFile(skillPath, []byte("# Alpha feature\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	gitRun("add", "-A")
-	gitRun("commit", "-m", "feature")
-	gitRun("checkout", "main")
-
-	bare := t.TempDir()
-	c := exec.Command("git", "clone", "--bare", work, bare)
-	c.Env = append(os.Environ(),
-		"GIT_CONFIG_GLOBAL=/dev/null",
-		"GIT_CONFIG_SYSTEM=/dev/null",
-	)
-	out, err := c.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git clone --bare: %v\n%s", err, out)
-	}
-	return "file://" + bare
+	return testutil.BareClone(t, work)
 }
 
 func initBareRepoWithSplitRefSkills(t *testing.T) string {
 	t.Helper()
 
-	work := t.TempDir()
-	gitRun := func(args ...string) {
-		t.Helper()
-		c := exec.Command("git", args...)
-		c.Dir = work
-		c.Env = append(os.Environ(),
-			"GIT_CONFIG_GLOBAL=/dev/null",
-			"GIT_CONFIG_SYSTEM=/dev/null",
-		)
-		out, err := c.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
+	work := testutil.InitWorkRepo(t)
+	testutil.Commit(t, work, "main", map[string]string{"skills/alpha/SKILL.md": "# Alpha main\n"})
 
-	gitRun("init", "-b", "main")
-	gitRun("config", "user.email", "test@test.com")
-	gitRun("config", "user.name", "Test")
+	testutil.Git(t, work, "checkout", "-b", "feature/install")
+	testutil.Commit(t, work, "feature", map[string]string{"skills/beta/SKILL.md": "# Beta feature\n"})
+	testutil.Git(t, work, "checkout", "main")
 
-	alphaPath := filepath.Join(work, "skills", "alpha", "SKILL.md")
-	if err := os.MkdirAll(filepath.Dir(alphaPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(alphaPath, []byte("# Alpha main\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	gitRun("add", "-A")
-	gitRun("commit", "-m", "main")
-
-	gitRun("checkout", "-b", "feature/install")
-	betaPath := filepath.Join(work, "skills", "beta", "SKILL.md")
-	if err := os.MkdirAll(filepath.Dir(betaPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(betaPath, []byte("# Beta feature\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	gitRun("add", "-A")
-	gitRun("commit", "-m", "feature")
-	gitRun("checkout", "main")
-
-	bare := t.TempDir()
-	c := exec.Command("git", "clone", "--bare", work, bare)
-	c.Env = append(os.Environ(),
-		"GIT_CONFIG_GLOBAL=/dev/null",
-		"GIT_CONFIG_SYSTEM=/dev/null",
-	)
-	out, err := c.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git clone --bare: %v\n%s", err, out)
-	}
-	return "file://" + bare
+	return testutil.BareClone(t, work)
 }
 
 func TestAddDryRun(t *testing.T) {
 	t.Parallel()
 
-	bareURL := initBareRepo(t, map[string]string{
+	bareURL := testutil.BareRepo(t, map[string]string{
 		"skills/alpha/SKILL.md": "# Alpha\n",
 		"skills/beta/SKILL.md":  "# Beta\n",
 	})
@@ -251,7 +119,7 @@ func TestAddSkillFlag(t *testing.T) {
 func TestAddInstall(t *testing.T) {
 	t.Parallel()
 
-	bareURL := initBareRepo(t, map[string]string{
+	bareURL := testutil.BareRepo(t, map[string]string{
 		"skills/alpha/SKILL.md": "# Alpha\n",
 		"skills/alpha/ref.md":   "alpha ref\n",
 		"skills/beta/SKILL.md":  "# Beta\n",
@@ -366,7 +234,7 @@ func TestAddInstall(t *testing.T) {
 	t.Run("merges lockfile on second add from different source", func(t *testing.T) {
 		t.Parallel()
 
-		bareURL2 := initBareRepo(t, map[string]string{
+		bareURL2 := testutil.BareRepo(t, map[string]string{
 			"skills/gamma/SKILL.md": "# Gamma\n",
 		})
 
@@ -449,7 +317,7 @@ func TestAddOverwrite(t *testing.T) {
 	cmd.IsTTY = func() bool { return false }
 	t.Cleanup(func() { cmd.IsTTY = origIsTTY })
 
-	bareURL := initBareRepo(t, map[string]string{
+	bareURL := testutil.BareRepo(t, map[string]string{
 		"skills/alpha/SKILL.md": "# Alpha upstream\n",
 	})
 	setup := func(t *testing.T) string {
@@ -509,7 +377,7 @@ func TestAddOverwrite(t *testing.T) {
 
 func TestAddSelection(t *testing.T) {
 	t.Parallel()
-	bareURL := initBareRepo(t, map[string]string{
+	bareURL := testutil.BareRepo(t, map[string]string{
 		"skills/near/SKILL.md":     "# Near\n",
 		"extras/deep/far/SKILL.md": "# Far\n",
 	})

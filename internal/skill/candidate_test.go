@@ -8,6 +8,7 @@ import (
 
 	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
+	"github.com/h3y6e/skolar/internal/testutil"
 )
 
 func TestResolveUpdateCandidates(t *testing.T) {
@@ -246,15 +247,21 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 		srcA := t.TempDir()
 		srcB := t.TempDir()
 
-		writeFiles(t, srcA, map[string]string{
+		testutil.WriteFiles(t, srcA, map[string]string{
 			"skills/skill-x/SKILL.md": "# Skill X updated\n",
 		})
-		writeFiles(t, srcB, map[string]string{
+		testutil.WriteFiles(t, srcB, map[string]string{
 			"skills/skill-y/SKILL.md": "# Skill Y same\n",
 		})
 
-		discoveredA, _ := skill.DiscoverSkills(srcA)
-		discoveredB, _ := skill.DiscoverSkills(srcB)
+		discoveredA, err := skill.DiscoverSkills(srcA)
+		if err != nil {
+			t.Fatal(err)
+		}
+		discoveredB, err := skill.DiscoverSkills(srcB)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		entries := map[string]lock.Entry{
 			"skill-x": {
@@ -312,15 +319,21 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 		srcMain := t.TempDir()
 		srcFeature := t.TempDir()
 
-		writeFiles(t, srcMain, map[string]string{
+		testutil.WriteFiles(t, srcMain, map[string]string{
 			"skills/shared-main/SKILL.md": "# Main\n",
 		})
-		writeFiles(t, srcFeature, map[string]string{
+		testutil.WriteFiles(t, srcFeature, map[string]string{
 			"skills/shared-feature/SKILL.md": "# Feature\n",
 		})
 
-		discoveredMain, _ := skill.DiscoverSkills(srcMain)
-		discoveredFeature, _ := skill.DiscoverSkills(srcFeature)
+		discoveredMain, err := skill.DiscoverSkills(srcMain)
+		if err != nil {
+			t.Fatal(err)
+		}
+		discoveredFeature, err := skill.DiscoverSkills(srcFeature)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		entries := map[string]lock.Entry{
 			"shared-main": {
@@ -380,12 +393,15 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 		t.Parallel()
 
 		srcDir := t.TempDir()
-		writeFiles(t, srcDir, map[string]string{
+		testutil.WriteFiles(t, srcDir, map[string]string{
 			"skills/zeta/SKILL.md":  "# Zeta\n",
 			"skills/alpha/SKILL.md": "# Alpha\n",
 		})
 
-		discovered, _ := skill.DiscoverSkills(srcDir)
+		discovered, err := skill.DiscoverSkills(srcDir)
+		if err != nil {
+			t.Fatal(err)
+		}
 		hashByName := map[string]string{}
 		for _, d := range discovered {
 			hashByName[d.Name] = d.ComputedHash
@@ -422,10 +438,10 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 		srcA := t.TempDir()
 		srcB := t.TempDir()
 
-		writeFiles(t, srcA, map[string]string{
+		testutil.WriteFiles(t, srcA, map[string]string{
 			"skills/alpha/SKILL.md": "# Alpha\n",
 		})
-		writeFiles(t, srcB, map[string]string{
+		testutil.WriteFiles(t, srcB, map[string]string{
 			"skills/beta/SKILL.md": "# Beta\n",
 		})
 
@@ -527,15 +543,21 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 
 		srcDir := t.TempDir()
 		localSrcDir := t.TempDir()
-		writeFiles(t, srcDir, map[string]string{
+		testutil.WriteFiles(t, srcDir, map[string]string{
 			"skills/supported-skill/SKILL.md": "# Supported\n",
 		})
-		writeFiles(t, localSrcDir, map[string]string{
+		testutil.WriteFiles(t, localSrcDir, map[string]string{
 			"skills/local-skill/SKILL.md": "# Local\n",
 		})
 
-		discovered, _ := skill.DiscoverSkills(srcDir)
-		localDiscovered, _ := skill.DiscoverSkills(localSrcDir)
+		discovered, err := skill.DiscoverSkills(srcDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		localDiscovered, err := skill.DiscoverSkills(localSrcDir)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		entries := map[string]lock.Entry{
 			"supported-skill": {

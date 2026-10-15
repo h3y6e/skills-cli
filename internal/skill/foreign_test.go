@@ -10,6 +10,7 @@ import (
 	"github.com/h3y6e/skolar/internal/git"
 	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
+	"github.com/h3y6e/skolar/internal/testutil"
 )
 
 func writeSkillWithMetadata(t *testing.T, skillsDir, name string, meta skill.SourceMetadata) {
@@ -19,7 +20,7 @@ func writeSkillWithMetadata(t *testing.T, skillsDir, name string, meta skill.Sou
 	if err != nil {
 		t.Fatalf("InjectSourceMetadata() error = %v", err)
 	}
-	writeFiles(t, skillsDir, map[string]string{
+	testutil.WriteFiles(t, skillsDir, map[string]string{
 		name + "/SKILL.md": content,
 	})
 }
@@ -68,7 +69,7 @@ func TestScanInstalledSkills(t *testing.T) {
 
 		// Arrange
 		skillsDir := t.TempDir()
-		writeFiles(t, skillsDir, map[string]string{
+		testutil.WriteFiles(t, skillsDir, map[string]string{
 			"plain/SKILL.md": "---\nname: plain\n---\n# Plain\n",
 		})
 
@@ -89,7 +90,7 @@ func TestScanInstalledSkills(t *testing.T) {
 
 		// Arrange
 		skillsDir := t.TempDir()
-		writeFiles(t, skillsDir, map[string]string{
+		testutil.WriteFiles(t, skillsDir, map[string]string{
 			"broken/SKILL.md": "---\n: : invalid\n---\n# Broken\n",
 		})
 		writeSkillWithMetadata(t, skillsDir, "valid", githubMeta)
@@ -184,7 +185,7 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 			FetchLatest: func(repoURL string) (string, git.ResolvedRef, error) {
 				fetches++
 				dir := t.TempDir()
-				writeFiles(t, dir, map[string]string{
+				testutil.WriteFiles(t, dir, map[string]string{
 					"skills/foo/SKILL.md": "# Foo v2\n",
 				})
 				return dir, git.ResolvedRef{Full: "refs/tags/v2.0.0"}, nil
@@ -353,7 +354,7 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 					return "", git.ResolvedRef{}, fmt.Errorf("repository not found")
 				}
 				dir := t.TempDir()
-				writeFiles(t, dir, map[string]string{"skills/foo/SKILL.md": "# Foo\n"})
+				testutil.WriteFiles(t, dir, map[string]string{"skills/foo/SKILL.md": "# Foo\n"})
 				return dir, git.ResolvedRef{Full: "refs/tags/v2.0.0"}, nil
 			},
 			TreeSHA: func(_, _ string) (string, error) { return "tree-2", nil },
@@ -417,7 +418,7 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 			FetchLatest: func(repoURL string) (string, git.ResolvedRef, error) {
 				fetches++
 				dir := t.TempDir()
-				writeFiles(t, dir, map[string]string{
+				testutil.WriteFiles(t, dir, map[string]string{
 					"skills/foo/SKILL.md": "# Foo\n",
 					"skills/bar/SKILL.md": "# Bar\n",
 				})

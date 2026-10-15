@@ -9,6 +9,7 @@ import (
 
 	"github.com/h3y6e/skolar/cmd"
 	"github.com/h3y6e/skolar/internal/lock"
+	"github.com/h3y6e/skolar/internal/testutil"
 )
 
 func TestListFlags(t *testing.T) {
@@ -94,7 +95,7 @@ func TestListIgnoresUnrelatedLockfile(t *testing.T) {
 func TestListAlias(t *testing.T) {
 	t.Parallel()
 
-	bareURL := initBareRepo(t, map[string]string{
+	bareURL := testutil.BareRepo(t, map[string]string{
 		"skills/alpha/SKILL.md": "# Alpha\n",
 	})
 
@@ -128,7 +129,7 @@ func TestListHuman(t *testing.T) {
 	t.Run("lists installed skills", func(t *testing.T) {
 		t.Parallel()
 
-		bareURL := initBareRepo(t, map[string]string{
+		bareURL := testutil.BareRepo(t, map[string]string{
 			"skills/alpha/SKILL.md": "# Alpha\n",
 			"skills/beta/SKILL.md":  "# Beta\n",
 		})
@@ -164,7 +165,9 @@ func TestListHuman(t *testing.T) {
 		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 		lf := lock.File{Version: 1, Skills: map[string]lock.Entry{}}
-		lock.WriteFile(lock.FilePath(skillsDir), lf)
+		if err := lock.WriteFile(lock.FilePath(skillsDir), lf); err != nil {
+			t.Fatal(err)
+		}
 
 		var out bytes.Buffer
 		root := cmd.NewRootCmd("test")
@@ -206,7 +209,7 @@ func TestListHuman(t *testing.T) {
 func TestListJSON(t *testing.T) {
 	t.Parallel()
 
-	bareURL := initBareRepo(t, map[string]string{
+	bareURL := testutil.BareRepo(t, map[string]string{
 		"skills/alpha/SKILL.md": "# Alpha\n",
 	})
 
@@ -250,7 +253,9 @@ func TestListJSONEmpty(t *testing.T) {
 
 	skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 	lf := lock.File{Version: 1, Skills: map[string]lock.Entry{}}
-	lock.WriteFile(lock.FilePath(skillsDir), lf)
+	if err := lock.WriteFile(lock.FilePath(skillsDir), lf); err != nil {
+		t.Fatal(err)
+	}
 
 	var out bytes.Buffer
 	root := cmd.NewRootCmd("test")

@@ -11,6 +11,7 @@ import (
 
 	"github.com/h3y6e/skolar/cmd"
 	"github.com/h3y6e/skolar/internal/lock"
+	"github.com/h3y6e/skolar/internal/testutil"
 )
 
 func TestCheckFlags(t *testing.T) {
@@ -34,7 +35,7 @@ func TestCheckHuman(t *testing.T) {
 	t.Run("shows up-to-date when no changes", func(t *testing.T) {
 		t.Parallel()
 
-		bareURL := initBareRepo(t, map[string]string{
+		bareURL := testutil.BareRepo(t, map[string]string{
 			"skills/alpha/SKILL.md": "# Alpha\n",
 		})
 
@@ -65,7 +66,7 @@ func TestCheckHuman(t *testing.T) {
 	t.Run("shows update-available with stale hash", func(t *testing.T) {
 		t.Parallel()
 
-		bareURL := initBareRepo(t, map[string]string{
+		bareURL := testutil.BareRepo(t, map[string]string{
 			"skills/alpha/SKILL.md": "# Alpha\n",
 		})
 
@@ -80,11 +81,16 @@ func TestCheckHuman(t *testing.T) {
 
 		// Tamper hash.
 		lockPath := lock.FilePath(skillsDir)
-		lf, _ := lock.ReadFile(lockPath)
+		lf, err := lock.ReadFile(lockPath)
+		if err != nil {
+			t.Fatal(err)
+		}
 		entry := lf.Skills["alpha"]
 		entry.ComputedHash = "stale-hash"
 		lf.Skills["alpha"] = entry
-		lock.WriteFile(lockPath, lf)
+		if err := lock.WriteFile(lockPath, lf); err != nil {
+			t.Fatal(err)
+		}
 
 		var out bytes.Buffer
 		root2 := cmd.NewRootCmd("test")
@@ -103,7 +109,7 @@ func TestCheckHuman(t *testing.T) {
 	t.Run("does not contain diff output", func(t *testing.T) {
 		t.Parallel()
 
-		bareURL := initBareRepo(t, map[string]string{
+		bareURL := testutil.BareRepo(t, map[string]string{
 			"skills/alpha/SKILL.md": "# Alpha v2\n",
 		})
 
@@ -119,7 +125,9 @@ func TestCheckHuman(t *testing.T) {
 				"alpha": {Source: bareURL, SourceType: "git", ComputedHash: "stale"},
 			},
 		}
-		lock.WriteFile(lock.FilePath(skillsDir), lf)
+		if err := lock.WriteFile(lock.FilePath(skillsDir), lf); err != nil {
+			t.Fatal(err)
+		}
 
 		var out bytes.Buffer
 		root := cmd.NewRootCmd("test")
@@ -144,7 +152,7 @@ func TestCheckHuman(t *testing.T) {
 
 		rootDir := t.TempDir()
 		dirA := filepath.Join(rootDir, ".agents", "skills")
-		bareURL := initBareRepo(t, map[string]string{
+		bareURL := testutil.BareRepo(t, map[string]string{
 			"skills/alpha/SKILL.md": "# Alpha\n",
 			"skills/beta/SKILL.md":  "# Beta\n",
 		})
@@ -211,7 +219,7 @@ func TestCheckHuman(t *testing.T) {
 func TestCheckJSON(t *testing.T) {
 	t.Parallel()
 
-	bareURL := initBareRepo(t, map[string]string{
+	bareURL := testutil.BareRepo(t, map[string]string{
 		"skills/alpha/SKILL.md": "# Alpha\n",
 		"skills/beta/SKILL.md":  "# Beta\n",
 	})
@@ -230,11 +238,16 @@ func TestCheckJSON(t *testing.T) {
 
 		// Tamper one hash.
 		lockPath := lock.FilePath(skillsDir)
-		lf, _ := lock.ReadFile(lockPath)
+		lf, err := lock.ReadFile(lockPath)
+		if err != nil {
+			t.Fatal(err)
+		}
 		entry := lf.Skills["alpha"]
 		entry.ComputedHash = "stale"
 		lf.Skills["alpha"] = entry
-		lock.WriteFile(lockPath, lf)
+		if err := lock.WriteFile(lockPath, lf); err != nil {
+			t.Fatal(err)
+		}
 
 		var out bytes.Buffer
 		root2 := cmd.NewRootCmd("test")
@@ -287,7 +300,7 @@ func TestCheckJSON(t *testing.T) {
 func TestCheckNonMutating(t *testing.T) {
 	t.Parallel()
 
-	bareURL := initBareRepo(t, map[string]string{
+	bareURL := testutil.BareRepo(t, map[string]string{
 		"skills/alpha/SKILL.md": "# Alpha v2\n",
 	})
 
@@ -304,7 +317,9 @@ func TestCheckNonMutating(t *testing.T) {
 		},
 	}
 	lockPath := lock.FilePath(skillsDir)
-	lock.WriteFile(lockPath, lf)
+	if err := lock.WriteFile(lockPath, lf); err != nil {
+		t.Fatal(err)
+	}
 
 	// Record lockfile content before check.
 	lockBefore, _ := os.ReadFile(lockPath)
@@ -404,7 +419,7 @@ func TestCheckJSONWithFailedSkill(t *testing.T) {
 	t.Parallel()
 
 	// Arrange: the lockfile references alpha, which upstream no longer has.
-	bareURL := initBareRepo(t, map[string]string{
+	bareURL := testutil.BareRepo(t, map[string]string{
 		"skills/beta/SKILL.md": "# Beta\n",
 	})
 	skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")

@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,65 +13,25 @@ import (
 	"github.com/h3y6e/skolar/internal/git"
 	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
+	"github.com/h3y6e/skolar/internal/testutil"
 )
 
-// initBareRepoWithTwoTags creates a bare repo where skills/alpha has v1.0.0
-// (older) and v2.0.0 (latest) tags, and skills/beta exists at both.
 func initBareRepoWithTwoTags(t *testing.T) string {
 	t.Helper()
 
-	work := t.TempDir()
-	gitRun := func(args ...string) {
-		t.Helper()
-		c := exec.Command("git", args...)
-		c.Dir = work
-		c.Env = append(os.Environ(),
-			"GIT_CONFIG_GLOBAL=/dev/null",
-			"GIT_CONFIG_SYSTEM=/dev/null",
-		)
-		out, err := c.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
-	write := func(name, content string) {
-		t.Helper()
-		p := filepath.Join(work, name)
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	work := testutil.InitWorkRepo(t)
+	testutil.Commit(t, work, "v1", map[string]string{
+		"skills/alpha/SKILL.md": "# Alpha v1\n",
+		"skills/beta/SKILL.md":  "# Beta v1\n",
+	})
+	testutil.Git(t, work, "tag", "v1.0.0")
+	testutil.Commit(t, work, "v2", map[string]string{
+		"skills/alpha/SKILL.md": "# Alpha v2\n",
+		"skills/beta/SKILL.md":  "# Beta v2\n",
+	})
+	testutil.Git(t, work, "tag", "v2.0.0")
 
-	gitRun("init", "-b", "main")
-	gitRun("config", "user.email", "test@test.com")
-	gitRun("config", "user.name", "Test")
-
-	write("skills/alpha/SKILL.md", "# Alpha v1\n")
-	write("skills/beta/SKILL.md", "# Beta v1\n")
-	gitRun("add", "-A")
-	gitRun("commit", "-m", "v1")
-	gitRun("tag", "v1.0.0")
-
-	write("skills/alpha/SKILL.md", "# Alpha v2\n")
-	write("skills/beta/SKILL.md", "# Beta v2\n")
-	gitRun("add", "-A")
-	gitRun("commit", "-m", "v2")
-	gitRun("tag", "v2.0.0")
-
-	bare := t.TempDir()
-	c := exec.Command("git", "clone", "--bare", work, bare)
-	c.Env = append(os.Environ(),
-		"GIT_CONFIG_GLOBAL=/dev/null",
-		"GIT_CONFIG_SYSTEM=/dev/null",
-	)
-	out, err := c.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git clone --bare: %v\n%s", err, out)
-	}
-	return "file://" + bare
+	return testutil.BareClone(t, work)
 }
 
 // stubGitHubTransport redirects git operations for the given GitHub
@@ -246,7 +205,7 @@ func TestAddTrackedMode(t *testing.T) {
 
 	t.Run("when the source is local and no lockfile exists, add keeps lock mode", func(t *testing.T) {
 		// Arrange
-		bareURL := initBareRepo(t, map[string]string{
+		bareURL := testutil.BareRepo(t, map[string]string{
 			"skills/foo/SKILL.md": "# Foo\n",
 		})
 		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")

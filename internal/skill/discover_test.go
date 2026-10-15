@@ -55,9 +55,7 @@ func TestDiscoverSkillsLayouts(t *testing.T) {
 		t.Parallel()
 		// Arrange
 		files := map[string]string{"SKILL.md": fm("root-skill")}
-		for k, v := range mixedLayouts {
-			files[k] = v
-		}
+		maps.Copy(files, mixedLayouts)
 		root := writeRepo(t, files)
 
 		// Act
@@ -80,9 +78,7 @@ func TestDiscoverSkillsLayouts(t *testing.T) {
 		t.Parallel()
 		// Arrange
 		files := map[string]string{"SKILL.md": fm("root-skill")}
-		for k, v := range mixedLayouts {
-			files[k] = v
-		}
+		maps.Copy(files, mixedLayouts)
 		root := writeRepo(t, files)
 
 		// Act

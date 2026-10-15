@@ -3,7 +3,6 @@ package skill_test
 import (
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,33 +10,14 @@ import (
 	"github.com/h3y6e/skolar/internal/git"
 	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
+	"github.com/h3y6e/skolar/internal/testutil"
 )
 
 func initGitRepo(t *testing.T, files map[string]string) string {
 	t.Helper()
 
-	dir := t.TempDir()
-	run := func(args ...string) string {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		cmd.Env = append(os.Environ(),
-			"GIT_CONFIG_GLOBAL=/dev/null",
-			"GIT_CONFIG_SYSTEM=/dev/null",
-		)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v failed: %v\n%s", args, err, out)
-		}
-		return string(out)
-	}
-
-	run("init", "-b", "main")
-	run("config", "user.email", "test@test.com")
-	run("config", "user.name", "Test")
-	writeFiles(t, dir, files)
-	run("add", "-A")
-	run("commit", "-m", "init")
+	dir := testutil.InitWorkRepo(t)
+	testutil.Commit(t, dir, "init", files)
 	return dir
 }
 
@@ -164,7 +144,7 @@ func TestInstallTrackedSkills(t *testing.T) {
 			"skills/foo/SKILL.md": "# Foo v2\n",
 		})
 		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
-		writeFiles(t, skillsDir, map[string]string{
+		testutil.WriteFiles(t, skillsDir, map[string]string{
 			"foo/SKILL.md": "# Foo v1\n",
 		})
 		ref := skill.SourceRef{SourceType: "github", CanonicalSource: "h3y6e/agent-skills"}
