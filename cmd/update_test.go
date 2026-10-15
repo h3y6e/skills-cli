@@ -167,7 +167,7 @@ func TestUpdateSkillFilter(t *testing.T) {
 		}
 
 		got := out.String()
-		if !strings.Contains(got, "  M  alpha  +1 -1 (1 file)\n  A  1 not installed: beta\nupdated 1\n") {
+		if !strings.Contains(got, "  M  alpha  +1 -1 (1 file)\n  A  1 not installed\nupdated 1\n") {
 			t.Errorf("expected alpha updated and beta listed as not installed, got: %q", got)
 		}
 
@@ -740,7 +740,7 @@ func TestUpdateIntegration(t *testing.T) {
 		}
 	})
 
-	t.Run("when a source has skills not installed, a directory already there is not listed and the hint keeps the ref", func(t *testing.T) {
+	t.Run("when a source has skills not installed, a directory already there is not counted and the hint keeps the ref", func(t *testing.T) {
 		t.Parallel()
 
 		// Arrange
@@ -773,8 +773,8 @@ func TestUpdateIntegration(t *testing.T) {
 			t.Fatalf("update: %v", err)
 		}
 
-		if !strings.HasSuffix(out.String(), "  A  1 not installed: gamma\n") {
-			t.Errorf("stdout = %q, want only gamma not installed", out.String())
+		if !strings.HasSuffix(out.String(), "  A  1 not installed\n") {
+			t.Errorf("stdout = %q, want only gamma counted as not installed", out.String())
 		}
 
 		if !strings.Contains(errOut.String(), "skolar add "+bareURL+"#main -s <skill>") {

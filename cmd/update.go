@@ -36,7 +36,7 @@ Lists the changed skills of each source, then overwrites local changes after con
   M  changed upstream, with the lines and files update changes
   R  moved upstream; update follows it
   D  removed upstream; update keeps it, skolar remove deletes it
-  A  among the source's default skills but not installed; skolar add -s installs it
+  A  how many of the source's default skills are not installed; --json names them
   !  could not be checked
 Up-to-date, pinned, and local skills are counted at the end.`,
 		Annotations: map[string]string{recordKey: "results"},
@@ -277,19 +277,19 @@ func renderPlan(w io.Writer, results []updateResult) {
 	for _, source := range slices.Sorted(maps.Keys(bySource)) {
 		fmt.Fprintln(tw, source)
 
-		var news []string
+		news := 0
 
 		for _, r := range bySource[source] {
 			if r.Status == skill.StatusNew {
-				news = append(news, r.SkillName)
+				news++
 				continue
 			}
 
 			fmt.Fprintf(tw, "  %s\t%s\t%s\n", statusMarks[r.Status], r.SkillName, describe(r))
 		}
 
-		if len(news) > 0 {
-			fmt.Fprintf(tw, "  A\t%d not installed: %s\n", len(news), strings.Join(news, ", "))
+		if news > 0 {
+			fmt.Fprintf(tw, "  A\t%d not installed\n", news)
 		}
 	}
 
