@@ -153,13 +153,17 @@ func (c *Cache) ReadTree(ctx context.Context, cloneURL, treeSHA string) (fs.FS, 
 	return r.tree(treeSHA), nil
 }
 
+// repo opens the repository of cloneURL, keyed so that the URLs one remote
+// is named by, with or without .git, share it.
 func (c *Cache) repo(ctx context.Context, cloneURL string) (*repo, error) {
+	key := strings.TrimSuffix(strings.TrimSuffix(cloneURL, "/"), ".git")
+
 	c.mu.Lock()
 
-	open, ok := c.repos[cloneURL]
+	open, ok := c.repos[key]
 	if !ok {
-		open = sync.OnceValues(func() (*repo, error) { return openRepo(ctx, cloneURL) })
-		c.repos[cloneURL] = open
+		open = sync.OnceValues(func() (*repo, error) { return openRepo(ctx, key) })
+		c.repos[key] = open
 	}
 
 	c.mu.Unlock()
@@ -177,14 +181,20 @@ type repo struct {
 	close  func() error
 }
 
-func openRepo(ctx context.Context, cloneURL string) (*repo, error) {
-	root, err := os.UserCacheDir()
+func openRepo(ctx context.Context, key string) (*repo, error) {
+	base, err := os.UserCacheDir()
 	if err != nil {
 		return nil, fmt.Errorf("locate cache: %w", err)
 	}
 
-	sum := sha256.Sum256([]byte(cloneURL))
-	r := &repo{gitDir: filepath.Join(root, "skolar", "repos", hex.EncodeToString(sum[:12])+".git")}
+	// Private repositories land here, so only the owner may enter.
+	root := filepath.Join(base, "skolar")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return nil, fmt.Errorf("create cache: %w", err)
+	}
+
+	sum := sha256.Sum256([]byte(key))
+	r := &repo{gitDir: filepath.Join(root, "repos", hex.EncodeToString(sum[:12])+".git")}
 
 	if err := r.init(ctx); err != nil {
 		return nil, err
@@ -216,7 +226,7 @@ func openRepo(ctx context.Context, cloneURL string) (*repo, error) {
 }
 
 func (r *repo) init(ctx context.Context) error {
-	unlock, err := lock(r.gitDir + ".lock")
+	unlock, err := lock(ctx, r.gitDir+".lock")
 	if err != nil {
 		return err
 	}
@@ -234,7 +244,7 @@ func (r *repo) init(ctx context.Context) error {
 // fetch returns the root tree of ref, fetching ref unless the repository
 // holds it.
 func (r *repo) fetch(ctx context.Context, cloneURL string, ref ResolvedRef) (string, error) {
-	unlock, err := lock(r.gitDir + ".lock")
+	unlock, err := lock(ctx, r.gitDir+".lock")
 	if err != nil {
 		return "", err
 	}
@@ -248,10 +258,16 @@ func (r *repo) fetch(ctx context.Context, cloneURL string, ref ResolvedRef) (str
 		}
 	}
 
-	// A ref per fetched ref keeps its objects from gc; a flat name keeps it
-	// from clashing with another, even on a case-insensitive file system.
-	sum := sha256.Sum256([]byte(ref.Full))
-	local := "refs/skolar/" + hex.EncodeToString(sum[:12])
+	// A ref per fetched version keeps its objects from gc for verify; a flat
+	// name keeps it from clashing with another, even on a case-insensitive
+	// file system.
+	local := ref.Object
+	if !isObjectID(local) {
+		sum := sha256.Sum256([]byte(ref.Full))
+		local = hex.EncodeToString(sum[:12])
+	}
+
+	local = "refs/skolar/" + local
 
 	// With every fetch in one pack, which git writes whole, an interrupted
 	// fetch leaves no objects behind, so a cached commit is complete.

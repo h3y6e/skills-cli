@@ -338,6 +338,30 @@ func TestReadTree(t *testing.T) {
 		}
 	})
 
+	t.Run("when the remote is named with .git, reading uses what fetching the bare name cached", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		repo := initTaggedRepo(t)
+
+		s, err := fetch(t, repo, "v1.0.0")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		sha, err := s.TreeSHA("skills/my-skill")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Act
+		_, err = newCache(t).ReadTree(t.Context(), repo+".git", sha)
+		// Assert
+		if err != nil {
+			t.Errorf("ReadTree() error = %v, want the cached tree", err)
+		}
+	})
+
 	t.Run("when nothing fetched holds the tree, reading it reports it is not cached", func(t *testing.T) {
 		t.Parallel()
 
