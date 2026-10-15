@@ -437,7 +437,6 @@ func TestRemoveGlob(t *testing.T) {
 
 		// Act
 		out, err := runSkills(t, "remove", "-y", "-d", skillsDir, "gke-*")
-
 		// Assert
 		if err != nil {
 			t.Fatalf("remove error: %v\n%s", err, out)

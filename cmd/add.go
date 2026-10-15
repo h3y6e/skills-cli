@@ -57,11 +57,13 @@ func runAdd(cmd *cobra.Command, source string, opts addOptions) error {
 	show := status(cmd.ErrOrStderr())
 	show("fetching " + ref.CanonicalSource)
 	snap, err := fetchSource(ctx, ref, tracked)
+
 	show("")
 
 	if err != nil {
 		return err
 	}
+
 	defer func() { _ = snap.Close() }()
 
 	discovered, err := skill.DiscoverSkills(snap.FS)
