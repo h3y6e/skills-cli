@@ -42,6 +42,7 @@ skolar remove spec-plan
 ```
 
 - Without `-s`, `add` installs the skills vercel-labs/skills or `gh skill` finds by default; `-s` reaches any directory with a `SKILL.md`.
+- `-s` and `remove` take globs, e.g. `skolar remove 'gke-*'`.
 - `add`, `update`, and `remove` take `--dry-run`, and confirm before overwriting or deleting; pass `-y` without a TTY.
 - `update` lists only changed skills: `M` changed, `R` moved (followed), `D` removed upstream (kept), `A` not installed, `!` unchecked.
 - `list --json` and `update --json` print `{"skills": [...]}` and `{"results": [...]}`, plus `"error": {"code", "message", "fix"}` on failure.

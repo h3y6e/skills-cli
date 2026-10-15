@@ -51,7 +51,7 @@ Up-to-date, pinned, and local skills are counted at the end.`,
 		},
 	}
 
-	c.Flags().StringSliceVarP(&opts.skills, "skill", "s", nil, "Update only specified skills (repeatable)")
+	bindSkillFlag(c, &opts.skills, "Update only these skills")
 	bindDirFlag(c, &opts.dir)
 	c.Flags().BoolVarP(&opts.yes, "yes", "y", false, "Apply updates without confirmation")
 	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Show the changes without applying")
@@ -126,8 +126,8 @@ func updateCandidates(cmd *cobra.Command, inv inventory, source string, skills [
 
 	if len(skills) > 0 {
 		entries = maps.Clone(entries)
-		maps.DeleteFunc(entries, func(name string, _ lock.Entry) bool { return !slices.Contains(skills, name) })
-		foreign = slices.DeleteFunc(slices.Clone(foreign), func(s skill.InstalledSkill) bool { return !slices.Contains(skills, s.Name) })
+		maps.DeleteFunc(entries, func(name string, _ lock.Entry) bool { return !skill.Selected(skills, name) })
+		foreign = slices.DeleteFunc(slices.Clone(foreign), func(s skill.InstalledSkill) bool { return !skill.Selected(skills, s.Name) })
 	}
 
 	stderr := cmd.ErrOrStderr()

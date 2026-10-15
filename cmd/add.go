@@ -34,7 +34,7 @@ func newAddCmd() *cobra.Command {
 
 	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Show the skills that would be installed without installing")
 	c.Flags().BoolVarP(&opts.yes, "yes", "y", false, "Overwrite existing skills without confirmation")
-	c.Flags().StringSliceVarP(&opts.skills, "skill", "s", nil, "Install only specified skills (repeatable)")
+	bindSkillFlag(c, &opts.skills, "Install only these skills")
 	bindDirFlag(c, &opts.dir)
 
 	return c

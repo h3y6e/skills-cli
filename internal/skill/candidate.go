@@ -197,7 +197,7 @@ func resolveUpstream(name, recorded string, upstream []DiscoveredSkill) (Discove
 	return DiscoveredSkill{}, fmt.Errorf("ambiguous upstream: %s", strings.Join(paths, ", "))
 }
 
-// FilterCandidates returns only candidates whose names are in filter. Empty filter returns all.
+// FilterCandidates returns only candidates whose names filter selects. Empty filter returns all.
 func FilterCandidates(candidates []UpdateCandidate, filter []string) []UpdateCandidate {
 	if len(filter) == 0 {
 		return candidates
@@ -206,7 +206,7 @@ func FilterCandidates(candidates []UpdateCandidate, filter []string) []UpdateCan
 	var result []UpdateCandidate
 
 	for _, c := range candidates {
-		if slices.Contains(filter, c.SkillName) {
+		if Selected(filter, c.SkillName) {
 			result = append(result, c)
 		}
 	}
@@ -214,7 +214,7 @@ func FilterCandidates(candidates []UpdateCandidate, filter []string) []UpdateCan
 	return result
 }
 
-// FilterDiscoveredSkills returns the skills named in filter, or the default
+// FilterDiscoveredSkills returns the skills filter selects, or the default
 // skills when filter is empty. Of skills sharing a name, the first wins.
 func FilterDiscoveredSkills(skills []DiscoveredSkill, filter []string) []DiscoveredSkill {
 	var result []DiscoveredSkill
@@ -223,7 +223,7 @@ func FilterDiscoveredSkills(skills []DiscoveredSkill, filter []string) []Discove
 			continue
 		}
 
-		if len(filter) == 0 && s.Default || slices.Contains(filter, s.Name) {
+		if len(filter) == 0 && s.Default || Selected(filter, s.Name) {
 			result = append(result, s)
 		}
 	}

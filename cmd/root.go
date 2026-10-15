@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/signal"
 	"runtime/debug"
@@ -181,6 +182,17 @@ func printSkippedEntries(w io.Writer, skipped []skill.SkippedEntry) {
 	}
 }
 
+func bindSkillFlag(c *cobra.Command, target *[]string, usage string) {
+	c.Flags().StringSliceVarP(target, "skill", "s", nil, usage+"; globs like 'gke-*' match names (repeatable)")
+	c.PreRunE = func(c *cobra.Command, _ []string) error {
+		if err := skill.CheckPatterns(*target); err != nil {
+			return usageError(c, err)
+		}
+
+		return nil
+	}
+}
+
 func bindDirFlag(c *cobra.Command, target *string) {
 	c.Flags().StringVarP(target, "dir", "d", lock.DefaultDir, "Skill directory; .agents/skills beside a skills-lock.json uses the lockfile, others SKILL.md metadata")
 }
@@ -213,6 +225,18 @@ func loadInventory(dir string) (inventory, error) {
 func (inv inventory) locked(name string) bool {
 	_, ok := inv.entries[name]
 	return ok
+}
+
+// names returns the recorded skills, sorted.
+func (inv inventory) names() []string {
+	names := slices.Collect(maps.Keys(inv.entries))
+	for _, s := range inv.foreign {
+		names = append(names, s.Name)
+	}
+
+	slices.Sort(names)
+
+	return slices.Compact(names)
 }
 
 func (inv inventory) recorded(name string) bool {
