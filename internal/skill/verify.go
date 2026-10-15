@@ -84,7 +84,7 @@ func verifyLockedOnline(name string, entry lock.Entry, installed string, upstrea
 		return VerifyUnverifiable, nil, "upstream changed since install"
 	}
 
-	files, err := diffDirs(up.FS, os.DirFS(installed), true)
+	files, err := diffDirs(up.FS, os.DirFS(installed), vercelStyle)
 	if err != nil {
 		return VerifyUnverifiable, nil, err.Error()
 	}
@@ -127,7 +127,7 @@ func verifyTracked(s InstalledSkill, fns UpstreamFuncs) (VerifyStatus, []string,
 		return VerifyUnverifiable, nil, err.Error()
 	}
 
-	files, err := diffDirs(want, os.DirFS(s.Dir), false)
+	files, err := diffDirs(want, os.DirFS(s.Dir), ghStyle)
 	if err != nil {
 		return VerifyUnverifiable, nil, err.Error()
 	}
@@ -171,11 +171,10 @@ func VerifyUnrecorded(skillsDir string, recorded func(name string) bool) ([]Veri
 	return results, nil
 }
 
-// diffDirs returns the sorted paths of regular files that differ, or exist
-// in only one of want and got. With vercel, want is read as vercel-labs/skills
-// installs it.
-func diffDirs(want, got fs.FS, vercel bool) ([]string, error) {
-	wantFiles, gotFiles, err := readBoth(want, got, vercel)
+// diffDirs returns the sorted paths of files that differ, or exist in only
+// one of want, read as an install in style s holds it, and got, as installed.
+func diffDirs(want, got fs.FS, s style) ([]string, error) {
+	wantFiles, gotFiles, err := readBoth(want, got, s)
 	if err != nil {
 		return nil, err
 	}
@@ -183,13 +182,13 @@ func diffDirs(want, got fs.FS, vercel bool) ([]string, error) {
 	return changedFiles(wantFiles, gotFiles), nil
 }
 
-func readBoth(want, got fs.FS, vercel bool) (map[string][]byte, map[string][]byte, error) {
-	wantFiles, err := readFiles(want, vercel)
+func readBoth(want, got fs.FS, s style) (map[string][]byte, map[string][]byte, error) {
+	wantFiles, err := readFiles(want, s)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	gotFiles, err := readFiles(got, false)
+	gotFiles, err := readFiles(got, installed)
 
 	return wantFiles, gotFiles, err
 }
@@ -212,32 +211,4 @@ func changedFiles(want, got map[string][]byte) []string {
 	slices.Sort(diff)
 
 	return diff
-}
-
-func readFiles(fsys fs.FS, vercel bool) (map[string][]byte, error) {
-	files := map[string][]byte{}
-	err := fs.WalkDir(fsys, ".", func(rel string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if skipCopy(d, vercel) {
-			if d.IsDir() {
-				return fs.SkipDir
-			}
-
-			return nil
-		}
-
-		if !d.Type().IsRegular() {
-			return nil
-		}
-
-		data, err := fs.ReadFile(fsys, rel)
-		files[rel] = data
-
-		return err
-	})
-
-	return files, err
 }

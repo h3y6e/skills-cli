@@ -37,6 +37,16 @@ func (o overlayFS) Open(name string) (fs.File, error) {
 	return &memFile{Reader: bytes.NewReader(o.skillMD), size: int64(len(o.skillMD))}, nil
 }
 
+func (o overlayFS) ReadLink(name string) (string, error) { return fs.ReadLink(o.FS, name) }
+
+func (o overlayFS) Lstat(name string) (fs.FileInfo, error) {
+	if name == "SKILL.md" {
+		return &memFile{size: int64(len(o.skillMD))}, nil
+	}
+
+	return fs.Lstat(o.FS, name)
+}
+
 type memFile struct {
 	*bytes.Reader
 	size int64

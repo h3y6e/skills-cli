@@ -115,6 +115,27 @@ func (t *Tree) Stat(name string) (fs.FileInfo, error) {
 	return t.info(e), nil
 }
 
+// ReadLink returns the target of the symbolic link name.
+func (t *Tree) ReadLink(name string) (string, error) {
+	e, err := t.lookup("readlink", name)
+	if err != nil {
+		return "", err
+	}
+
+	if e.mode&fs.ModeSymlink == 0 {
+		return "", &fs.PathError{Op: "readlink", Path: name, Err: errors.New("not a symbolic link")}
+	}
+
+	target, err := t.repo.contents(e.oid)
+
+	return string(target), err
+}
+
+// Lstat describes name; Stat never follows a link either.
+func (t *Tree) Lstat(name string) (fs.FileInfo, error) {
+	return t.Stat(name)
+}
+
 func (t *Tree) treeSHA(dir string) (string, error) {
 	e, err := t.lookup("stat", dir)
 	if err != nil {

@@ -3,11 +3,9 @@ package skill
 import (
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path"
-	"path/filepath"
 	"slices"
 
 	"github.com/h3y6e/skolar/internal/git"
@@ -17,9 +15,7 @@ import (
 type skillReplacement struct {
 	Name   string
 	Source fs.FS
-	// Vercel leaves out the files vercel-labs/skills skips when it copies a
-	// skill, for skills recorded in the lockfile.
-	Vercel bool
+	Style  style
 }
 
 type stagedSkillReplacement struct {
@@ -57,7 +53,7 @@ func InstallSkills(skills []DiscoveredSkill, ref SourceRef, layout lock.Layout) 
 			return fmt.Errorf("hash %q: %w", s.Name, err)
 		}
 
-		replacements[i] = skillReplacement{Name: s.Name, Source: s.FS, Vercel: true}
+		replacements[i] = skillReplacement{Name: s.Name, Source: s.FS, Style: vercelStyle}
 		lf.Skills[s.Name] = lock.Entry{
 			Source:       ref.CanonicalSource,
 			Ref:          ref.Ref,
@@ -115,7 +111,7 @@ func InstallTrackedSkills(skills []DiscoveredSkill, snap git.Snapshot, ref Sourc
 			return fmt.Errorf("inject metadata for %q: %w", s.Name, err)
 		}
 
-		replacements[i] = skillReplacement{Name: s.Name, Source: source}
+		replacements[i] = skillReplacement{Name: s.Name, Source: source, Style: ghStyle}
 	}
 
 	tx, err := stageSkillReplacements(layout, replacements)
@@ -136,7 +132,7 @@ func ApplyCandidateUpdates(lf lock.File, candidates []UpdateCandidate, layout lo
 		replacements = append(replacements, skillReplacement{
 			Name:   c.SkillName,
 			Source: c.Upstream,
-			Vercel: true,
+			Style:  vercelStyle,
 		})
 
 		entry := lf.Skills[c.SkillName]
@@ -162,11 +158,13 @@ func ApplyCandidateUpdates(lf lock.File, candidates []UpdateCandidate, layout lo
 	return nil
 }
 
-// ReplaceSkill atomically replaces an installed skill directory with source.
+// ReplaceSkill atomically replaces an installed skill directory with source,
+// as gh skill installs it.
 func ReplaceSkill(skillName string, source fs.FS, layout lock.Layout) (err error) {
 	tx, err := stageSkillReplacements(layout, []skillReplacement{{
 		Name:   skillName,
 		Source: source,
+		Style:  ghStyle,
 	}})
 	if err != nil {
 		return err
@@ -187,16 +185,16 @@ func stageSkillReplacements(layout lock.Layout, replacements []skillReplacement)
 
 	tx := &replacementTxn{layout: layout}
 	for _, replacement := range replacements {
-		stagedDir, err := os.MkdirTemp(layout.Dir, "."+replacement.Name+".staged-*")
+		stagedDir, err := tempPath(layout.Dir, "."+replacement.Name+".staged-*")
+		if err == nil {
+			err = os.Mkdir(stagedDir, 0o755)
+		}
+
 		if err != nil {
 			return nil, errors.Join(fmt.Errorf("create staged directory for %q: %w", replacement.Name, err), tx.Cleanup())
 		}
 
-		if err := os.Chmod(stagedDir, 0o755); err != nil {
-			return nil, errors.Join(fmt.Errorf("create staged directory for %q: %w", replacement.Name, err), tx.Cleanup())
-		}
-
-		if err := copyDir(replacement.Source, stagedDir, replacement.Vercel); err != nil {
+		if err := copyDir(replacement.Source, stagedDir, replacement.Style); err != nil {
 			return nil, errors.Join(fmt.Errorf("stage skill %q: %w", replacement.Name, err), tx.Cleanup())
 		}
 
@@ -316,78 +314,4 @@ func tempPath(parentDir, pattern string) (string, error) {
 	}
 
 	return path, nil
-}
-
-// skipCopy reports whether a copy of a skill leaves d out: .git always, and
-// with vercel what vercel-labs/skills skips when it installs a skill.
-func skipCopy(d os.DirEntry, vercel bool) bool {
-	if d.IsDir() {
-		return d.Name() == ".git" || vercel && (d.Name() == "__pycache__" || d.Name() == "__pypackages__")
-	}
-
-	return vercel && d.Name() == "metadata.json"
-}
-
-// copyDir copies the regular files of src into dst, leaving out what
-// skipCopy skips. src must be a directory, not a link to one.
-func copyDir(src fs.FS, dst string, vercel bool) error {
-	info, err := fs.Stat(src, ".")
-	if err != nil {
-		return err
-	}
-
-	if !info.IsDir() {
-		return errors.New("copy: not a directory")
-	}
-
-	return fs.WalkDir(src, ".", func(rel string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if !filepath.IsLocal(filepath.FromSlash(rel)) {
-			return fmt.Errorf("copy %q: not a local path", rel)
-		}
-
-		target := filepath.Join(dst, filepath.FromSlash(rel))
-
-		if skipCopy(d, vercel) {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-
-			return nil
-		}
-
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-
-		if !d.Type().IsRegular() {
-			return nil
-		}
-
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-
-		return copyFile(src, rel, target, info.Mode().Perm())
-	})
-}
-
-func copyFile(src fs.FS, rel, target string, perm fs.FileMode) error {
-	in, err := src.Open(rel)
-	if err != nil {
-		return err
-	}
-
-	out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
-	if err != nil {
-		return errors.Join(err, in.Close())
-	}
-
-	_, err = io.Copy(out, in)
-
-	return errors.Join(err, out.Close(), in.Close())
 }

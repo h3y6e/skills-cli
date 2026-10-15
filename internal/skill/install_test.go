@@ -287,27 +287,36 @@ func TestInstallRootSkill(t *testing.T) {
 	})
 }
 
-func TestInstallSkipsSymlinks(t *testing.T) {
+func TestInstallSymlinks(t *testing.T) {
 	t.Parallel()
 
-	t.Run("when a skill contains a symlink, the install leaves it out instead of copying its target", func(t *testing.T) {
+	t.Run("when a lockfile skill links inside and outside the repository, the install holds the inside target and leaves the outside link out", func(t *testing.T) {
 		t.Parallel()
 		// Arrange
 		srcDir := t.TempDir()
-		testutil.WriteFiles(t, srcDir, map[string]string{"skills/s/SKILL.md": "---\nname: s\ndescription: d\n---\n"})
+		testutil.WriteFiles(t, srcDir, map[string]string{"skills/s/SKILL.md": "---\nname: s\ndescription: d\n---\n", "README.md": "readme\n"})
 
 		secret := filepath.Join(t.TempDir(), "secret")
 		if err := os.WriteFile(secret, []byte("secret\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 
-		if err := os.Symlink(secret, filepath.Join(srcDir, "skills", "s", "leak")); err != nil {
+		for target, link := range map[string]string{secret: "leak", "../../README.md": "readme.md"} {
+			if err := os.Symlink(target, filepath.Join(srcDir, "skills", "s", link)); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		root, err := os.OpenRoot(srcDir)
+		if err != nil {
 			t.Fatal(err)
 		}
 
+		t.Cleanup(func() { _ = root.Close() })
+
 		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
-		discovered, err := skill.DiscoverSkills(os.DirFS(srcDir))
+		discovered, err := skill.DiscoverSkills(root.FS())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -319,8 +328,12 @@ func TestInstallSkipsSymlinks(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if got := listFiles(t, filepath.Join(skillsDir, "s")); !slices.Equal(got, []string{"SKILL.md"}) {
-			t.Errorf("installed files = %v, want [SKILL.md]", got)
+		if got := listFiles(t, filepath.Join(skillsDir, "s")); !slices.Equal(got, []string{"SKILL.md", "readme.md"}) {
+			t.Errorf("installed files = %v, want [SKILL.md readme.md]", got)
+		}
+
+		if data, err := os.ReadFile(filepath.Join(skillsDir, "s", "readme.md")); string(data) != "readme\n" {
+			t.Errorf("readme.md = %q, %v, want the README content", data, err)
 		}
 	})
 }

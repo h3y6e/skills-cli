@@ -19,7 +19,12 @@ type Stat struct {
 // Lines are counted as git diff --minimal --numstat does; binary files add
 // none.
 func DiffStat(c UpdateCandidate, dir string) (Stat, error) {
-	want, got, err := readBoth(c.Upstream, os.DirFS(dir), !c.Foreign)
+	s := vercelStyle
+	if c.Foreign {
+		s = ghStyle
+	}
+
+	want, got, err := readBoth(c.Upstream, os.DirFS(dir), s)
 	if err != nil {
 		return Stat{}, err
 	}

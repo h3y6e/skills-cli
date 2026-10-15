@@ -244,3 +244,40 @@ func gitTreeSHA(t *testing.T, repoDir, path string) string {
 
 	return strings.TrimSpace(testutil.Git(t, repoDir, "rev-parse", "HEAD:"+path))
 }
+
+func TestInstallTrackedSkillsLayout(t *testing.T) {
+	t.Parallel()
+
+	t.Run("when a skill holds an executable and a link, the install writes both 0644 and the link as a file holding its target, as gh skill does", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		repo := initGitRepo(t, map[string]string{"skills/s/SKILL.md": "# S\n", "skills/s/run.sh": "echo\n"})
+		if err := os.Chmod(filepath.Join(repo, "skills", "s", "run.sh"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.Symlink("SKILL.md", filepath.Join(repo, "skills", "s", "link.md")); err != nil {
+			t.Fatal(err)
+		}
+
+		testutil.Commit(t, repo, "add", nil)
+
+		skillsDir := filepath.Join(t.TempDir(), "skills")
+
+		// Act
+		installTracked(t, repo, skill.SourceRef{CanonicalSource: "o/r", SourceType: "github"}, git.ResolvedRef{Full: "refs/heads/main"}, skillsDir)
+
+		// Assert
+		for name, want := range map[string]string{"run.sh": "echo\n", "link.md": "SKILL.md"} {
+			info, err := os.Lstat(filepath.Join(skillsDir, "s", name))
+			if err != nil || info.Mode() != 0o644 {
+				t.Errorf("%s mode = %v, %v, want -rw-r--r--", name, info, err)
+				continue
+			}
+
+			if data, _ := os.ReadFile(filepath.Join(skillsDir, "s", name)); string(data) != want {
+				t.Errorf("%s = %q, want %q", name, data, want)
+			}
+		}
+	})
+}
