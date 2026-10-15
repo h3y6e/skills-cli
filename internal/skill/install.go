@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -325,8 +326,17 @@ func skipCopy(d os.DirEntry, vercel bool) bool {
 }
 
 // copyDir copies the regular files of src into dst, leaving out dst itself
-// and what skipCopy skips.
+// and what skipCopy skips. src must be a directory, not a link to one.
 func copyDir(src, dst string, vercel bool) (err error) {
+	info, err := os.Lstat(src)
+	if err != nil {
+		return err
+	}
+
+	if !info.IsDir() {
+		return fmt.Errorf("copy %q: not a directory", src)
+	}
+
 	root, err := os.OpenRoot(src)
 	if err != nil {
 		return err
@@ -360,11 +370,22 @@ func copyDir(src, dst string, vercel bool) (err error) {
 			return err
 		}
 
-		data, err := root.ReadFile(rel)
-		if err != nil {
-			return err
-		}
-
-		return os.WriteFile(target, data, info.Mode().Perm())
+		return copyFile(root, rel, target, info.Mode().Perm())
 	})
+}
+
+func copyFile(root *os.Root, rel, target string, perm fs.FileMode) error {
+	in, err := root.Open(rel)
+	if err != nil {
+		return err
+	}
+
+	out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return errors.Join(err, in.Close())
+	}
+
+	_, err = io.Copy(out, in)
+
+	return errors.Join(err, out.Close(), in.Close())
 }

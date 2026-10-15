@@ -152,6 +152,39 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 	}
 
+	t.Run("when the upstream skill directory is a symlink, the candidate fails instead of staging the link target", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		outside := t.TempDir()
+		testutil.WriteFiles(t, outside, map[string]string{"SKILL.md": "---\nname: foo\n---\n", "secret": "s\n"})
+
+		clone := filepath.Join(t.TempDir(), "repo")
+		if err := os.MkdirAll(filepath.Join(clone, "skills"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.Symlink(outside, filepath.Join(clone, "skills", "foo")); err != nil {
+			t.Fatal(err)
+		}
+
+		skills := []skill.InstalledSkill{installed("foo", "https://github.com/o/r", "tree-1", "skills/foo")}
+		fns := skill.UpstreamFuncs{
+			FetchLatest: func(string) (string, git.ResolvedRef, error) {
+				return clone, git.ResolvedRef{Full: "refs/tags/v2.0.0"}, nil
+			},
+			TreeSHA: func(_, _ string) (string, error) { return "tree-2", nil },
+		}
+
+		// Act
+		candidates := skill.AggregateForeignUpdateCandidates(skills, fns)
+
+		// Assert
+		if len(candidates) != 1 || candidates[0].Status != skill.StatusCheckFailed {
+			t.Errorf("candidates = %+v, want one check-failed", candidates)
+		}
+	})
+
 	t.Run("when the upstream tree SHA matches, the candidate is up-to-date", func(t *testing.T) {
 		t.Parallel()
 
