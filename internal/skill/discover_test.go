@@ -65,7 +65,7 @@ func TestDiscoverSkillsLayouts(t *testing.T) {
 		root := writeRepo(t, files)
 
 		// Act
-		skills, err := skill.DiscoverSkills(root)
+		skills, err := skill.DiscoverSkills(os.DirFS(root))
 		// Assert
 		if err != nil {
 			t.Fatal(err)
@@ -88,7 +88,7 @@ func TestDiscoverSkillsLayouts(t *testing.T) {
 		root := writeRepo(t, files)
 
 		// Act
-		skills, err := skill.DiscoverSkills(root)
+		skills, err := skill.DiscoverSkills(os.DirFS(root))
 		// Assert
 		if err != nil {
 			t.Fatal(err)
@@ -106,7 +106,7 @@ func TestDiscoverSkillsLayouts(t *testing.T) {
 		root := writeRepo(t, mixedLayouts)
 
 		// Act
-		skills, err := skill.DiscoverSkills(root)
+		skills, err := skill.DiscoverSkills(os.DirFS(root))
 		// Assert
 		if err != nil {
 			t.Fatal(err)
@@ -130,7 +130,7 @@ func TestDiscoverSkillsLayouts(t *testing.T) {
 		})
 
 		// Act
-		skills, err := skill.DiscoverSkills(root)
+		skills, err := skill.DiscoverSkills(os.DirFS(root))
 		// Assert
 		if err != nil {
 			t.Fatal(err)
@@ -147,7 +147,7 @@ func TestDiscoverSkillsLayouts(t *testing.T) {
 		root := writeRepo(t, map[string]string{"skills/plain/SKILL.md": "# Plain\n"})
 
 		// Act
-		skills, err := skill.DiscoverSkills(root)
+		skills, err := skill.DiscoverSkills(os.DirFS(root))
 		// Assert
 		if err != nil {
 			t.Fatal(err)
@@ -166,7 +166,7 @@ func TestDiscoverSkillsEdges(t *testing.T) {
 		root := writeRepo(t, map[string]string{"skills/build/SKILL.md": fm("build"), "skills/build/dist/SKILL.md": fm("hidden")})
 
 		// Act
-		skills, err := skill.DiscoverSkills(root)
+		skills, err := skill.DiscoverSkills(os.DirFS(root))
 		// Assert
 		if err != nil {
 			t.Fatal(err)
@@ -183,7 +183,7 @@ func TestDiscoverSkillsEdges(t *testing.T) {
 		root := writeRepo(t, map[string]string{"skills/good/SKILL.md": fm("good"), "extras/bad/SKILL.md": "---\nname: [\n---\n"})
 
 		// Act
-		skills, err := skill.DiscoverSkills(root)
+		skills, err := skill.DiscoverSkills(os.DirFS(root))
 		// Assert
 		if err != nil {
 			t.Fatal(err)
@@ -206,7 +206,7 @@ func TestDiscoverSkillsEdges(t *testing.T) {
 		})
 
 		// Act
-		skills, err := skill.DiscoverSkills(root)
+		skills, err := skill.DiscoverSkills(os.DirFS(root))
 		// Assert
 		if err != nil {
 			t.Fatal(err)
@@ -230,7 +230,7 @@ func TestDiscoverSkillsEdges(t *testing.T) {
 		}
 
 		// Act
-		skills, err := skill.DiscoverSkills(root)
+		skills, err := skill.DiscoverSkills(os.DirFS(root))
 		// Assert
 		if err != nil {
 			t.Fatal(err)
@@ -247,7 +247,7 @@ func TestDiscoverSkillsEdges(t *testing.T) {
 		root := writeRepo(t, map[string]string{".claude/skills/secret/SKILL.md": "---\nname: secret\ndescription: d\nmetadata:\n  internal: true\n---\n"})
 
 		// Act
-		skills, err := skill.DiscoverSkills(root)
+		skills, err := skill.DiscoverSkills(os.DirFS(root))
 		// Assert
 		if err != nil {
 			t.Fatal(err)
@@ -264,7 +264,7 @@ func TestDiscoverSkillsEdges(t *testing.T) {
 		root := writeRepo(t, map[string]string{".claude/skills/secret/SKILL.md": "---\nname: secret\ndescription: d\nmetadata:\n  internal: true\n---\n"})
 
 		// Act
-		skills, err := skill.DiscoverSkills(root)
+		skills, err := skill.DiscoverSkills(os.DirFS(root))
 		// Assert
 		if err != nil {
 			t.Fatal(err)

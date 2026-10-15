@@ -2,182 +2,443 @@ package git_test
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/h3y6e/skolar/internal/git"
 	"github.com/h3y6e/skolar/internal/testutil"
 )
 
-func TestMain(m *testing.M) {
-	for _, name := range []string{"GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM"} {
-		if err := os.Setenv(name, "/dev/null"); err != nil {
-			panic(err)
-		}
-	}
+func TestMain(m *testing.M) { testutil.Main(m) }
 
-	os.Exit(m.Run())
-}
-
-func initBareRepoWithRefs(t *testing.T) string {
+func fetch(t *testing.T, url, ref string) (git.Snapshot, error) {
 	t.Helper()
 
-	work := testutil.InitWorkRepo(t)
-	skillFile := "skills/my-skill/SKILL.md"
-	testutil.Commit(t, work, "main", map[string]string{skillFile: "# Main\n"})
-	testutil.Git(t, work, "tag", "v1.0.0")
+	resolved, err := git.ResolveDefault(t.Context(), url, ref)
+	if err != nil {
+		return git.Snapshot{}, err
+	}
 
-	testutil.Git(t, work, "checkout", "-b", "feature/install")
-	testutil.Commit(t, work, "feature", map[string]string{skillFile: "# Feature\n"})
-	testutil.Git(t, work, "checkout", "main")
-
-	return testutil.BareClone(t, work)
+	return newCache(t).Fetch(t.Context(), url, resolved)
 }
 
-func TestShallowClone(t *testing.T) {
+func newCache(t *testing.T) *git.Cache {
+	t.Helper()
+
+	c := git.NewCache()
+
+	t.Cleanup(func() { _ = c.Close() })
+
+	return c
+}
+
+func readSkill(t *testing.T, s git.Snapshot) string {
+	t.Helper()
+
+	data, err := fs.ReadFile(s.FS, "skills/my-skill/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return string(data)
+}
+
+func TestFetch(t *testing.T) {
 	t.Parallel()
 
-	bareRepo := testutil.BareRepo(t, map[string]string{
-		"skills/my-skill/SKILL.md": "# My Skill\n",
-		"README.md":                "hello\n",
-	})
-
-	t.Run("clones repo to dest", func(t *testing.T) {
+	t.Run("when no ref is given, fetching reads the default branch", func(t *testing.T) {
 		t.Parallel()
-		dest := filepath.Join(t.TempDir(), "clone-dest")
 
-		err := git.ShallowClone(t.Context(), bareRepo, "", dest)
+		// Arrange
+		repo := initTaggedRepo(t)
+
+		// Act
+		s, err := fetch(t, repo, "")
+		// Assert
 		if err != nil {
-			t.Fatalf("ShallowClone() error = %v", err)
+			t.Fatal(err)
 		}
 
-		skillPath := filepath.Join(dest, "skills", "my-skill", "SKILL.md")
+		if got := readSkill(t, s); got != "# v2.0.0-rc.1\n" {
+			t.Errorf("SKILL.md = %q, want the main branch content", got)
+		}
+	})
 
-		data, err := os.ReadFile(skillPath)
+	t.Run("when the commit holds links and executables, the files keep their modes and links are never followed", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		work := testutil.InitWorkRepo(t)
+		testutil.WriteFiles(t, work, map[string]string{"skills/a/SKILL.md": "# A\n", "skills/a/run.sh": "#!/bin/sh\n"})
+
+		if err := os.Chmod(filepath.Join(work, "skills", "a", "run.sh"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.Symlink("../../../etc", filepath.Join(work, "skills", "a", "escape")); err != nil {
+			t.Fatal(err)
+		}
+
+		testutil.Git(t, work, "add", "-A")
+		testutil.Git(t, work, "commit", "-m", "init")
+
+		// Act
+		s, err := fetch(t, "file://"+work, "")
+		// Assert
 		if err != nil {
-			t.Fatalf("expected skill file to exist: %v", err)
+			t.Fatal(err)
 		}
 
-		if string(data) != "# My Skill\n" {
-			t.Errorf("skill file content = %q, want %q", string(data), "# My Skill\n")
+		var walked []string
+
+		_ = fs.WalkDir(s.FS, "skills", func(p string, d fs.DirEntry, err error) error {
+			walked = append(walked, p+" "+d.Type().String())
+			return err
+		})
+
+		want := []string{"skills d---------", "skills/a d---------", "skills/a/SKILL.md ----------", "skills/a/escape L---------", "skills/a/run.sh ----------"}
+		if !slices.Equal(walked, want) {
+			t.Errorf("walked %q, want %q", walked, want)
+		}
+
+		if info, err := fs.Stat(s.FS, "skills/a/run.sh"); err != nil || info.Mode().Perm() != 0o755 {
+			t.Errorf("run.sh mode = %v, %v, want 0755", info, err)
+		}
+
+		if _, err := s.FS.Open("skills/a/escape/passwd"); err == nil {
+			t.Error("opened a path through a link")
 		}
 	})
 
-	t.Run("is shallow (depth 1)", func(t *testing.T) {
+	t.Run("when a branch, a lightweight tag or an annotated tag is given, fetching reads its content", func(t *testing.T) {
 		t.Parallel()
-		dest := filepath.Join(t.TempDir(), "shallow-check")
 
-		if err := git.ShallowClone(t.Context(), bareRepo, "", dest); err != nil {
-			t.Fatalf("ShallowClone() error = %v", err)
-		}
+		// Arrange
+		repo := initTaggedRepo(t)
 
-		out := testutil.Git(t, dest, "rev-list", "--count", "HEAD")
+		for ref, want := range map[string]string{"feature/install": "# Feature\n", "v1.0.0": "# v1.0.0\n", "annotated": "# v1.9.0\n"} {
+			// Act
+			s, err := fetch(t, repo, ref)
+			// Assert
+			if err != nil {
+				t.Fatalf("%s: %v", ref, err)
+			}
 
-		count := strings.TrimSpace(out)
-		if count != "1" {
-			t.Errorf("expected 1 commit in shallow clone, got %s", count)
+			if got := readSkill(t, s); got != want {
+				t.Errorf("%s: SKILL.md = %q, want %q", ref, got, want)
+			}
 		}
 	})
 
-	t.Run("returns error for invalid URL", func(t *testing.T) {
+	t.Run("when a name matches both a branch and a tag, fetching reads the branch", func(t *testing.T) {
 		t.Parallel()
-		dest := filepath.Join(t.TempDir(), "bad-clone")
 
-		err := git.ShallowClone(t.Context(), "/nonexistent/repo", "", dest)
+		// Arrange
+		repo := initTaggedRepo(t)
+
+		// Act
+		s, err := fetch(t, repo, "collide")
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if s.Ref.Full != "refs/heads/collide" || readSkill(t, s) != "# Feature\n" {
+			t.Errorf("ref %q, SKILL.md %q, want the collide branch", s.Ref.Full, readSkill(t, s))
+		}
+	})
+
+	t.Run("when the ref is a commit SHA, fetching reads that commit", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		repo := initTaggedRepo(t)
+		sha := strings.TrimSpace(testutil.Git(t, strings.TrimPrefix(repo, "file://"), "rev-parse", "v1.0.0"))
+
+		// Act
+		s, err := fetch(t, repo, sha)
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := readSkill(t, s); got != "# v1.0.0\n" {
+			t.Errorf("SKILL.md = %q, want the v1.0.0 content", got)
+		}
+	})
+
+	t.Run("when a commit was fetched before, fetching reads it without the remote", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		repo := initTaggedRepo(t)
+
+		ref, err := git.ResolveDefault(t.Context(), repo, "v1.0.0")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := newCache(t).Fetch(t.Context(), repo, ref); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.RemoveAll(strings.TrimPrefix(repo, "file://")); err != nil {
+			t.Fatal(err)
+		}
+
+		// Act
+		s, err := newCache(t).Fetch(t.Context(), repo, ref)
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := readSkill(t, s); got != "# v1.0.0\n" {
+			t.Errorf("SKILL.md = %q, want the v1.0.0 content", got)
+		}
+	})
+
+	t.Run("when a fetched branch is deleted upstream, fetching it fails instead of reading the cached copy", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		repo := initTaggedRepo(t)
+		if _, err := fetch(t, repo, "feature/install"); err != nil {
+			t.Fatal(err)
+		}
+
+		testutil.Git(t, strings.TrimPrefix(repo, "file://"), "branch", "-D", "feature/install")
+
+		// Act
+		_, err := fetch(t, repo, "feature/install")
+
+		// Assert
 		if err == nil {
-			t.Fatal("expected error for invalid clone URL, got nil")
+			t.Fatal("fetched a branch the remote deleted")
 		}
 	})
 
-	t.Run("respects context cancellation", func(t *testing.T) {
+	t.Run("when the same remote is fetched concurrently, every fetch succeeds", func(t *testing.T) {
 		t.Parallel()
-		dest := filepath.Join(t.TempDir(), "cancelled")
+
+		// Arrange
+		repo := initTaggedRepo(t)
+		refs := []string{"v1.0.0", "v1.9.0", "feature/install", "main", "collide", "v1.0.0"}
+		errs := make([]error, len(refs))
+
+		// Act
+		var wg sync.WaitGroup
+		for i, ref := range refs {
+			wg.Go(func() { _, errs[i] = fetch(t, repo, ref) })
+		}
+
+		wg.Wait()
+
+		// Assert
+		for i, err := range errs {
+			if err != nil {
+				t.Errorf("%s: %v", refs[i], err)
+			}
+		}
+	})
+
+	t.Run("when fetched, TreeSHA returns the tree SHA of the root and of a directory", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		repo := initTaggedRepo(t)
+		bare := strings.TrimPrefix(repo, "file://")
+
+		// Act
+		s, err := fetch(t, repo, "v1.0.0")
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for path, rev := range map[string]string{".": "v1.0.0^{tree}", "skills/my-skill": "v1.0.0:skills/my-skill"} {
+			if got, err := s.TreeSHA(path); got != strings.TrimSpace(testutil.Git(t, bare, "rev-parse", rev)) {
+				t.Errorf("TreeSHA(%q) = %q, %v, want %s", path, got, err, rev)
+			}
+		}
+	})
+
+	t.Run("when the remote does not exist, fetching fails", func(t *testing.T) {
+		t.Parallel()
+
+		// Act
+		_, err := fetch(t, "/nonexistent/repo", "")
+
+		// Assert
+		if err == nil {
+			t.Fatal("fetch succeeded without a remote")
+		}
+	})
+
+	t.Run("when the context is cancelled, fetching fails", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		repo := initTaggedRepo(t)
+		ref := git.ResolvedRef{Full: "refs/heads/main", Object: "refs/heads/main"}
 
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 
-		err := git.ShallowClone(ctx, bareRepo, "", dest)
-		if err == nil {
-			t.Fatal("expected error for cancelled context, got nil")
-		}
-	})
-
-	t.Run("clones requested branch ref", func(t *testing.T) {
-		t.Parallel()
-
-		bareWithRefs := initBareRepoWithRefs(t)
-		dest := filepath.Join(t.TempDir(), "branch-clone")
-
-		if err := git.ShallowClone(t.Context(), bareWithRefs, "feature/install", dest); err != nil {
-			t.Fatalf("ShallowClone() error = %v", err)
-		}
-
-		data, err := os.ReadFile(filepath.Join(dest, "skills", "my-skill", "SKILL.md"))
-		if err != nil {
-			t.Fatalf("expected cloned branch file: %v", err)
-		}
-
-		if string(data) != "# Feature\n" {
-			t.Errorf("branch clone content = %q, want %q", string(data), "# Feature\n")
-		}
-
-		out := testutil.Git(t, dest, "rev-list", "--count", "HEAD")
-		if strings.TrimSpace(out) != "1" {
-			t.Errorf("expected shallow branch clone, got %s commits", strings.TrimSpace(out))
-		}
-	})
-
-	t.Run("clones requested tag ref", func(t *testing.T) {
-		t.Parallel()
-
-		bareWithRefs := initBareRepoWithRefs(t)
-		dest := filepath.Join(t.TempDir(), "tag-clone")
-
-		if err := git.ShallowClone(t.Context(), bareWithRefs, "v1.0.0", dest); err != nil {
-			t.Fatalf("ShallowClone() error = %v", err)
-		}
-
-		data, err := os.ReadFile(filepath.Join(dest, "skills", "my-skill", "SKILL.md"))
-		if err != nil {
-			t.Fatalf("expected cloned tag file: %v", err)
-		}
-
-		if string(data) != "# Main\n" {
-			t.Errorf("tag clone content = %q, want %q", string(data), "# Main\n")
-		}
-	})
-}
-
-func TestNumStat(t *testing.T) {
-	t.Parallel()
-
-	t.Run("when text and binary files change, only text lines are counted", func(t *testing.T) {
-		t.Parallel()
-		// Arrange
-		dir := t.TempDir()
-		testutil.WriteFiles(t, dir, map[string]string{
-			"a/file.txt": "one\ntwo\n",
-			"b/file.txt": "one\nthree\nfour\n",
-			"b/new.md":   "added\n",
-			"a/bin":      "\x00a",
-			"b/bin":      "\x00b",
-		})
-
 		// Act
-		added, deleted, err := git.NumStat(t.Context(), filepath.Join(dir, "a"), filepath.Join(dir, "b"))
+		c := git.NewCache()
+
+		t.Cleanup(func() { _ = c.Close() })
+
+		_, err := c.Fetch(ctx, repo, ref)
 
 		// Assert
-		if err != nil || added != 3 || deleted != 1 {
-			t.Errorf("NumStat() = +%d -%d, %v, want +3 -1", added, deleted, err)
+		if err == nil {
+			t.Fatal("fetch succeeded with a cancelled context")
 		}
 	})
 }
 
-func TestShallowCloneUntrustedInput(t *testing.T) {
+func TestFetchObjectFormat(t *testing.T) {
+	// Not parallel: sets GIT_DEFAULT_HASH.
+	t.Run("when the remote uses SHA-256, fetching reads it", func(t *testing.T) {
+		// Arrange
+		work := t.TempDir()
+		testutil.Git(t, work, "init", "--object-format=sha256", "-b", "main")
+		testutil.Git(t, work, "config", "user.email", "test@test.com")
+		testutil.Git(t, work, "config", "user.name", "Test")
+		testutil.Commit(t, work, "init", map[string]string{"skills/my-skill/SKILL.md": "# 256\n"})
+
+		// Act
+		s, err := fetch(t, "file://"+work, "")
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := readSkill(t, s); got != "# 256\n" {
+			t.Errorf("SKILL.md = %q", got)
+		}
+	})
+
+	t.Run("when git creates SHA-256 repositories by default, fetching a SHA-1 remote still works", func(t *testing.T) {
+		// Arrange
+		repo := initTaggedRepo(t)
+		t.Setenv("GIT_DEFAULT_HASH", "sha256")
+
+		// Act
+		_, err := fetch(t, repo, "v1.0.0")
+		// Assert
+		if err != nil {
+			t.Errorf("fetch() error = %v", err)
+		}
+	})
+}
+
+func TestReadTree(t *testing.T) {
+	t.Parallel()
+
+	t.Run("when a fetched commit holds the tree, reading it lists the tree's files", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		repo := initTaggedRepo(t)
+
+		s, err := fetch(t, repo, "v1.0.0")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Act
+		sha, err := s.TreeSHA("skills/my-skill")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		tree, err := newCache(t).ReadTree(t.Context(), repo, sha)
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if data, err := fs.ReadFile(tree, "SKILL.md"); string(data) != "# v1.0.0\n" {
+			t.Errorf("SKILL.md = %q, %v, want the v1.0.0 content", data, err)
+		}
+	})
+
+	t.Run("when the remote is named with .git, reading uses what fetching the bare name cached", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		repo := initTaggedRepo(t)
+
+		s, err := fetch(t, repo, "v1.0.0")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		sha, err := s.TreeSHA("skills/my-skill")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Act
+		_, err = newCache(t).ReadTree(t.Context(), repo+".git", sha)
+		// Assert
+		if err != nil {
+			t.Errorf("ReadTree() error = %v, want the cached tree", err)
+		}
+	})
+
+	t.Run("when nothing fetched holds the tree, reading it reports it is not cached", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		repo := initTaggedRepo(t)
+		if _, err := fetch(t, repo, "v1.0.0"); err != nil {
+			t.Fatal(err)
+		}
+
+		bare := strings.TrimPrefix(repo, "file://")
+		feature := strings.TrimSpace(testutil.Git(t, bare, "rev-parse", "feature/install:skills/my-skill"))
+
+		// Act
+		_, err := newCache(t).ReadTree(t.Context(), repo, feature)
+
+		// Assert
+		if !errors.Is(err, git.ErrNotCached) {
+			t.Errorf("ReadTree() error = %v, want ErrNotCached", err)
+		}
+	})
+
+	t.Run("when the tree SHA is a ref name, reading it fails without resolving the name", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		repo := initTaggedRepo(t)
+		if _, err := fetch(t, repo, "v1.0.0"); err != nil {
+			t.Fatal(err)
+		}
+
+		// Act
+		_, err := newCache(t).ReadTree(t.Context(), repo, "refs/tags/v1.0.0")
+
+		// Assert
+		if err == nil || errors.Is(err, git.ErrNotCached) {
+			t.Errorf("ReadTree() error = %v, want an invalid tree SHA", err)
+		}
+	})
+}
+
+func TestFetchUntrustedInput(t *testing.T) {
 	t.Parallel()
 
 	t.Run("when the ref looks like an option, git does not run it as one", func(t *testing.T) {
@@ -187,7 +448,7 @@ func TestShallowCloneUntrustedInput(t *testing.T) {
 		marker := filepath.Join(t.TempDir(), "pwned")
 
 		// Act
-		_ = git.ShallowClone(t.Context(), bare, "--upload-pack=touch "+marker, filepath.Join(t.TempDir(), "dest"))
+		_, _ = fetch(t, bare, "--upload-pack=touch "+marker)
 
 		// Assert
 		if _, err := os.Stat(marker); !os.IsNotExist(err) {
@@ -195,7 +456,7 @@ func TestShallowCloneUntrustedInput(t *testing.T) {
 		}
 	})
 
-	t.Run("when the remote asks for credentials, cloning fails instead of prompting", func(t *testing.T) {
+	t.Run("when the remote asks for credentials, resolving fails instead of prompting", func(t *testing.T) {
 		t.Parallel()
 		// Arrange
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -205,17 +466,17 @@ func TestShallowCloneUntrustedInput(t *testing.T) {
 		t.Cleanup(srv.Close)
 
 		// Act
-		err := git.ShallowClone(t.Context(), srv.URL+"/o/r.git", "", filepath.Join(t.TempDir(), "dest"))
+		_, err := fetch(t, srv.URL+"/o/r.git", "")
 
 		// Assert
 		if err == nil || !strings.Contains(err.Error(), "terminal prompts disabled") {
-			t.Errorf("ShallowClone() error = %v, want terminal prompts disabled", err)
+			t.Errorf("fetch error = %v, want terminal prompts disabled", err)
 		}
 	})
 }
 
-func TestShallowCloneIgnoresAskpass(t *testing.T) {
-	t.Run("when an askpass program is configured, cloning fails without running it", func(t *testing.T) {
+func TestFetchIgnoresAskpass(t *testing.T) {
+	t.Run("when an askpass program is configured, resolving fails without running it", func(t *testing.T) {
 		// Arrange
 		marker := filepath.Join(t.TempDir(), "asked")
 
@@ -233,11 +494,11 @@ func TestShallowCloneIgnoresAskpass(t *testing.T) {
 		t.Cleanup(srv.Close)
 
 		// Act
-		err := git.ShallowClone(t.Context(), srv.URL+"/o/r.git", "", filepath.Join(t.TempDir(), "dest"))
+		_, err := fetch(t, srv.URL+"/o/r.git", "")
 
 		// Assert
 		if err == nil {
-			t.Fatal("ShallowClone() succeeded against a remote that rejects every request")
+			t.Fatal("fetch succeeded against a remote that rejects every request")
 		}
 
 		if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {

@@ -1,6 +1,7 @@
 package skill_test
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/h3y6e/skolar/internal/lock"
@@ -8,6 +9,11 @@ import (
 )
 
 func TestParseSource(t *testing.T) {
+	relativeAbs, err := filepath.Abs("../spec-skills")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	tests := []struct {
 		name    string
 		raw     string
@@ -171,13 +177,13 @@ func TestParseSource(t *testing.T) {
 			},
 		},
 		{
-			name: "relative local path",
+			name: "relative local path, cloned from the working directory",
 			raw:  "../spec-skills#feature/install",
 			want: skill.SourceRef{
 				Raw:             "../spec-skills#feature/install",
 				SourceType:      "local",
 				CanonicalSource: "../spec-skills",
-				CloneURL:        "../spec-skills",
+				CloneURL:        relativeAbs,
 				Ref:             "feature/install",
 			},
 		},

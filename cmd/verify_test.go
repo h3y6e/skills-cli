@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/h3y6e/skolar/cmd"
+	"github.com/h3y6e/skolar/internal/git"
 	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
 	"github.com/h3y6e/skolar/internal/testutil"
@@ -247,14 +249,14 @@ func TestVerifySkillFilter(t *testing.T) {
 		addSkills(t, "-s", "alpha", "-d", dir, bareURL)
 
 		orig := cmd.NewUpstreamFuncs
-		cmd.NewUpstreamFuncs = func(ctx context.Context, prefix string) (skill.UpstreamFuncs, func()) {
-			fns, cleanup := orig(ctx, prefix)
-			fns.FetchRef = func(string, string) (string, error) {
+		cmd.NewUpstreamFuncs = func(ctx context.Context, c *git.Cache) skill.UpstreamFuncs {
+			fns := orig(ctx, c)
+			fns.FetchTree = func(string, string, string) (fs.FS, error) {
 				t.Error("verify fetched a skill that -s did not select")
-				return "", errors.New("unexpected fetch")
+				return nil, errors.New("unexpected fetch")
 			}
 
-			return fns, cleanup
+			return fns
 		}
 
 		t.Cleanup(func() { cmd.NewUpstreamFuncs = orig })

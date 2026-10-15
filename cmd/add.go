@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -25,7 +26,10 @@ func newAddCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "add <source>",
 		Short: "Add skills from a source repository (destructive when overwriting)",
-		Args:  usageArgs(cobra.ExactArgs(1)),
+		Long: `Add skills from a source repository (destructive when overwriting).
+
+Without --skill, installs the skills vercel-labs/skills or gh skill finds by default; --skill reaches any directory with a SKILL.md.`,
+		Args: usageArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAdd(cmd, args[0], opts)
 		},
@@ -33,7 +37,7 @@ func newAddCmd() *cobra.Command {
 
 	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Show the skills that would be installed without installing")
 	c.Flags().BoolVarP(&opts.yes, "yes", "y", false, "Overwrite existing skills without confirmation")
-	c.Flags().StringSliceVarP(&opts.skills, "skill", "s", nil, "Install only specified skills (repeatable)")
+	bindSkillFlag(c, &opts.skills, "Install only these skills")
 	bindDirFlag(c, &opts.dir)
 
 	return c
@@ -53,31 +57,20 @@ func runAdd(cmd *cobra.Command, source string, opts addOptions) error {
 		return err
 	}
 
-	// gh skill format resolves the ref like gh skill install: explicit ref,
-	// else latest release, else default branch.
-	cloneRef := ref.Ref
+	cache := git.NewCache()
+	defer func() { _ = cache.Close() }()
 
-	var resolved git.ResolvedRef
-	if tracked {
-		resolved, err = ResolveRef(ctx, ref.CloneURL, ref.Ref)
-		if err != nil {
-			return fmt.Errorf("resolve ref for %s: %w", ref.CanonicalSource, err)
-		}
+	show := status(cmd.ErrOrStderr())
+	show("fetching " + ref.CanonicalSource)
+	snap, err := fetchSource(ctx, cache, ref, tracked)
 
-		cloneRef = resolved.Full
-	}
+	show("")
 
-	tmpDir, err := os.MkdirTemp("", "skolar-add-*")
 	if err != nil {
-		return fmt.Errorf("create temp dir: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	if err := ShallowClone(ctx, ref.CloneURL, cloneRef, tmpDir); err != nil {
-		return fmt.Errorf("clone %s: %w", ref.CanonicalSource, err)
+		return err
 	}
 
-	discovered, err := skill.DiscoverSkills(tmpDir)
+	discovered, err := skill.DiscoverSkills(snap.FS)
 	if err != nil {
 		return fmt.Errorf("discover skills: %w", err)
 	}
@@ -100,10 +93,42 @@ func runAdd(cmd *cobra.Command, source string, opts addOptions) error {
 	}
 
 	if tracked {
-		return skill.InstallTrackedSkills(ctx, discovered, tmpDir, ref, resolved, layout)
+		return skill.InstallTrackedSkills(discovered, snap, ref, layout)
 	}
 
 	return skill.InstallSkills(discovered, ref, layout)
+}
+
+// fetchSource fetches ref.Ref, or else, in gh skill format, the latest
+// release, as gh skill install does, and the default branch otherwise.
+func fetchSource(ctx context.Context, cache *git.Cache, ref skill.SourceRef, tracked bool) (git.Snapshot, error) {
+	resolve := git.ResolveDefault
+	if tracked {
+		resolve = git.ResolveLatest
+	}
+
+	resolved, err := resolve(ctx, ref.CloneURL, ref.Ref)
+	if err != nil {
+		return git.Snapshot{}, fmt.Errorf("resolve ref for %s: %w", ref.CanonicalSource, err)
+	}
+
+	// The lockfile records the hash of files as vercel-labs/skills clones
+	// them; gh skill metadata records git trees, read as stored.
+	if !tracked {
+		fsys, err := cache.Checkout(ctx, ref.CloneURL, resolved)
+		if err != nil {
+			return git.Snapshot{}, fmt.Errorf("fetch %s: %w", ref.CanonicalSource, err)
+		}
+
+		return git.Snapshot{Ref: resolved, FS: fsys}, nil
+	}
+
+	snap, err := cache.Fetch(ctx, ref.CloneURL, resolved)
+	if err != nil {
+		return git.Snapshot{}, fmt.Errorf("fetch %s: %w", ref.CanonicalSource, err)
+	}
+
+	return snap, nil
 }
 
 func installsTracked(layout lock.Layout, ref skill.SourceRef) (bool, error) {

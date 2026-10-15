@@ -30,33 +30,19 @@ Or download a binary from [Releases](https://github.com/h3y6e/skolar/releases).
 ## Usage
 
 ```sh
-skolar add h3y6e/spec-skills                  # latest release, else default branch
-skolar add h3y6e/spec-skills#main             # pin a ref
-skolar add -s spec-plan h3y6e/spec-skills     # only some skills
-skolar add -d dot_agents/exact_skills ...     # other directory (default .agents/skills)
+skolar add h3y6e/spec-skills                 # latest release, else default branch
+skolar add h3y6e/spec-skills#main            # pin a ref
+skolar add -s 'spec-*' h3y6e/spec-skills     # only some skills
+skolar add -d dot_agents/exact_skills ...    # another directory (default .agents/skills)
 skolar list
-skolar update --dry-run                       # changes upstream, by source
-skolar update                                 # then confirm
-skolar verify                                 # files on disk match the record
+skolar update                                # review what changed upstream, then confirm
+skolar verify                                # check files on disk against the record
 skolar remove spec-plan
 ```
 
-- Without `-s`, `add` installs the skills vercel-labs/skills or `gh skill` finds by default; `-s` reaches any directory with a `SKILL.md`.
-- `add`, `update`, and `remove` take `--dry-run`, and confirm before overwriting or deleting; pass `-y` without a TTY.
-- `update` lists only changed skills: `M` changed, `R` moved (followed), `D` removed upstream (kept), `A` not installed, `!` unchecked.
-- `list --json` and `update --json` print `{"skills": [...]}` and `{"results": [...]}`, plus `"error": {"code", "message", "fix"}` on failure.
-- Any flag except `--help` and `--version` can be set as `SKOLAR_<FLAG>`, e.g. `SKOLAR_DIR`.
-- Exit status: 0 success, 1 failure (including a skill that could not be checked), 2 usage error or missing `-y`.
-
 ## Formats
 
-skolar records each skill in `gh skill` metadata in its `SKILL.md`, in any directory, so skills installed by either tool are managed by both. In a project with a `skills-lock.json`, `.agents/skills` keeps using the lockfile so vercel-labs/skills still works. Non-GitHub sources need the lockfile, so they can only be added to `.agents/skills`.
-
-In `gh skill` format:
-
-- Without `#ref`, `update` follows the highest non-prerelease semver tag.
-- With `#ref`, the skill is pinned and `update` skips it; re-add to move the pin.
-- Skills installed with `gh skill install --from-local` can be listed and removed, not updated.
+skolar records each skill in `gh skill` metadata in its `SKILL.md`, so `gh skill` manages it too. Beside a `skills-lock.json`, `.agents/skills` keeps using the lockfile, so vercel-labs/skills manages it too.
 
 ## License
 

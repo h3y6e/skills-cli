@@ -1,13 +1,11 @@
 package skill
 
 import (
-	"context"
-	"fmt"
+	"bytes"
 	"io/fs"
 	"os"
 	"path/filepath"
-
-	"github.com/h3y6e/skolar/internal/git"
+	"slices"
 )
 
 // Stat counts the lines added and deleted, and the files changed, by
@@ -19,71 +17,174 @@ type Stat struct {
 }
 
 // DiffStat counts what applying c changes in the installed skill at dir.
-func DiffStat(ctx context.Context, c UpdateCandidate, dir string) (Stat, error) {
-	tmp, err := os.MkdirTemp("", "skolar-diffstat-*")
-	if err != nil {
-		return Stat{}, fmt.Errorf("create temp dir: %w", err)
+// Lines are counted as git diff --minimal --numstat does; binary files add
+// none.
+func DiffStat(c UpdateCandidate, dir string) (Stat, error) {
+	s := vercelStyle
+	if c.Foreign {
+		s = ghStyle
 	}
-	defer os.RemoveAll(tmp)
 
-	want, got := c.StagedDir, filepath.Join(tmp, "installed")
-	if err := copyDir(dir, got, false); err != nil {
+	want, got, err := readBoth(c.Upstream, os.DirFS(dir), s)
+	if err != nil {
 		return Stat{}, err
 	}
 
 	if c.Foreign {
 		// The installed SKILL.md records the old source metadata; giving it the
-		// staged metadata leaves only content changes.
-		if err := reinjectMetadata(want, got); err != nil {
+		// new metadata leaves only content changes.
+		meta, err := ParseSourceMetadata(string(want["SKILL.md"]))
+		if err != nil {
 			return Stat{}, err
 		}
-	} else {
-		want = filepath.Join(tmp, "staged")
-		if err := copyDir(c.StagedDir, want, true); err != nil {
-			return Stat{}, err
+
+		if old, ok := got["SKILL.md"]; ok {
+			injected, err := InjectSourceMetadata(string(old), meta)
+			if err != nil {
+				return Stat{}, err
+			}
+
+			got["SKILL.md"] = []byte(injected)
 		}
 	}
 
-	added, deleted, err := git.NumStat(ctx, got, want)
-	if err != nil {
-		return Stat{}, err
+	changed := changedFiles(want, got)
+
+	var stat Stat
+
+	for _, p := range changed {
+		added, deleted := lineDiff(got[p], want[p])
+		stat.Added += added
+		stat.Deleted += deleted
 	}
 
-	files, err := diffDirs(want, got, false)
-	if err != nil {
-		return Stat{}, err
+	// Update replaces the whole directory, so installed links go too.
+	links, err := linkPaths(dir)
+	stat.Files = len(changed)
+
+	for _, l := range links {
+		if !slices.Contains(changed, l) {
+			stat.Files++
+		}
 	}
 
-	// Update replaces the whole directory, so links, which copies leave out,
-	// go too.
-	links, err := countLinks(dir)
-
-	return Stat{Added: added, Deleted: deleted, Files: len(files) + links}, err
+	return stat, err
 }
 
-func reinjectMetadata(staged, installed string) error {
-	data, err := os.ReadFile(filepath.Join(staged, "SKILL.md"))
-	if err != nil {
-		return err
-	}
+func linkPaths(dir string) ([]string, error) {
+	var links []string
 
-	meta, err := ParseSourceMetadata(string(data))
-	if err != nil {
-		return err
-	}
-
-	return injectStagedMetadata(installed, meta)
-}
-
-func countLinks(dir string) (int, error) {
-	n := 0
-	err := filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err == nil && d.Type()&fs.ModeSymlink != 0 {
-			n++
+			rel, _ := filepath.Rel(dir, p)
+			links = append(links, filepath.ToSlash(rel))
 		}
 
 		return err
 	})
 
-	return n, err
+	return links, err
+}
+
+// lineDiff counts the lines a minimal line diff from a to b adds and
+// deletes, or none when either is binary, as git judges by a NUL byte.
+func lineDiff(a, b []byte) (added, deleted int) {
+	if isBinary(a) || isBinary(b) {
+		return 0, 0
+	}
+
+	from, to := splitLines(a), splitLines(b)
+	common := lcsLength(internLines(from, to))
+
+	return len(to) - common, len(from) - common
+}
+
+func isBinary(data []byte) bool {
+	return bytes.IndexByte(data[:min(len(data), 8000)], 0) >= 0
+}
+
+func splitLines(data []byte) []string {
+	var lines []string
+
+	for len(data) > 0 {
+		i := bytes.IndexByte(data, '\n') + 1
+		if i == 0 {
+			i = len(data)
+		}
+
+		lines = append(lines, string(data[:i]))
+		data = data[i:]
+	}
+
+	return lines
+}
+
+// internLines numbers the lines of a and b, dropping those found on one side
+// only, which no common subsequence can contain.
+func internLines(a, b []string) (x, y []int) {
+	ids := map[string]int{}
+	sides := map[string]int{}
+
+	for _, l := range a {
+		sides[l] |= 1
+	}
+
+	for _, l := range b {
+		sides[l] |= 2
+	}
+
+	number := func(lines []string) []int {
+		var out []int
+
+		for _, l := range lines {
+			if sides[l] != 3 {
+				continue
+			}
+
+			id, ok := ids[l]
+			if !ok {
+				id = len(ids)
+				ids[l] = id
+			}
+
+			out = append(out, id)
+		}
+
+		return out
+	}
+
+	return number(a), number(b)
+}
+
+// lcsLength returns the length of a longest common subsequence of x and y,
+// with Myers' O((N+M)D) algorithm.
+func lcsLength(x, y []int) int {
+	n, m := len(x), len(y)
+	offset := n + m + 1
+	v := make([]int, 2*offset+1)
+
+	for d := 0; d <= n+m; d++ {
+		for k := -d; k <= d; k += 2 {
+			var i int
+			if k == -d || k != d && v[offset+k-1] < v[offset+k+1] {
+				i = v[offset+k+1]
+			} else {
+				i = v[offset+k-1] + 1
+			}
+
+			j := i - k
+			for i < n && j < m && x[i] == y[j] {
+				i++
+				j++
+			}
+
+			v[offset+k] = i
+
+			if i >= n && j >= m {
+				return (n + m - d) / 2
+			}
+		}
+	}
+
+	return 0
 }

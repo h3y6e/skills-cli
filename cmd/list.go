@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
+	"text/tabwriter"
 
 	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
@@ -12,11 +14,12 @@ import (
 )
 
 type listEntryJSON struct {
-	SkillName    string          `json:"skillName"`
-	Source       string          `json:"source"`
-	Ref          string          `json:"ref,omitempty"`
-	SourceType   lock.SourceType `json:"sourceType"`
-	ComputedHash string          `json:"computedHash"`
+	SkillName            string          `json:"skillName"`
+	Source               string          `json:"source"`
+	Ref                  string          `json:"ref,omitempty"`
+	SourceType           lock.SourceType `json:"sourceType"`
+	ComputedHash         string          `json:"computedHash"`
+	addArg, installedRef string
 }
 
 type listOptions struct {
@@ -64,6 +67,7 @@ func runList(cmd *cobra.Command, opts listOptions) (err error) {
 			Ref:          entry.Ref,
 			SourceType:   entry.SourceType,
 			ComputedHash: entry.ComputedHash,
+			addArg:       skill.SourceInput(entry),
 		})
 	}
 
@@ -74,6 +78,8 @@ func runList(cmd *cobra.Command, opts listOptions) (err error) {
 			Ref:          s.Meta.Ref,
 			SourceType:   foreignSourceType(s.Meta),
 			ComputedHash: s.Meta.TreeSHA,
+			addArg:       skill.FormatSourceInput(foreignSource(s.Meta), s.Meta.Pinned),
+			installedRef: shortRef(s.Meta.Ref),
 		})
 	}
 
@@ -90,11 +96,22 @@ func runList(cmd *cobra.Command, opts listOptions) (err error) {
 		return nil
 	}
 
-	for _, entry := range payload {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s\n", entry.SkillName, skill.FormatSourceInput(entry.Source, entry.Ref), shortHash(entry.ComputedHash))
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	for _, e := range payload {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", e.SkillName, e.addArg, e.installedRef, shortHash(e.ComputedHash))
 	}
 
-	return nil
+	return tw.Flush()
+}
+
+func shortRef(ref string) string {
+	for _, prefix := range []string{"refs/heads/", "refs/tags/"} {
+		if name, ok := strings.CutPrefix(ref, prefix); ok {
+			return name
+		}
+	}
+
+	return shortHash(ref)
 }
 
 func foreignSource(meta skill.SourceMetadata) string {

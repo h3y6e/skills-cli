@@ -11,10 +11,10 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/h3y6e/skolar/internal/git"
 	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 )
 
 type updateOptions struct {
@@ -37,7 +37,7 @@ Lists the changed skills of each source, then overwrites local changes after con
   M  changed upstream, with the lines and files update changes
   R  moved upstream; update follows it
   D  removed upstream; update keeps it, skolar remove deletes it
-  A  among the source's default skills but not installed; skolar add -s installs it
+  A  how many of the source's default skills are not installed; --json names them
   !  could not be checked
 Up-to-date, pinned, and local skills are counted at the end.`,
 		Annotations: map[string]string{recordKey: "results"},
@@ -52,7 +52,7 @@ Up-to-date, pinned, and local skills are counted at the end.`,
 		},
 	}
 
-	c.Flags().StringSliceVarP(&opts.skills, "skill", "s", nil, "Update only specified skills (repeatable)")
+	bindSkillFlag(c, &opts.skills, "Update only these skills")
 	bindDirFlag(c, &opts.dir)
 	c.Flags().BoolVarP(&opts.yes, "yes", "y", false, "Apply updates without confirmation")
 	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Show the changes without applying")
@@ -80,7 +80,7 @@ func runUpdate(cmd *cobra.Command, source string, opts updateOptions) (err error
 		return err
 	}
 
-	results = planUpdates(cmd.Context(), inv.layout, candidates)
+	results = planUpdates(inv.layout, candidates)
 	if !opts.json {
 		renderPlan(cmd.OutOrStdout(), results)
 		printHints(cmd.ErrOrStderr(), results, inv.layout.Dir)
@@ -127,8 +127,8 @@ func updateCandidates(cmd *cobra.Command, inv inventory, source string, skills [
 
 	if len(skills) > 0 {
 		entries = maps.Clone(entries)
-		maps.DeleteFunc(entries, func(name string, _ lock.Entry) bool { return !slices.Contains(skills, name) })
-		foreign = slices.DeleteFunc(slices.Clone(foreign), func(s skill.InstalledSkill) bool { return !slices.Contains(skills, s.Name) })
+		maps.DeleteFunc(entries, func(name string, _ lock.Entry) bool { return !skill.Selected(skills, name) })
+		foreign = slices.DeleteFunc(slices.Clone(foreign), func(s skill.InstalledSkill) bool { return !skill.Selected(skills, s.Name) })
 	}
 
 	stderr := cmd.ErrOrStderr()
@@ -153,40 +153,35 @@ func updateCandidates(cmd *cobra.Command, inv inventory, source string, skills [
 func collectCandidates(
 	ctx context.Context, stderr io.Writer, entries map[string]lock.Entry, foreign []skill.InstalledSkill,
 ) ([]skill.UpdateCandidate, []skill.SkippedEntry, func()) {
-	cloneFn, cloneCleanup := skill.NewCloneFunc(ctx, "skolar-update-*")
-	fns, upstreamCleanup := NewUpstreamFuncs(ctx, "skolar-update-foreign-*")
+	cache := git.NewCache()
+	candidates, skipped := skill.CollectUpdateCandidates(entries, foreign, skill.NewCloneFunc(ctx, cache), NewUpstreamFuncs(ctx, cache), progress(stderr))
 
-	candidates, skipped := skill.CollectUpdateCandidates(entries, foreign, cloneFn, fns, progress(stderr))
-
-	return candidates, skipped, func() { cloneCleanup(); upstreamCleanup() }
+	return candidates, skipped, func() { _ = cache.Close() }
 }
 
 // progress counts fetched sources on a terminal, erasing the count when done.
 func progress(w io.Writer) func(n, total int) {
-	f, ok := w.(*os.File)
-	if !ok || !term.IsTerminal(int(f.Fd())) || os.Getenv("TERM") == "dumb" {
-		return func(int, int) {}
-	}
+	show := status(w)
 
 	return func(n, total int) {
-		line := fmt.Sprintf("checking %d/%d sources", n, total)
 		if n == total {
-			line = strings.Repeat(" ", len(line))
+			show("")
+			return
 		}
 
-		fmt.Fprintf(w, "\r%s\r", line)
+		show(fmt.Sprintf("checking %d/%d sources", n, total))
 	}
 }
 
 // planUpdates describes each candidate, counting what applying it changes.
 // A candidate whose changes cannot be counted fails its check.
-func planUpdates(ctx context.Context, layout lock.Layout, candidates []skill.UpdateCandidate) []updateResult {
+func planUpdates(layout lock.Layout, candidates []skill.UpdateCandidate) []updateResult {
 	results := make([]updateResult, len(candidates))
 	for i, c := range candidates {
 		var diff *diffStat
 
 		if c.Applicable() {
-			stat, err := skill.DiffStat(ctx, c, layout.SkillDir(c.SkillName))
+			stat, err := skill.DiffStat(c, layout.SkillDir(c.SkillName))
 			if err != nil {
 				candidates[i].Status, candidates[i].Reason = skill.StatusCheckFailed, fmt.Sprintf("count changes: %v", err)
 			} else {
@@ -239,7 +234,7 @@ func applyUpdates(inv inventory, candidates []skill.UpdateCandidate, apply []int
 			continue
 		}
 
-		if err := skill.ReplaceSkill(c.SkillName, c.StagedDir, inv.layout); err != nil {
+		if err := skill.ReplaceSkill(c.SkillName, c.Upstream, inv.layout); err != nil {
 			return fmt.Errorf("update %s: %w", c.SkillName, err)
 		}
 
@@ -281,19 +276,19 @@ func renderPlan(w io.Writer, results []updateResult) {
 	for _, source := range slices.Sorted(maps.Keys(bySource)) {
 		fmt.Fprintln(tw, source)
 
-		var news []string
+		news := 0
 
 		for _, r := range bySource[source] {
 			if r.Status == skill.StatusNew {
-				news = append(news, r.SkillName)
+				news++
 				continue
 			}
 
 			fmt.Fprintf(tw, "  %s\t%s\t%s\n", statusMarks[r.Status], r.SkillName, describe(r))
 		}
 
-		if len(news) > 0 {
-			fmt.Fprintf(tw, "  A\t%d not installed: %s\n", len(news), strings.Join(news, ", "))
+		if news > 0 {
+			fmt.Fprintf(tw, "  A\t%d not installed\n", news)
 		}
 	}
 

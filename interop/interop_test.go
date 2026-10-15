@@ -65,6 +65,7 @@ func env(t *testing.T) []string {
 
 	return append(os.Environ(),
 		"HOME="+h, "XDG_CONFIG_HOME="+filepath.Join(h, ".config"), "XDG_STATE_HOME="+filepath.Join(h, ".local", "state"),
+		"XDG_CACHE_HOME="+filepath.Join(h, ".cache"),
 		"DO_NOT_TRACK=1", "DISABLE_TELEMETRY=1", "NO_COLOR=1")
 }
 
@@ -117,23 +118,44 @@ func ghInstall(t *testing.T, dir string, args ...string) {
 	run(t, filepath.Dir(dir), "gh", append([]string{"skill", "install", fixtureRepo, "--dir", dir}, args...)...)
 }
 
+// snapshot maps each file and directory under dir to its mode, and a file
+// to its content too, or a link to its target.
 func snapshot(t *testing.T, dir string) map[string]string {
 	t.Helper()
 
 	files := map[string]string{}
 
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+		if err != nil || path == dir {
 			return err
 		}
 
-		b, err := os.ReadFile(path)
+		info, err := d.Info()
 		if err != nil {
 			return err
 		}
 
 		rel, _ := filepath.Rel(dir, path)
-		files[filepath.ToSlash(rel)] = string(b)
+		entry := info.Mode().String()
+
+		switch {
+		case d.Type()&fs.ModeSymlink != 0:
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+
+			entry += " -> " + target
+		case !d.IsDir():
+			b, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+
+			entry += "\n" + string(b)
+		}
+
+		files[filepath.ToSlash(rel)] = entry
 
 		return nil
 	})
@@ -142,6 +164,12 @@ func snapshot(t *testing.T, dir string) map[string]string {
 	}
 
 	return files
+}
+
+// content returns the content of a file a snapshot records.
+func content(entry string) string {
+	_, data, _ := strings.Cut(entry, "\n")
+	return data
 }
 
 func skillNames(t *testing.T, dir string) []string {
@@ -325,11 +353,11 @@ func TestVercelFormat(t *testing.T) {
 		var wantLock, gotLock struct {
 			Skills map[string]json.RawMessage `json:"skills"`
 		}
-		if err := json.Unmarshal([]byte(want["skills-lock.json"]), &wantLock); err != nil {
+		if err := json.Unmarshal([]byte(content(want["skills-lock.json"])), &wantLock); err != nil {
 			t.Fatal(err)
 		}
 
-		if err := json.Unmarshal([]byte(installed["skills-lock.json"]), &gotLock); err != nil {
+		if err := json.Unmarshal([]byte(content(installed["skills-lock.json"])), &gotLock); err != nil {
 			t.Fatal(err)
 		}
 
@@ -412,7 +440,12 @@ func TestGhFormat(t *testing.T) {
 		before := snapshot(t, dest)
 		skillMD := filepath.Join(dest, "alpha", "SKILL.md")
 
-		if err := os.WriteFile(skillMD, []byte(strings.Replace(before["alpha/SKILL.md"], "github-path: skills/alpha", "github-path: moved/alpha", 1)), 0o644); err != nil {
+		data, err := os.ReadFile(skillMD)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.WriteFile(skillMD, []byte(strings.Replace(string(data), "github-path: skills/alpha", "github-path: moved/alpha", 1)), 0o644); err != nil {
 			t.Fatal(err)
 		}
 

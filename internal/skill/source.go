@@ -43,7 +43,10 @@ func ParseSource(raw string) (SourceRef, error) {
 
 func parseLocation(location string) (lock.SourceType, string, string, error) {
 	if looksLikeLocalPath(location) {
-		return lock.SourceLocal, filepath.Clean(location), filepath.Clean(location), nil
+		// git resolves a relative path from where it runs, which is the cache.
+		abs, err := filepath.Abs(location)
+
+		return lock.SourceLocal, filepath.Clean(location), abs, err
 	}
 
 	if shorthandPattern.MatchString(location) {

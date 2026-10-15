@@ -21,10 +21,10 @@ func TestDiffStat(t *testing.T) {
 			"upstream/SKILL.md":      "# A v2\n",
 			"upstream/metadata.json": "{}\n",
 		})
-		c := skill.UpdateCandidate{Status: skill.StatusUpdateAvailable, StagedDir: filepath.Join(dir, "upstream")}
+		c := skill.UpdateCandidate{Status: skill.StatusUpdateAvailable, Upstream: os.DirFS(filepath.Join(dir, "upstream"))}
 
 		// Act
-		got, err := skill.DiffStat(t.Context(), c, filepath.Join(dir, "installed"))
+		got, err := skill.DiffStat(c, filepath.Join(dir, "installed"))
 
 		// Assert
 		if err != nil || got != (skill.Stat{Added: 1, Deleted: 1, Files: 1}) {
@@ -52,10 +52,10 @@ func TestDiffStat(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		c := skill.UpdateCandidate{Status: skill.StatusUpdateAvailable, StagedDir: filepath.Join(dir, "upstream")}
+		c := skill.UpdateCandidate{Status: skill.StatusUpdateAvailable, Upstream: os.DirFS(filepath.Join(dir, "upstream"))}
 
 		// Act
-		got, err := skill.DiffStat(t.Context(), c, filepath.Join(dir, "installed"))
+		got, err := skill.DiffStat(c, filepath.Join(dir, "installed"))
 
 		// Assert
 		if err != nil || got != (skill.Stat{Files: 2}) {
@@ -72,14 +72,60 @@ func TestDiffStat(t *testing.T) {
 		meta.Ref, meta.TreeSHA = "refs/tags/v2.0.0", "new"
 		writeSkillWithMetadata(t, filepath.Join(dir, "staged"), "a", meta)
 		testutil.WriteFiles(t, dir, map[string]string{"staged/a/references/notes.md": "notes\n"})
-		c := skill.UpdateCandidate{Status: skill.StatusUpdateAvailable, StagedDir: filepath.Join(dir, "staged", "a"), Foreign: true}
+		c := skill.UpdateCandidate{Status: skill.StatusUpdateAvailable, Upstream: os.DirFS(filepath.Join(dir, "staged", "a")), Foreign: true}
 
 		// Act
-		got, err := skill.DiffStat(t.Context(), c, filepath.Join(dir, "installed", "a"))
+		got, err := skill.DiffStat(c, filepath.Join(dir, "installed", "a"))
 
 		// Assert
 		if err != nil || got != (skill.Stat{Added: 1, Files: 1}) {
 			t.Errorf("DiffStat() = %+v, %v, want +1 -0 in 1 file", got, err)
+		}
+	})
+
+	t.Run("when lines move, change at the end of file, or appear twice, lines count as git diff --numstat counts them", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		dir := t.TempDir()
+		testutil.WriteFiles(t, dir, map[string]string{
+			"installed/SKILL.md": "a\nb\nc\nd\n",
+			"installed/tail.md":  "x\ny",
+			"upstream/SKILL.md":  "b\nc\nd\na\nb\n",
+			"upstream/tail.md":   "x\ny\n",
+		})
+		c := skill.UpdateCandidate{Status: skill.StatusUpdateAvailable, Upstream: os.DirFS(filepath.Join(dir, "upstream"))}
+
+		// Act
+		got, err := skill.DiffStat(c, filepath.Join(dir, "installed"))
+
+		// Assert
+		if err != nil || got != (skill.Stat{Added: 3, Deleted: 2, Files: 2}) {
+			t.Errorf("DiffStat() = %+v, %v, want +3 -2 in 2 files", got, err)
+		}
+	})
+
+	t.Run("when an installed link gives way to an upstream file at its path, that path counts once", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		dir := t.TempDir()
+		testutil.WriteFiles(t, dir, map[string]string{
+			"installed/SKILL.md": "# A\n",
+			"upstream/SKILL.md":  "# A\n",
+			"upstream/link.md":   "# A\n",
+		})
+
+		if err := os.Symlink("SKILL.md", filepath.Join(dir, "installed", "link.md")); err != nil {
+			t.Fatal(err)
+		}
+
+		c := skill.UpdateCandidate{Status: skill.StatusUpdateAvailable, Upstream: os.DirFS(filepath.Join(dir, "upstream"))}
+
+		// Act
+		got, err := skill.DiffStat(c, filepath.Join(dir, "installed"))
+
+		// Assert
+		if err != nil || got.Files != 1 {
+			t.Errorf("DiffStat() = %+v, %v, want 1 file", got, err)
 		}
 	})
 }

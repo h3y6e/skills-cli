@@ -5,10 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
-	"sync"
 
 	"github.com/h3y6e/skolar/internal/git"
 	"github.com/h3y6e/skolar/internal/lock"
@@ -125,78 +125,52 @@ func FilterInstalledBySource(installed []InstalledSkill, source string) ([]Insta
 // UpstreamFuncs groups the git operations used to probe upstream
 // repositories. Replaceable in tests.
 type UpstreamFuncs struct {
-	// FetchLatest resolves the latest ref of repoURL (gh skill semantics:
-	// latest release, then default branch) and clones it into a new directory
-	// whose parent is free for staging, returning the clone path and the
-	// resolved ref.
-	FetchLatest func(repoURL string) (cloneDir string, ref git.ResolvedRef, err error)
-	// FetchRef clones repoURL at ref into a new directory whose parent is
-	// free for staging.
-	FetchRef func(repoURL, ref string) (cloneDir string, err error)
-	// TreeSHA returns the git tree SHA of path within a repository directory.
-	TreeSHA func(repoDir, path string) (string, error)
+	// FetchLatest fetches the latest ref of repoURL (gh skill semantics:
+	// latest release, then default branch).
+	FetchLatest func(repoURL string) (git.Snapshot, error)
+	// FetchTree reads the tree treeSHA of repoURL, fetching ref when the
+	// tree is not cached.
+	FetchTree func(repoURL, ref, treeSHA string) (fs.FS, error)
 }
 
-// NewUpstreamFuncs returns the production UpstreamFuncs along with a cleanup
-// function removing all cloned temp directories.
-func NewUpstreamFuncs(ctx context.Context, tmpPrefix string) (UpstreamFuncs, func()) {
-	var (
-		dirs []string
-		mu   sync.Mutex
-	)
+// NewUpstreamFuncs returns the production UpstreamFuncs, fetching through c.
+func NewUpstreamFuncs(ctx context.Context, c *git.Cache) UpstreamFuncs {
+	var prefetched onceMap[[2]string, struct{}]
 
-	tempDir := func() (string, error) {
-		dir, err := os.MkdirTemp("", tmpPrefix)
-		if err != nil {
-			return "", fmt.Errorf("create temp dir: %w", err)
-		}
-
-		mu.Lock()
-		defer mu.Unlock()
-
-		dirs = append(dirs, dir)
-
-		return dir, nil
-	}
-
-	fns := UpstreamFuncs{
-		FetchLatest: func(repoURL string) (string, git.ResolvedRef, error) {
-			resolved, err := git.ResolveRef(ctx, repoURL, "")
+	return UpstreamFuncs{
+		FetchLatest: func(repoURL string) (git.Snapshot, error) {
+			resolved, err := git.ResolveLatest(ctx, repoURL, "")
 			if err != nil {
-				return "", git.ResolvedRef{}, err
+				return git.Snapshot{}, err
 			}
 
-			tmpDir, err := tempDir()
-			if err != nil {
-				return "", git.ResolvedRef{}, err
+			return c.Fetch(ctx, repoURL, resolved)
+		},
+		FetchTree: func(repoURL, ref, treeSHA string) (fs.FS, error) {
+			tree, err := c.ReadTree(ctx, repoURL, treeSHA)
+			if !errors.Is(err, git.ErrNotCached) {
+				return tree, err
 			}
 
-			cloneDir := filepath.Join(tmpDir, "repo")
+			if err := prefetched.doErr([2]string{repoURL, ref}, func() error {
+				resolved, err := git.ResolveDefault(ctx, repoURL, ref)
+				if err != nil {
+					return err
+				}
 
-			return cloneDir, resolved, git.ShallowClone(ctx, repoURL, resolved.Full, cloneDir)
-		},
-		FetchRef: func(repoURL, ref string) (string, error) {
-			tmpDir, err := tempDir()
-			if err != nil {
-				return "", err
+				return c.Prefetch(ctx, repoURL, resolved)
+			}); err != nil {
+				return nil, fmt.Errorf("fetch %s: %w", ref, err)
 			}
 
-			cloneDir := filepath.Join(tmpDir, "repo")
+			tree, err = c.ReadTree(ctx, repoURL, treeSHA)
+			if errors.Is(err, git.ErrNotCached) {
+				return nil, fmt.Errorf("%s no longer holds tree %s", ref, treeSHA)
+			}
 
-			return cloneDir, git.ShallowClone(ctx, repoURL, ref, cloneDir)
-		},
-		TreeSHA: func(repoDir, path string) (string, error) {
-			return git.TreeSHA(ctx, repoDir, path)
+			return tree, err
 		},
 	}
-
-	cleanup := func() {
-		for _, d := range dirs {
-			os.RemoveAll(d)
-		}
-	}
-
-	return fns, cleanup
 }
 
 // partitionInstalled reports pinned, local and unlocatable gh skill installs
@@ -245,7 +219,7 @@ func failedCandidate(s InstalledSkill, reason string) UpdateCandidate {
 func resolveRepoCandidates(group []InstalledSkill, fns UpstreamFuncs) []UpdateCandidate {
 	repoURL := group[0].Meta.RepoURL
 
-	cloneDir, resolved, upstream, err := fetchRepo(repoURL, fns)
+	snap, upstream, err := fetchRepo(repoURL, fns)
 	if err != nil {
 		candidates := make([]UpdateCandidate, 0, len(group))
 		for _, s := range group {
@@ -258,16 +232,16 @@ func resolveRepoCandidates(group []InstalledSkill, fns UpstreamFuncs) []UpdateCa
 	candidates := make([]UpdateCandidate, 0, len(group))
 	for _, s := range group {
 		candidate := trackedCandidate(s)
-		candidate.Ref = resolved.Full
+		candidate.Ref = snap.Ref.Full
 
-		up, err := resolveTrackedUpstream(s, cloneDir, upstream)
+		up, err := resolveTrackedUpstream(s, snap.FS, upstream)
 		switch {
 		case errors.Is(err, errRemoved):
 			candidate.Status, candidate.PreviousPath = StatusRemoved, s.Meta.Path
 		case err != nil:
 			candidate.Status, candidate.Reason = StatusCheckFailed, err.Error()
 		default:
-			candidate = resolveTracked(candidate, s, up, cloneDir, resolved, fns)
+			candidate = resolveTracked(candidate, s, up, snap)
 		}
 
 		candidates = append(candidates, candidate)
@@ -279,57 +253,55 @@ func resolveRepoCandidates(group []InstalledSkill, fns UpstreamFuncs) []UpdateCa
 }
 
 // resolveTrackedUpstream finds the upstream skill at github-path even when
-// discovery skips it, so that it fails on its own content rather than
-// passing for removed.
-func resolveTrackedUpstream(s InstalledSkill, cloneDir string, upstream []DiscoveredSkill) (DiscoveredSkill, error) {
-	if hasSkillMD(cloneDir, s.Meta.Path) {
-		return DiscoveredSkill{Name: s.Name, Dir: filepath.Join(cloneDir, filepath.FromSlash(s.Meta.Path)), Path: s.Meta.Path}, nil
+// discovery skips it or it is not a directory, so that it fails on its own
+// content rather than passing for removed.
+func resolveTrackedUpstream(s InstalledSkill, repo fs.FS, upstream []DiscoveredSkill) (DiscoveredSkill, error) {
+	if mode, ok := lstat(repo, s.Meta.Path); ok && fs.ValidPath(s.Meta.Path) && (!mode.IsDir() || hasSkillMD(repo, s.Meta.Path)) {
+		return DiscoveredSkill{Name: s.Name, Path: s.Meta.Path, FS: subFS(repo, s.Meta.Path)}, nil
 	}
 
 	return resolveUpstream(s.Name, s.Meta.Path, upstream)
 }
 
-func fetchRepo(repoURL string, fns UpstreamFuncs) (string, git.ResolvedRef, []DiscoveredSkill, error) {
+func fetchRepo(repoURL string, fns UpstreamFuncs) (git.Snapshot, []DiscoveredSkill, error) {
 	source, err := OwnerRepoFromURL(repoURL)
 	if err != nil {
-		return "", git.ResolvedRef{}, nil, err
+		return git.Snapshot{}, nil, err
 	}
 
-	cloneDir, resolved, err := fns.FetchLatest(repoURL)
+	snap, err := fns.FetchLatest(repoURL)
 	if err != nil {
-		return "", git.ResolvedRef{}, nil, fmt.Errorf("fetch %s: %w", source, err)
+		return git.Snapshot{}, nil, fmt.Errorf("fetch %s: %w", source, err)
 	}
 
-	upstream, err := DiscoverSkills(cloneDir)
+	upstream, err := DiscoverSkills(snap.FS)
 	if err != nil {
-		return "", git.ResolvedRef{}, nil, fmt.Errorf("discover skills in %s: %w", source, err)
+		return git.Snapshot{}, nil, fmt.Errorf("discover skills in %s: %w", source, err)
 	}
 
-	return cloneDir, resolved, upstream, nil
+	return snap, upstream, nil
 }
 
 // resolveTracked compares an installed skill with the upstream skill it
 // resolved to, staging the upstream skill with fresh metadata when update
 // would replace it.
-func resolveTracked(
-	candidate UpdateCandidate, s InstalledSkill, up DiscoveredSkill, cloneDir string, resolved git.ResolvedRef, fns UpstreamFuncs,
-) UpdateCandidate {
-	treeSHA, err := fns.TreeSHA(cloneDir, up.Path)
+func resolveTracked(candidate UpdateCandidate, s InstalledSkill, up DiscoveredSkill, snap git.Snapshot) UpdateCandidate {
+	treeSHA, err := snap.TreeSHA(up.Path)
 	if err != nil {
 		candidate.Status, candidate.Reason = StatusCheckFailed, err.Error()
 		return candidate
 	}
 
-	candidate.Path, candidate.LatestHash, candidate.StagedDir = up.Path, treeSHA, up.Dir
+	candidate.Path, candidate.LatestHash = up.Path, treeSHA
 	candidate.Status, candidate.PreviousPath = changeStatus(s.Meta.Path, up.Path, treeSHA != s.Meta.TreeSHA)
 
 	if !candidate.Applicable() {
 		return candidate
 	}
 
-	candidate.StagedDir, err = stageWithMetadata(cloneDir, up.Dir, SourceMetadata{
+	candidate.Upstream, err = withMetadata(up.FS, SourceMetadata{
 		RepoURL: s.Meta.RepoURL,
-		Ref:     resolved.Full,
+		Ref:     snap.Ref.Full,
 		TreeSHA: treeSHA,
 		Path:    up.Path,
 	})
@@ -351,46 +323,4 @@ func pinnedCandidate(s InstalledSkill) UpdateCandidate {
 		Reason:    s.Meta.Pinned,
 		Foreign:   true,
 	}
-}
-
-func stageWithMetadata(cloneDir, srcDir string, meta SourceMetadata) (string, error) {
-	stagedDir, err := copyToStaging(cloneDir, srcDir)
-	if err != nil {
-		return "", fmt.Errorf("stage: %w", err)
-	}
-
-	if err := injectStagedMetadata(stagedDir, meta); err != nil {
-		return "", fmt.Errorf("stage metadata: %w", err)
-	}
-
-	return stagedDir, nil
-}
-
-// injectStagedMetadata merges gh source metadata into the staged SKILL.md so
-// the installed result stays updatable by gh skill.
-func injectStagedMetadata(stagedDir string, meta SourceMetadata) error {
-	path := filepath.Join(stagedDir, "SKILL.md")
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-
-	injected, err := InjectSourceMetadata(string(data), meta)
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(path, []byte(injected), 0o644)
-}
-
-// copyToStaging copies srcDir, a directory within cloneDir, beside the clone
-// so that no staged copy ends up inside another skill's tree.
-func copyToStaging(cloneDir, srcDir string) (string, error) {
-	dir, err := os.MkdirTemp(filepath.Dir(cloneDir), "staged-*")
-	if err != nil {
-		return "", err
-	}
-
-	return dir, copyDir(srcDir, dir, false)
 }

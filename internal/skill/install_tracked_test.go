@@ -2,6 +2,7 @@ package skill_test
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,15 +23,75 @@ func initGitRepo(t *testing.T, files map[string]string) string {
 	return dir
 }
 
-func installTracked(t *testing.T, repoRoot string, ref skill.SourceRef, resolved git.ResolvedRef, skillsDir string) []skill.DiscoveredSkill {
+func TestMain(m *testing.M) { testutil.Main(m) }
+
+// checkoutRepo fetches the default branch of the repository at dir.
+func checkoutRepo(t *testing.T, dir string) git.Snapshot {
 	t.Helper()
 
-	discovered, err := skill.DiscoverSkills(repoRoot)
+	ref, err := git.ResolveDefault(t.Context(), dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	snap, err := newCache(t).Fetch(t.Context(), dir, ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return snap
+}
+
+func newCache(t *testing.T) *git.Cache {
+	t.Helper()
+
+	c := git.NewCache()
+
+	t.Cleanup(func() { _ = c.Close() })
+
+	return c
+}
+
+// snapshotOf presents dir, read without following links out of it, as
+// refs/tags/v2.0.0 whose every directory has the tree SHA tree, unless
+// trees names another.
+func snapshotOf(t *testing.T, dir, tree string, trees map[string]string) git.Snapshot {
+	t.Helper()
+
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = root.Close() })
+
+	treeSHA := func(path string) (string, error) {
+		if sha, ok := trees[path]; ok {
+			return sha, nil
+		}
+
+		if _, err := fs.Stat(root.FS(), path); err != nil {
+			return "", err
+		}
+
+		return tree, nil
+	}
+
+	return git.Snapshot{FS: root.FS(), Ref: git.ResolvedRef{Full: "refs/tags/v2.0.0"}, TreeSHA: treeSHA}
+}
+
+func installTracked(t *testing.T, repo string, ref skill.SourceRef, resolved git.ResolvedRef, skillsDir string) []skill.DiscoveredSkill {
+	t.Helper()
+
+	snap := checkoutRepo(t, repo)
+	snap.Ref = resolved
+
+	discovered, err := skill.DiscoverSkills(snap.FS)
 	if err != nil {
 		t.Fatalf("DiscoverSkills() error = %v", err)
 	}
 
-	if err := skill.InstallTrackedSkills(t.Context(), discovered, repoRoot, ref, resolved, lock.NewLayout(skillsDir)); err != nil {
+	if err := skill.InstallTrackedSkills(discovered, snap, ref, lock.NewLayout(skillsDir)); err != nil {
 		t.Fatalf("InstallTrackedSkills() error = %v", err)
 	}
 
@@ -134,13 +195,13 @@ func TestInstallTrackedSkills(t *testing.T) {
 		ref := skill.SourceRef{SourceType: "gitlab", CanonicalSource: "h3y6e/agent-skills"}
 		resolved := git.ResolvedRef{Full: "refs/heads/main"}
 
-		discovered, err := skill.DiscoverSkills(repoRoot)
+		discovered, err := skill.DiscoverSkills(os.DirFS(repoRoot))
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
 
 		// Act
-		err = skill.InstallTrackedSkills(t.Context(), discovered, repoRoot, ref, resolved, lock.NewLayout(skillsDir))
+		err = skill.InstallTrackedSkills(discovered, git.Snapshot{FS: os.DirFS(repoRoot), Ref: resolved, TreeSHA: func(string) (string, error) { return "", nil }}, ref, lock.NewLayout(skillsDir))
 
 		// Assert
 		if err == nil {
@@ -181,10 +242,42 @@ func TestInstallTrackedSkills(t *testing.T) {
 func gitTreeSHA(t *testing.T, repoDir, path string) string {
 	t.Helper()
 
-	sha, err := git.TreeSHA(t.Context(), repoDir, path)
-	if err != nil {
-		t.Fatalf("TreeSHA() error = %v", err)
-	}
+	return strings.TrimSpace(testutil.Git(t, repoDir, "rev-parse", "HEAD:"+path))
+}
 
-	return sha
+func TestInstallTrackedSkillsLayout(t *testing.T) {
+	t.Parallel()
+
+	t.Run("when a skill holds an executable and a link, the install writes both 0644 and the link as a file holding its target, as gh skill does", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		repo := initGitRepo(t, map[string]string{"skills/s/SKILL.md": "# S\n", "skills/s/run.sh": "echo\n"})
+		if err := os.Chmod(filepath.Join(repo, "skills", "s", "run.sh"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.Symlink("SKILL.md", filepath.Join(repo, "skills", "s", "link.md")); err != nil {
+			t.Fatal(err)
+		}
+
+		testutil.Commit(t, repo, "add", nil)
+
+		skillsDir := filepath.Join(t.TempDir(), "skills")
+
+		// Act
+		installTracked(t, repo, skill.SourceRef{CanonicalSource: "o/r", SourceType: "github"}, git.ResolvedRef{Full: "refs/heads/main"}, skillsDir)
+
+		// Assert
+		for name, want := range map[string]string{"run.sh": "echo\n", "link.md": "SKILL.md"} {
+			info, err := os.Lstat(filepath.Join(skillsDir, "s", name))
+			if err != nil || info.Mode() != 0o644 {
+				t.Errorf("%s mode = %v, %v, want -rw-r--r--", name, info, err)
+				continue
+			}
+
+			if data, _ := os.ReadFile(filepath.Join(skillsDir, "s", name)); string(data) != want {
+				t.Errorf("%s = %q, want %q", name, data, want)
+			}
+		}
+	})
 }

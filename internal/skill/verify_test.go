@@ -1,7 +1,7 @@
 package skill_test
 
 import (
-	"os/exec"
+	"io/fs"
 	"path/filepath"
 	"testing"
 
@@ -29,17 +29,9 @@ func TestVerifyTrackedRootSkill(t *testing.T) {
 		}
 
 		fns := skill.UpstreamFuncs{
-			FetchRef: func(string, string) (string, error) {
-				clone := filepath.Join(t.TempDir(), "clone")
-
-				out, err := exec.CommandContext(t.Context(), "git", "clone", "-q", repo, clone).CombinedOutput()
-				if err != nil {
-					t.Fatalf("git clone: %v\n%s", err, out)
-				}
-
-				return clone, nil
+			FetchTree: func(_, _, tree string) (fs.FS, error) {
+				return newCache(t).ReadTree(t.Context(), repo, tree)
 			},
-			TreeSHA: func(dir, path string) (string, error) { return git.TreeSHA(t.Context(), dir, path) },
 		}
 
 		// Act

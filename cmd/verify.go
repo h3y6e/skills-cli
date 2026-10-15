@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/h3y6e/skolar/internal/git"
 	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
 	"github.com/spf13/cobra"
@@ -37,7 +38,7 @@ Exits 1 when a skill is modified or cannot be verified.`,
 		},
 	}
 
-	c.Flags().StringSliceVarP(&opts.skills, "skill", "s", nil, "Verify only specified skills (repeatable)")
+	bindSkillFlag(c, &opts.skills, "Verify only these skills")
 	bindDirFlag(c, &opts.dir)
 	c.Flags().BoolVar(&opts.json, "json", false, "Output results in JSON format")
 
@@ -64,16 +65,15 @@ func runVerify(cmd *cobra.Command, opts verifyOptions) (err error) {
 	}
 
 	if skillFilter := opts.skills; len(skillFilter) > 0 {
-		maps.DeleteFunc(entries, func(name string, _ lock.Entry) bool { return !slices.Contains(skillFilter, name) })
-		foreign = slices.DeleteFunc(foreign, func(s skill.InstalledSkill) bool { return !slices.Contains(skillFilter, s.Name) })
-		unrecorded = slices.DeleteFunc(unrecorded, func(r skill.VerifyResult) bool { return !slices.Contains(skillFilter, r.SkillName) })
+		maps.DeleteFunc(entries, func(name string, _ lock.Entry) bool { return !skill.Selected(skillFilter, name) })
+		foreign = slices.DeleteFunc(foreign, func(s skill.InstalledSkill) bool { return !skill.Selected(skillFilter, s.Name) })
+		unrecorded = slices.DeleteFunc(unrecorded, func(r skill.VerifyResult) bool { return !skill.Selected(skillFilter, r.SkillName) })
 	}
 
-	fns, cleanup := NewUpstreamFuncs(cmd.Context(), "skolar-verify-*")
-	defer cleanup()
+	cache := git.NewCache()
+	defer func() { _ = cache.Close() }()
 
-	cloneFn, cloneCleanup := skill.NewCloneFunc(cmd.Context(), "skolar-verify-lock-*")
-	defer cloneCleanup()
+	fns, cloneFn := NewUpstreamFuncs(cmd.Context(), cache), skill.NewCloneFunc(cmd.Context(), cache)
 
 	all := slices.Concat(skill.VerifyLocked(layout, entries, cloneFn), skill.VerifyTracked(foreign, fns), unrecorded)
 	slices.SortFunc(all, func(a, b skill.VerifyResult) int { return cmp.Compare(a.SkillName, b.SkillName) })

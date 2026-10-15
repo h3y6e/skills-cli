@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/signal"
 	"runtime/debug"
@@ -13,7 +14,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/h3y6e/skolar/internal/git"
 	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
 	cobra_usage "github.com/jdx/usage/integrations/cobra"
@@ -21,12 +21,8 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// Git operations as variables, replaceable for testing (same pattern as IsTTY).
-var (
-	ShallowClone     = git.ShallowClone
-	ResolveRef       = git.ResolveRef
-	NewUpstreamFuncs = skill.NewUpstreamFuncs
-)
+// NewUpstreamFuncs is replaceable for testing (same pattern as IsTTY).
+var NewUpstreamFuncs = skill.NewUpstreamFuncs
 
 // NewRootCmd builds the skolar command tree.
 func NewRootCmd(version string) *cobra.Command {
@@ -36,6 +32,8 @@ func NewRootCmd(version string) *cobra.Command {
 		Long: `Manage local agent skills.
 
 Every flag except --help and --version can also be set with a SKOLAR_<FLAG> environment variable, e.g. SKOLAR_DIR.
+
+Fetched repositories are cached in $XDG_CACHE_HOME/skolar, or else the user cache directory: ~/Library/Caches/skolar on macOS, %LocalAppData%\skolar on Windows, ~/.cache/skolar elsewhere.
 
 Exit status: 0 on success, 1 on failure (including a skill that could not be checked), 2 on usage errors or a missing --yes.`,
 		Version:       resolveVersion(version),
@@ -186,6 +184,17 @@ func printSkippedEntries(w io.Writer, skipped []skill.SkippedEntry) {
 	}
 }
 
+func bindSkillFlag(c *cobra.Command, target *[]string, usage string) {
+	c.Flags().StringSliceVarP(target, "skill", "s", nil, usage+"; globs like 'gke-*' match names (repeatable)")
+	c.PreRunE = func(c *cobra.Command, _ []string) error {
+		if err := skill.CheckPatterns(*target); err != nil {
+			return usageError(c, err)
+		}
+
+		return nil
+	}
+}
+
 func bindDirFlag(c *cobra.Command, target *string) {
 	c.Flags().StringVarP(target, "dir", "d", lock.DefaultDir, "Skill directory; .agents/skills beside a skills-lock.json uses the lockfile, others SKILL.md metadata")
 }
@@ -218,6 +227,17 @@ func loadInventory(dir string) (inventory, error) {
 func (inv inventory) locked(name string) bool {
 	_, ok := inv.entries[name]
 	return ok
+}
+
+func (inv inventory) names() []string {
+	names := slices.Collect(maps.Keys(inv.entries))
+	for _, s := range inv.foreign {
+		names = append(names, s.Name)
+	}
+
+	slices.Sort(names)
+
+	return slices.Compact(names)
 }
 
 func (inv inventory) recorded(name string) bool {

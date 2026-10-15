@@ -55,6 +55,20 @@ func approve(cmd *cobra.Command, yes bool, question string) error {
 	}
 }
 
+func status(w io.Writer) func(string) {
+	f, ok := w.(*os.File)
+	if !ok || !term.IsTerminal(int(f.Fd())) || os.Getenv("TERM") == "dumb" {
+		return func(string) {}
+	}
+
+	shown := 0
+
+	return func(line string) {
+		fmt.Fprintf(w, "\r%s\r%s", strings.Repeat(" ", shown), line)
+		shown = len(line)
+	}
+}
+
 // writeRecord writes the --json result record, with err as its error field, and returns err.
 func writeRecord(w io.Writer, key string, value any, err error) error {
 	rec := map[string]any{key: value}

@@ -420,3 +420,42 @@ func writeTrackedSkill(t *testing.T, skillsDir, name string) {
 		t.Fatal(err)
 	}
 }
+
+func TestRemoveGlob(t *testing.T) {
+	t.Parallel()
+
+	t.Run("when a glob matches installed skills, remove deletes exactly those", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		bareURL := testutil.BareRepo(t, map[string]string{
+			"skills/gke-cost/SKILL.md":  "# Cost\n",
+			"skills/gke-scale/SKILL.md": "# Scale\n",
+			"skills/gcs/SKILL.md":       "# GCS\n",
+		})
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		addSkills(t, "-d", skillsDir, bareURL)
+
+		// Act
+		out, err := runSkills(t, "remove", "-y", "-d", skillsDir, "gke-*")
+		// Assert
+		if err != nil {
+			t.Fatalf("remove error: %v\n%s", err, out)
+		}
+
+		entries, _ := os.ReadDir(skillsDir)
+		if len(entries) != 1 || entries[0].Name() != "gcs" {
+			t.Errorf("left %v, want only gcs", entries)
+		}
+	})
+
+	t.Run("when a pattern is malformed, remove fails as a usage error", func(t *testing.T) {
+		t.Parallel()
+		// Act
+		_, err := runSkills(t, "remove", "-y", "-d", t.TempDir(), "gke-[")
+
+		// Assert
+		if !strings.Contains(err.Error(), "syntax error in pattern") {
+			t.Errorf("remove error = %v, want a pattern syntax error", err)
+		}
+	})
+}

@@ -18,13 +18,7 @@ func TestMain(m *testing.M) {
 		os.Exit(cmd.Execute("test"))
 	}
 
-	for _, name := range []string{"GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM"} {
-		if err := os.Setenv(name, "/dev/null"); err != nil {
-			panic(err)
-		}
-	}
-
-	os.Exit(m.Run())
+	testutil.Main(m)
 }
 
 func initBareRepoWithRefs(t *testing.T) string {
