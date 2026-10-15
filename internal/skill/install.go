@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 
@@ -133,7 +134,7 @@ func ApplyCandidateUpdates(lf lock.File, candidates []UpdateCandidate, layout lo
 
 		entry := lf.Skills[c.SkillName]
 		entry.ComputedHash = c.LatestHash
-		entry.SkillPath = c.SkillPath
+		entry.SkillPath = path.Join(c.Path, "SKILL.md")
 		lf.Skills[c.SkillName] = entry
 	}
 

@@ -126,7 +126,7 @@ func TestUsageErrorRecord(t *testing.T) {
 		key  string
 	}{
 		{"when --json precedes an unknown flag, listing prints an error record", nil, []string{"list", "--json", "--nope"}, "skills"},
-		{"when SKOLAR_JSON is set and an argument is extra, checking prints an error record", []string{"SKOLAR_JSON=true"}, []string{"check", "extra"}, "results"},
+		{"when SKOLAR_JSON is set and an argument is extra, updating prints an error record", []string{"SKOLAR_JSON=true"}, []string{"update", "a", "b"}, "results"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -159,7 +159,7 @@ func TestFlagsFromEnv(t *testing.T) {
 	skillsDir := filepath.Join(t.TempDir(), "skills")
 
 	// Act
-	stdout, stderr, code := runMain(t, []string{"SKOLAR_DIR=" + skillsDir, "SKOLAR_JSON=true"}, "check")
+	stdout, stderr, code := runMain(t, []string{"SKOLAR_DIR=" + skillsDir, "SKOLAR_JSON=true"}, "update")
 
 	// Assert
 	if code != 0 {
@@ -187,7 +187,6 @@ func TestNewRootCmdRegistersCoreCommands(t *testing.T) {
 		alias string
 	}{
 		{name: "add"},
-		{name: "check"},
 		{name: "update"},
 		{name: "list", alias: "ls"},
 		{name: "remove", alias: "rm"},

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/h3y6e/skolar/internal/git"
@@ -130,7 +131,29 @@ func TestScanInstalledSkills(t *testing.T) {
 	})
 }
 
-func TestAggregateForeignUpdateCandidates(t *testing.T) {
+func collectTracked(installed []skill.InstalledSkill, fns skill.UpstreamFuncs) []skill.UpdateCandidate {
+	candidates, _ := skill.CollectUpdateCandidates(nil, installed, nil, fns, func(int, int) {})
+
+	return candidates
+}
+
+func readMeta(t *testing.T, dir string) skill.SourceMetadata {
+	t.Helper()
+
+	data, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	meta, err := skill.ParseSourceMetadata(string(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return meta
+}
+
+func TestCollectTrackedUpdateCandidates(t *testing.T) {
 	t.Parallel()
 
 	installed := func(name, repoURL, treeSHA, path string) skill.InstalledSkill {
@@ -141,14 +164,14 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 	}
 
-	fakeFetch := func(t *testing.T, calls *int, ref string) func(string) (string, git.ResolvedRef, error) {
+	fakeFetch := func(t *testing.T, files map[string]string) func(string) (string, git.ResolvedRef, error) {
 		t.Helper()
 
 		return func(_ string) (string, git.ResolvedRef, error) {
-			*calls++
 			dir := t.TempDir()
+			testutil.WriteFiles(t, dir, files)
 
-			return dir, git.ResolvedRef{Full: ref}, nil
+			return dir, git.ResolvedRef{Full: "refs/tags/v2.0.0"}, nil
 		}
 	}
 
@@ -177,7 +200,7 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 
 		// Act
-		candidates := skill.AggregateForeignUpdateCandidates(skills, fns)
+		candidates := collectTracked(skills, fns)
 
 		// Assert
 		if len(candidates) != 1 || candidates[0].Status != skill.StatusCheckFailed {
@@ -190,14 +213,13 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 
 		// Arrange
 		skills := []skill.InstalledSkill{installed("foo", "https://github.com/o/r", "tree-1", "skills/foo")}
-		fetches := 0
 		fns := skill.UpstreamFuncs{
-			FetchLatest: fakeFetch(t, &fetches, "refs/tags/v2.0.0"),
+			FetchLatest: fakeFetch(t, map[string]string{"skills/foo/SKILL.md": "# Foo\n"}),
 			TreeSHA:     func(_, _ string) (string, error) { return "tree-1", nil },
 		}
 
 		// Act
-		candidates := skill.AggregateForeignUpdateCandidates(skills, fns)
+		candidates := collectTracked(skills, fns)
 
 		// Assert
 		if len(candidates) != 1 {
@@ -238,7 +260,7 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 
 		// Act
-		candidates := skill.AggregateForeignUpdateCandidates(skills, fns)
+		candidates := collectTracked(skills, fns)
 
 		// Assert
 		if len(candidates) != 1 {
@@ -304,7 +326,7 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 
 		// Act
-		_ = skill.AggregateForeignUpdateCandidates(skills, fns)
+		_ = collectTracked(skills, fns)
 
 		// Assert
 		data, readErr := os.ReadFile(outside)
@@ -317,23 +339,54 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 	})
 
-	t.Run("when the skill path is missing upstream, the candidate is check-failed", func(t *testing.T) {
+	t.Run("when no upstream skill has the path or name, the candidate was removed upstream", func(t *testing.T) {
 		t.Parallel()
 
 		// Arrange
 		skills := []skill.InstalledSkill{installed("foo", "https://github.com/o/r", "tree-1", "skills/foo")}
-		fetches := 0
 		fns := skill.UpstreamFuncs{
-			FetchLatest: fakeFetch(t, &fetches, "refs/tags/v2.0.0"),
-			TreeSHA:     func(_, _ string) (string, error) { return "", errors.New("no such path") },
+			FetchLatest: fakeFetch(t, map[string]string{"skills/bar/SKILL.md": "# Bar\n"}),
+			TreeSHA:     func(_, _ string) (string, error) { return "tree-1", nil },
 		}
 
 		// Act
-		candidates := skill.AggregateForeignUpdateCandidates(skills, fns)
+		candidates := collectTracked(skills, fns)
 
 		// Assert
-		if candidates[0].Status != skill.StatusCheckFailed {
-			t.Errorf("Status = %q, want %q", candidates[0].Status, skill.StatusCheckFailed)
+		if candidates[1].SkillName != "foo" || candidates[1].Status != skill.StatusRemoved || candidates[1].PreviousPath != "skills/foo" {
+			t.Errorf("candidates = %+v, want foo removed from skills/foo", candidates)
+		}
+	})
+
+	t.Run("when the skill moved upstream, the candidate is staged with its new path and other upstream skills are new", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		skills := []skill.InstalledSkill{installed("foo", "https://github.com/o/r", "tree-1", "skills/old/foo")}
+		fns := skill.UpstreamFuncs{
+			FetchLatest: fakeFetch(t, map[string]string{"skills/foo/SKILL.md": "# Foo\n", "skills/bar/SKILL.md": "# Bar\n"}),
+			TreeSHA:     func(_, _ string) (string, error) { return "tree-1", nil },
+		}
+
+		// Act
+		candidates := collectTracked(skills, fns)
+
+		// Assert
+		if len(candidates) != 2 {
+			t.Fatalf("candidates = %+v, want foo and bar", candidates)
+		}
+
+		bar, foo := candidates[0], candidates[1]
+		if foo.Status != skill.StatusMoved || foo.PreviousPath != "skills/old/foo" || foo.Path != "skills/foo" {
+			t.Errorf("foo = %+v, want moved from skills/old/foo to skills/foo", foo)
+		}
+
+		if got := readMeta(t, foo.StagedDir).Path; got != "skills/foo" {
+			t.Errorf("staged github-path = %q, want skills/foo", got)
+		}
+
+		if bar.Status != skill.StatusNew || bar.Path != "skills/bar" {
+			t.Errorf("bar = %+v, want new at skills/bar", bar)
 		}
 	})
 
@@ -352,7 +405,7 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 
 		// Act
-		candidates := skill.AggregateForeignUpdateCandidates([]skill.InstalledSkill{pinned}, fns)
+		candidates := collectTracked([]skill.InstalledSkill{pinned}, fns)
 
 		// Assert
 		c := candidates[0]
@@ -383,7 +436,7 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 
 		// Act
-		candidates := skill.AggregateForeignUpdateCandidates([]skill.InstalledSkill{local}, fns)
+		candidates := collectTracked([]skill.InstalledSkill{local}, fns)
 
 		// Assert
 		c := candidates[0]
@@ -419,7 +472,7 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 
 		// Act
-		candidates := skill.AggregateForeignUpdateCandidates(skills, fns)
+		candidates := collectTracked(skills, fns)
 
 		// Assert
 		if len(candidates) != 2 {
@@ -462,7 +515,7 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 
 		// Act
-		candidates := skill.AggregateForeignUpdateCandidates(skills, fns)
+		candidates := collectTracked(skills, fns)
 
 		// Assert
 		byName := map[string]skill.UpdateCandidate{}
@@ -493,7 +546,7 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 
 		// Act
-		candidates := skill.AggregateForeignUpdateCandidates([]skill.InstalledSkill{broken}, fns)
+		candidates := collectTracked([]skill.InstalledSkill{broken}, fns)
 
 		// Assert
 		c := candidates[0]
@@ -514,10 +567,13 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 			installed("foo", "https://github.com/o/r", "tree-1", "skills/foo"),
 			installed("bar", "https://github.com/o/r", "tree-2", "skills/bar"),
 		}
-		fetches := 0
+
+		var fetches atomic.Int32
+
 		fns := skill.UpstreamFuncs{
 			FetchLatest: func(_ string) (string, git.ResolvedRef, error) {
-				fetches++
+				fetches.Add(1)
+
 				dir := t.TempDir()
 				testutil.WriteFiles(t, dir, map[string]string{
 					"skills/foo/SKILL.md": "# Foo\n",
@@ -536,11 +592,11 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 
 		// Act
-		candidates := skill.AggregateForeignUpdateCandidates(skills, fns)
+		candidates := collectTracked(skills, fns)
 
 		// Assert
-		if fetches != 1 {
-			t.Errorf("fetches = %d, want 1", fetches)
+		if fetches.Load() != 1 {
+			t.Errorf("fetches = %d, want 1", fetches.Load())
 		}
 
 		if len(candidates) != 2 {

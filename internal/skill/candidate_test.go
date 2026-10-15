@@ -100,35 +100,6 @@ func TestResolveUpdateCandidates(t *testing.T) {
 		}
 	})
 
-	t.Run("check-failed when lock entry has no upstream match", func(t *testing.T) {
-		t.Parallel()
-
-		lockEntries := map[string]lock.Entry{
-			"removed-skill": {
-				Source:       "h3y6e/spec-skills",
-				SourceType:   "github",
-				ComputedHash: "abc123",
-			},
-		}
-
-		upstream := []skill.DiscoveredSkill{}
-
-		candidates := skill.ResolveUpdateCandidates(lockEntries, upstream)
-
-		if len(candidates) != 1 {
-			t.Fatalf("expected 1 candidate, got %d", len(candidates))
-		}
-
-		c := candidates[0]
-		if c.Status != skill.StatusCheckFailed {
-			t.Errorf("Status = %q, want %q", c.Status, skill.StatusCheckFailed)
-		}
-
-		if c.Reason == "" {
-			t.Error("expected non-empty Reason for check-failed")
-		}
-	})
-
 	t.Run("multiple skills are resolved", func(t *testing.T) {
 		t.Parallel()
 
@@ -249,7 +220,11 @@ func TestFilterCandidates(t *testing.T) {
 	})
 }
 
-func TestAggregateUpdateCandidates(t *testing.T) {
+func collectLocked(entries map[string]lock.Entry, cloneFn skill.CloneFunc) ([]skill.UpdateCandidate, []skill.SkippedEntry) {
+	return skill.CollectUpdateCandidates(entries, nil, cloneFn, skill.UpstreamFuncs{}, func(int, int) {})
+}
+
+func TestCollectUpdateCandidates(t *testing.T) {
 	t.Parallel()
 
 	t.Run("groups entries by source and resolves candidates", func(t *testing.T) {
@@ -301,10 +276,7 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 			return dir, nil
 		}
 
-		candidates, _, err := skill.AggregateUpdateCandidates(entries, cloneFn)
-		if err != nil {
-			t.Fatalf("AggregateUpdateCandidates() error = %v", err)
-		}
+		candidates, _ := collectLocked(entries, cloneFn)
 
 		if len(candidates) != 2 {
 			t.Fatalf("expected 2 candidates, got %d", len(candidates))
@@ -379,10 +351,7 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 			return dir, nil
 		}
 
-		candidates, _, err := skill.AggregateUpdateCandidates(entries, cloneFn)
-		if err != nil {
-			t.Fatalf("AggregateUpdateCandidates() error = %v", err)
-		}
+		candidates, _ := collectLocked(entries, cloneFn)
 
 		if len(candidates) != 2 {
 			t.Fatalf("expected 2 candidates, got %d", len(candidates))
@@ -438,10 +407,7 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 			return srcDir, nil
 		}
 
-		candidates, _, err := skill.AggregateUpdateCandidates(entries, cloneFn)
-		if err != nil {
-			t.Fatalf("AggregateUpdateCandidates() error = %v", err)
-		}
+		candidates, _ := collectLocked(entries, cloneFn)
 
 		if len(candidates) != 2 {
 			t.Fatalf("expected 2 candidates, got %d", len(candidates))
@@ -496,12 +462,9 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 
 		done := make(chan struct{})
 
-		var (
-			candidates []skill.UpdateCandidate
-			err        error
-		)
+		var candidates []skill.UpdateCandidate
 		go func() {
-			candidates, _, err = skill.AggregateUpdateCandidates(entries, cloneFn)
+			candidates, _ = collectLocked(entries, cloneFn)
 
 			close(done)
 		}()
@@ -521,11 +484,7 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 		select {
 		case <-done:
 		case <-time.After(2 * time.Second):
-			t.Fatal("AggregateUpdateCandidates() did not finish")
-		}
-
-		if err != nil {
-			t.Fatalf("AggregateUpdateCandidates() error = %v", err)
+			t.Fatal("CollectUpdateCandidates() did not finish")
 		}
 
 		if len(candidates) != 2 {
@@ -533,20 +492,31 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 		}
 	})
 
-	t.Run("clone failure returns error", func(t *testing.T) {
+	t.Run("when one source cannot be cloned, only its skills fail the check", func(t *testing.T) {
 		t.Parallel()
+		// Arrange
+		good := t.TempDir()
+		testutil.WriteFiles(t, good, map[string]string{"skills/b/SKILL.md": "# B\n"})
 
 		entries := map[string]lock.Entry{
-			"skill-a": {Source: "bad/source", SourceType: "github", ComputedHash: "h"},
+			"a": {Source: "bad/source", SourceType: "github", ComputedHash: "h"},
+			"b": {Source: "good/source", SourceType: "github", ComputedHash: "h"},
+		}
+		cloneFn := func(source string) (string, error) {
+			if source == "bad/source" {
+				return "", errors.New("clone failed")
+			}
+
+			return good, nil
 		}
 
-		cloneFn := func(_ string) (string, error) {
-			return "", errors.New("clone failed")
-		}
+		// Act
+		candidates, _ := collectLocked(entries, cloneFn)
 
-		_, _, err := skill.AggregateUpdateCandidates(entries, cloneFn)
-		if err == nil {
-			t.Fatal("expected error when clone fails")
+		// Assert
+		got := []skill.Status{candidates[0].Status, candidates[1].Status}
+		if !slices.Equal(got, []skill.Status{skill.StatusCheckFailed, skill.StatusUpdateAvailable}) {
+			t.Errorf("statuses = %v, want check-failed for a and update-available for b", got)
 		}
 	})
 
@@ -558,10 +528,7 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 			return "", nil
 		}
 
-		candidates, _, err := skill.AggregateUpdateCandidates(map[string]lock.Entry{}, cloneFn)
-		if err != nil {
-			t.Fatalf("AggregateUpdateCandidates() error = %v", err)
-		}
+		candidates, _ := collectLocked(map[string]lock.Entry{}, cloneFn)
 
 		if len(candidates) != 0 {
 			t.Errorf("expected 0 candidates, got %d", len(candidates))
@@ -627,10 +594,7 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 			return "", nil
 		}
 
-		candidates, skipped, err := skill.AggregateUpdateCandidates(entries, cloneFn)
-		if err != nil {
-			t.Fatalf("AggregateUpdateCandidates() error = %v", err)
-		}
+		candidates, skipped := collectLocked(entries, cloneFn)
 
 		if len(candidates) != 2 {
 			t.Fatalf("expected 2 candidates, got %d", len(candidates))
@@ -672,43 +636,59 @@ func TestResolveUpdateCandidatesBySkillPath(t *testing.T) {
 	t.Parallel()
 
 	at := func(name, path, hash string) skill.DiscoveredSkill {
-		return skill.DiscoveredSkill{Name: name, Path: path, ComputedHash: hash, Dir: "/clone/" + path}
+		return skill.DiscoveredSkill{Name: name, Path: path, ComputedHash: hash, Dir: "/clone/" + path, Default: true}
+	}
+
+	type want struct {
+		name   string
+		status skill.Status
+		path   string
 	}
 
 	for _, tc := range []struct {
-		name       string
-		entry      lock.Entry
-		upstream   []skill.DiscoveredSkill
-		wantStatus skill.Status
-		wantPath   string
+		name     string
+		entry    lock.Entry
+		upstream []skill.DiscoveredSkill
+		want     []want
 	}{
 		{
 			"when the entry's skillPath exists upstream, the skill at that path is compared even if another directory shares its name",
 			lock.Entry{SkillPath: ".claude/skills/dup/SKILL.md", ComputedHash: "b"},
 			[]skill.DiscoveredSkill{at("dup", "skills/dup", "a"), at("dup", ".claude/skills/dup", "b")},
-			skill.StatusUpToDate, ".claude/skills/dup/SKILL.md",
+			[]want{{"dup", skill.StatusUpToDate, ".claude/skills/dup"}},
 		},
 		{
-			"when the entry's skillPath is gone and one upstream skill has its name, that skill is followed",
+			"when the entry's skillPath is gone and one upstream skill has its name, the skill has moved there",
 			lock.Entry{SkillPath: "old/dup/SKILL.md", ComputedHash: "a"},
 			[]skill.DiscoveredSkill{at("dup", "skills/dup", "a")},
-			skill.StatusUpToDate, "skills/dup/SKILL.md",
+			[]want{{"dup", skill.StatusMoved, "skills/dup"}},
+		},
+		{
+			"when the entry's skillPath is gone and no upstream skill has its name, the skill was removed upstream",
+			lock.Entry{SkillPath: "skills/dup/SKILL.md", ComputedHash: "a"},
+			[]skill.DiscoveredSkill{at("other", "skills/other", "a")},
+			[]want{{"dup", skill.StatusRemoved, ""}, {"other", skill.StatusNew, "skills/other"}},
 		},
 		{
 			"when the entry has no skillPath and two upstream skills share its name, the check fails as ambiguous",
 			lock.Entry{ComputedHash: "a"},
 			[]skill.DiscoveredSkill{at("dup", "skills/dup", "a"), at("dup", ".claude/skills/dup", "b")},
-			skill.StatusCheckFailed, "",
+			[]want{{"dup", skill.StatusCheckFailed, ""}},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			// Act
-			got := skill.ResolveUpdateCandidates(map[string]lock.Entry{"dup": tc.entry}, tc.upstream)
+			candidates := skill.ResolveUpdateCandidates(map[string]lock.Entry{"dup": tc.entry}, tc.upstream)
 
 			// Assert
-			if len(got) != 1 || got[0].Status != tc.wantStatus || got[0].SkillPath != tc.wantPath {
-				t.Errorf("candidates = %+v, want status %s and skillPath %q", got, tc.wantStatus, tc.wantPath)
+			got := make([]want, len(candidates))
+			for i, c := range candidates {
+				got[i] = want{c.SkillName, c.Status, c.Path}
+			}
+
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("candidates = %+v, want %+v", got, tc.want)
 			}
 		})
 	}

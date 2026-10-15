@@ -72,43 +72,48 @@ func writeRecord(w io.Writer, key string, value any, err error) error {
 	return errors.Join(err, writeErr)
 }
 
-type checkResult struct {
-	SkillName   string       `json:"skillName"`
-	Status      skill.Status `json:"status"`
-	Source      string       `json:"source"`
-	Ref         string       `json:"ref,omitempty"`
-	CurrentHash string       `json:"currentHash"`
-	LatestHash  string       `json:"latestHash,omitempty"`
-	Reason      string       `json:"reason,omitempty"`
+// updateResult is an update --json result; renaming or retyping a field is breaking.
+type updateResult struct {
+	SkillName    string       `json:"skillName"`
+	Status       skill.Status `json:"status"`
+	Source       string       `json:"source"`
+	Ref          string       `json:"ref,omitempty"`
+	Path         string       `json:"path,omitempty"`
+	PreviousPath string       `json:"previousPath,omitempty"`
+	CurrentHash  string       `json:"currentHash,omitempty"`
+	LatestHash   string       `json:"latestHash,omitempty"`
+	Diff         *diffStat    `json:"diff,omitempty"`
+	Reason       string       `json:"reason,omitempty"`
+	Applied      bool         `json:"applied,omitempty"`
 }
 
-func newCheckResult(candidate skill.UpdateCandidate) checkResult {
-	return checkResult{
-		SkillName:   candidate.SkillName,
-		Status:      candidate.Status,
-		Source:      candidate.Source,
-		Ref:         candidate.Ref,
-		CurrentHash: candidate.CurrentHash,
-		LatestHash:  candidate.LatestHash,
-		Reason:      candidate.Reason,
+func newUpdateResult(c skill.UpdateCandidate) updateResult {
+	return updateResult{
+		SkillName:    c.SkillName,
+		Status:       c.Status,
+		Source:       c.Source,
+		Ref:          c.Ref,
+		Path:         c.Path,
+		PreviousPath: c.PreviousPath,
+		CurrentHash:  c.CurrentHash,
+		LatestHash:   c.LatestHash,
+		Reason:       c.Reason,
 	}
 }
 
-func renderCheckResult(w io.Writer, result checkResult) {
-	switch result.Status {
-	case skill.StatusUpToDate:
-		fmt.Fprintf(w, "%s: %s\n", result.SkillName, result.Status)
-	case skill.StatusUpdateAvailable:
-		fmt.Fprintf(w, "%s: update available (%s -> %s)\n", result.SkillName, shortHash(result.CurrentHash), shortHash(result.LatestHash))
-	case skill.StatusCheckFailed:
-		fmt.Fprintf(w, "%s: check failed (%s)\n", result.SkillName, result.Reason)
-	case skill.StatusPinned:
-		fmt.Fprintf(w, "%s: pinned (%s)\n", result.SkillName, result.Reason)
-	case skill.StatusLocal:
-		fmt.Fprintf(w, "%s: local (%s)\n", result.SkillName, result.Reason)
-	default:
-		fmt.Fprintf(w, "%s: %s\n", result.SkillName, result.Status)
+type diffStat struct {
+	Added   int `json:"added"`
+	Deleted int `json:"deleted"`
+	Files   int `json:"files"`
+}
+
+func (d diffStat) String() string {
+	unit := "files"
+	if d.Files == 1 {
+		unit = "file"
 	}
+
+	return fmt.Sprintf("+%d -%d (%d %s)", d.Added, d.Deleted, d.Files, unit)
 }
 
 func shortHash(h string) string {

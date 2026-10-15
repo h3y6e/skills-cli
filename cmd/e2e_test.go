@@ -103,31 +103,30 @@ func TestE2ELifecycle(t *testing.T) {
 		t.Fatalf("list --json expected 2 entries, got %d", len(listResults))
 	}
 
-	// --- Step 6: check (no changes expected) ---
+	// --- Step 6: update --dry-run (no changes expected) ---
 	var checkOut bytes.Buffer
 
 	root = cmd.NewRootCmd("test")
 	root.SetOut(&checkOut)
-	root.SetArgs([]string{"check", "-d", skillsDir})
+	root.SetArgs([]string{"update", "--dry-run", "-d", skillsDir})
 
 	if err := root.Execute(); err != nil {
-		t.Fatalf("check: %v", err)
+		t.Fatalf("update --dry-run: %v", err)
 	}
 
-	checkGot := checkOut.String()
-	if !strings.Contains(checkGot, "up-to-date") {
-		t.Fatalf("check should show up-to-date, got: %q", checkGot)
+	if checkGot := checkOut.String(); checkGot != "2 up-to-date\n" {
+		t.Fatalf("update --dry-run should count 2 up-to-date, got: %q", checkGot)
 	}
 
-	// --- Step 7: check --json ---
+	// --- Step 7: update --dry-run --json ---
 	var checkJSON bytes.Buffer
 
 	root = cmd.NewRootCmd("test")
 	root.SetOut(&checkJSON)
-	root.SetArgs([]string{"check", "--json", "-d", skillsDir})
+	root.SetArgs([]string{"update", "--dry-run", "--json", "-d", skillsDir})
 
 	if err := root.Execute(); err != nil {
-		t.Fatalf("check --json: %v", err)
+		t.Fatalf("update --dry-run --json: %v", err)
 	}
 
 	checkResults := decodeRecord(t, checkJSON.Bytes(), "results")
@@ -196,7 +195,7 @@ func TestE2ELifecycle(t *testing.T) {
 	}
 }
 
-func TestE2EUpdateWithDiff(t *testing.T) {
+func TestE2EUpdateWithChanges(t *testing.T) {
 	t.Parallel()
 
 	bareURL := testutil.BareRepo(t, map[string]string{
@@ -232,19 +231,18 @@ func TestE2EUpdateWithDiff(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Check should show update-available.
 	var checkOut bytes.Buffer
 
 	root = cmd.NewRootCmd("test")
 	root.SetOut(&checkOut)
-	root.SetArgs([]string{"check", "-d", skillsDir})
+	root.SetArgs([]string{"update", "--dry-run", "-d", skillsDir})
 
 	if err := root.Execute(); err != nil {
-		t.Fatalf("check: %v", err)
+		t.Fatalf("update --dry-run: %v", err)
 	}
 
-	if !strings.Contains(checkOut.String(), "update available") {
-		t.Fatalf("check should show update available, got: %q", checkOut.String())
+	if want := bareURL + "\n  M  alpha  +1 -1 (1 file)\n"; checkOut.String() != want {
+		t.Fatalf("update --dry-run = %q, want %q", checkOut.String(), want)
 	}
 
 	// Update -y should apply.
@@ -276,13 +274,13 @@ func TestE2EUpdateWithDiff(t *testing.T) {
 
 	root = cmd.NewRootCmd("test")
 	root.SetOut(&checkOut2)
-	root.SetArgs([]string{"check", "-d", skillsDir})
+	root.SetArgs([]string{"update", "--dry-run", "-d", skillsDir})
 
 	if err := root.Execute(); err != nil {
-		t.Fatalf("check after update: %v", err)
+		t.Fatalf("update --dry-run after update: %v", err)
 	}
 
-	if !strings.Contains(checkOut2.String(), "up-to-date") {
-		t.Fatalf("check after update should be up-to-date, got: %q", checkOut2.String())
+	if checkOut2.String() != "1 up-to-date\n" {
+		t.Fatalf("update --dry-run after update should be up-to-date, got: %q", checkOut2.String())
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"slices"
 	"strings"
 	"sync"
@@ -14,19 +15,24 @@ import (
 	"github.com/h3y6e/skolar/internal/lock"
 )
 
-// Status is the update state of an installed skill.
+// Status is the update state of an installed skill, or of an upstream skill
+// that is not installed.
 type Status string
 
-// Statuses check reports and update acts on.
+// Statuses update reports and acts on.
 const (
 	StatusUpToDate        Status = "up-to-date"
 	StatusUpdateAvailable Status = "update-available"
+	StatusMoved           Status = "moved"
+	StatusRemoved         Status = "removed"
+	StatusNew             Status = "new"
 	StatusCheckFailed     Status = "check-failed"
 	StatusPinned          Status = "pinned"
 	StatusLocal           Status = "local"
 )
 
-// UpdateCandidate represents the update status of an installed skill.
+// UpdateCandidate represents the update status of an installed skill, or an
+// upstream skill not installed yet (StatusNew).
 type UpdateCandidate struct {
 	SkillName   string
 	Source      string
@@ -35,13 +41,21 @@ type UpdateCandidate struct {
 	LatestHash  string
 	Status      Status
 	StagedDir   string
-	// SkillPath is the upstream SKILL.md path the candidate was resolved to.
-	SkillPath string
-	Reason    string
+	// Path is the repo-relative upstream directory the skill resolved to.
+	Path string
+	// PreviousPath is the directory recorded at install, for a skill that
+	// moved or was removed upstream.
+	PreviousPath string
+	Reason       string
 	// Foreign marks skills installed by gh-compatible tooling that have no
 	// lockfile entry. Applying them replaces the directory only; the lockfile
 	// is left untouched.
 	Foreign bool
+}
+
+// Applicable reports whether update replaces the installed skill.
+func (c UpdateCandidate) Applicable() bool {
+	return c.Status == StatusUpdateAvailable || c.Status == StatusMoved
 }
 
 // CloneFunc clones a source and returns the directory path. Caller must clean up.
@@ -53,10 +67,13 @@ type SkippedEntry struct {
 	SourceType lock.SourceType
 }
 
-// ResolveUpdateCandidates compares lock entries against upstream skills
-// and returns update candidates sorted by name. An entry resolves to the
-// skill at its skillPath; when that path is gone or unrecorded, to the only
-// upstream skill with its name.
+var errRemoved = errors.New("removed upstream")
+
+// ResolveUpdateCandidates compares the lock entries of one source against its
+// upstream skills, returning update candidates sorted by name, then a
+// StatusNew candidate for each upstream skill not installed. An entry
+// resolves to the skill at its skillPath; when that path is gone or
+// unrecorded, to the only upstream skill with its name.
 func ResolveUpdateCandidates(entries map[string]lock.Entry, upstream []DiscoveredSkill) []UpdateCandidate {
 	candidates := make([]UpdateCandidate, 0, len(entries))
 	for name, entry := range entries {
@@ -67,21 +84,17 @@ func ResolveUpdateCandidates(entries map[string]lock.Entry, upstream []Discovere
 			CurrentHash: entry.ComputedHash,
 		}
 
-		up, err := resolveUpstream(name, entry, upstream)
-		if err != nil {
+		recorded := recordedDir(entry)
+
+		up, err := resolveUpstream(name, recorded, upstream)
+		switch {
+		case errors.Is(err, errRemoved):
+			candidate.Status, candidate.PreviousPath = StatusRemoved, recorded
+		case err != nil:
 			candidate.Status, candidate.Reason = StatusCheckFailed, err.Error()
-			candidates = append(candidates, candidate)
-
-			continue
-		}
-
-		candidate.LatestHash = up.ComputedHash
-		candidate.StagedDir = up.Dir
-		candidate.SkillPath = up.SkillMDPath()
-
-		candidate.Status = StatusUpToDate
-		if entry.ComputedHash != up.ComputedHash {
-			candidate.Status = StatusUpdateAvailable
+		default:
+			candidate.Path, candidate.LatestHash, candidate.StagedDir = up.Path, up.ComputedHash, up.Dir
+			candidate.Status, candidate.PreviousPath = changeStatus(recorded, up.Path, entry.ComputedHash != up.ComputedHash)
 		}
 
 		candidates = append(candidates, candidate)
@@ -89,11 +102,63 @@ func ResolveUpdateCandidates(entries map[string]lock.Entry, upstream []Discovere
 
 	sortCandidates(candidates)
 
-	return candidates
+	return append(candidates, newCandidates(candidates, upstream)...)
 }
 
-func resolveUpstream(name string, entry lock.Entry, upstream []DiscoveredSkill) (DiscoveredSkill, error) {
-	if i := slices.IndexFunc(upstream, func(s DiscoveredSkill) bool { return s.SkillMDPath() == entry.SkillPath }); i >= 0 {
+// recordedDir returns the upstream directory an entry's skillPath records,
+// or "" when it records none.
+func recordedDir(entry lock.Entry) string {
+	if entry.SkillPath == "" {
+		return ""
+	}
+
+	return path.Dir(entry.SkillPath)
+}
+
+// changeStatus classifies a resolved skill, returning the recorded path
+// when the skill moved away from it.
+func changeStatus(recorded, current string, changed bool) (Status, string) {
+	switch {
+	case recorded != "" && recorded != current:
+		return StatusMoved, recorded
+	case changed:
+		return StatusUpdateAvailable, ""
+	default:
+		return StatusUpToDate, ""
+	}
+}
+
+// newCandidates returns the upstream skills installed by default that none
+// of the installed candidates of the source resolved to or is named after.
+func newCandidates(installed []UpdateCandidate, upstream []DiscoveredSkill) []UpdateCandidate {
+	taken := map[string]bool{}
+	for _, c := range installed {
+		taken[c.SkillName], taken[c.Path] = true, true
+	}
+
+	var news []UpdateCandidate
+
+	for _, s := range upstream {
+		if !s.Default || taken[s.Name] || taken[s.Path] {
+			continue
+		}
+
+		taken[s.Name] = true
+		news = append(news, UpdateCandidate{
+			SkillName: s.Name,
+			Source:    installed[0].Source,
+			Ref:       installed[0].Ref,
+			Status:    StatusNew,
+			Path:      s.Path,
+			Foreign:   installed[0].Foreign,
+		})
+	}
+
+	return news
+}
+
+func resolveUpstream(name, recorded string, upstream []DiscoveredSkill) (DiscoveredSkill, error) {
+	if i := slices.IndexFunc(upstream, func(s DiscoveredSkill) bool { return s.Path == recorded }); recorded != "" && i >= 0 {
 		return upstream[i], nil
 	}
 
@@ -107,17 +172,17 @@ func resolveUpstream(name string, entry lock.Entry, upstream []DiscoveredSkill) 
 
 	switch len(named) {
 	case 0:
-		return DiscoveredSkill{}, fmt.Errorf("skill %q not found in upstream source", name)
+		return DiscoveredSkill{}, errRemoved
 	case 1:
 		return named[0], nil
 	}
 
 	paths := make([]string, len(named))
 	for i, s := range named {
-		paths[i] = s.SkillMDPath()
+		paths[i] = s.Path
 	}
 
-	return DiscoveredSkill{}, fmt.Errorf("skill %q is ambiguous upstream: %s", name, strings.Join(paths, ", "))
+	return DiscoveredSkill{}, fmt.Errorf("ambiguous upstream: %s", strings.Join(paths, ", "))
 }
 
 // FilterCandidates returns only candidates whose names are in filter. Empty filter returns all.
@@ -154,67 +219,80 @@ func FilterDiscoveredSkills(skills []DiscoveredSkill, filter []string) []Discove
 	return result
 }
 
-// AggregateUpdateCandidates groups lock entries by source, clones each, discovers
-// upstream skills, and returns aggregated update candidates. Unsupported entries are skipped.
-func AggregateUpdateCandidates(entries map[string]lock.Entry, cloneFn CloneFunc) ([]UpdateCandidate, []SkippedEntry, error) {
-	if len(entries) == 0 {
-		return nil, nil, nil
-	}
-
+// CollectUpdateCandidates resolves update candidates for lockfile entries
+// and gh skill installs, fetching every source in parallel. A source that
+// cannot be fetched fails only its own skills. done is called after each
+// source with the number fetched so far and the total. Entries of
+// unsupported source types are skipped.
+func CollectUpdateCandidates(
+	entries map[string]lock.Entry, installed []InstalledSkill, cloneFn CloneFunc, fns UpstreamFuncs, done func(n, total int),
+) ([]UpdateCandidate, []SkippedEntry) {
 	supported, skipped := partitionSupportedEntries(entries)
-	if len(supported) == 0 {
-		return nil, skipped, nil
-	}
-
 	bySource := groupEntriesBySource(supported)
-	results := make(chan aggregateResult, len(bySource))
+	candidates, byRepo := partitionInstalled(installed)
 
-	var wg sync.WaitGroup
+	var (
+		mu sync.Mutex
+		n  int
+		wg sync.WaitGroup
+	)
+
+	finish := func(cs []UpdateCandidate) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		candidates = append(candidates, cs...)
+		n++
+		done(n, len(bySource)+len(byRepo))
+	}
 
 	for source, group := range bySource {
-		wg.Go(func() {
-			cloneDir, err := cloneFn(source)
-			if err != nil {
-				results <- aggregateResult{err: fmt.Errorf("clone source %q: %w", source, err)}
-				return
-			}
+		wg.Go(func() { finish(resolveSourceCandidates(source, group, cloneFn)) })
+	}
 
-			upstream, err := DiscoverSkills(cloneDir)
-			if err != nil {
-				results <- aggregateResult{err: fmt.Errorf("discover skills in %q: %w", source, err)}
-				return
-			}
+	for _, group := range byRepo {
+		wg.Go(func() { finish(resolveRepoCandidates(group, fns)) })
+	}
 
-			results <- aggregateResult{candidates: ResolveUpdateCandidates(group, upstream)}
+	wg.Wait()
+	sortCandidates(candidates)
+
+	return candidates, skipped
+}
+
+func resolveSourceCandidates(source string, group map[string]lock.Entry, cloneFn CloneFunc) []UpdateCandidate {
+	upstream, err := cloneAndDiscover(source, cloneFn)
+	if err == nil {
+		return ResolveUpdateCandidates(group, upstream)
+	}
+
+	candidates := make([]UpdateCandidate, 0, len(group))
+	for name, entry := range group {
+		candidates = append(candidates, UpdateCandidate{
+			SkillName:   name,
+			Source:      entry.Source,
+			Ref:         entry.Ref,
+			CurrentHash: entry.ComputedHash,
+			Status:      StatusCheckFailed,
+			Reason:      err.Error(),
 		})
 	}
 
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
+	return candidates
+}
 
-	var (
-		all  []UpdateCandidate
-		errs []error
-	)
-
-	for result := range results {
-		if result.err != nil {
-			errs = append(errs, result.err)
-			continue
-		}
-
-		all = append(all, result.candidates...)
+func cloneAndDiscover(source string, cloneFn CloneFunc) ([]DiscoveredSkill, error) {
+	cloneDir, err := cloneFn(source)
+	if err != nil {
+		return nil, fmt.Errorf("clone %s: %w", source, err)
 	}
 
-	if err := errors.Join(errs...); err != nil {
-		return nil, skipped, err
+	upstream, err := DiscoverSkills(cloneDir)
+	if err != nil {
+		return nil, fmt.Errorf("discover skills in %s: %w", source, err)
 	}
 
-	sortCandidates(all)
-
-	return all, skipped, nil
+	return upstream, nil
 }
 
 // NewCloneFunc returns a CloneFunc that shallow-clones into temp directories,
@@ -263,14 +341,9 @@ func NewCloneFunc(ctx context.Context, prefix string) (CloneFunc, func()) {
 	return cloneFn, cleanup
 }
 
-type aggregateResult struct {
-	candidates []UpdateCandidate
-	err        error
-}
-
 func sortCandidates(c []UpdateCandidate) {
 	slices.SortFunc(c, func(a, b UpdateCandidate) int {
-		return cmp.Compare(a.SkillName, b.SkillName)
+		return cmp.Or(cmp.Compare(a.SkillName, b.SkillName), cmp.Compare(a.Source, b.Source))
 	})
 }
 

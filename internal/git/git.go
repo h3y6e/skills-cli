@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 )
 
 func gitCommand(ctx context.Context, args ...string) (*exec.Cmd, error) {
@@ -71,23 +73,42 @@ func shallowCloneRef(ctx context.Context, cloneURL, ref, destDir string) error {
 	return nil
 }
 
-// DiffNoIndex runs `git diff --no-index` between two paths.
-// Returns the diff output, whether a diff exists, and any error.
-// Exit code 1 indicates a diff (not an error).
-func DiffNoIndex(ctx context.Context, pathA, pathB string) (string, bool, error) {
-	cmd, err := gitCommand(ctx, "--no-pager", "diff", "--no-index", "--", pathA, pathB)
+// Stat counts the lines added and deleted, and the files changed, between two trees.
+// Binary files count as changed files only; mode changes do not count.
+type Stat struct {
+	Added   int
+	Deleted int
+	Files   int
+}
+
+// DiffStat runs `git diff --no-index --numstat` from pathA to pathB.
+func DiffStat(ctx context.Context, pathA, pathB string) (Stat, error) {
+	cmd, err := gitCommand(ctx, "diff", "--no-index", "--numstat", "--", pathA, pathB)
 	if err != nil {
-		return "", false, err
+		return Stat{}, err
 	}
 
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && exitErr.ExitCode() == 1 {
-			return string(out), true, nil
+	out, err := cmd.Output()
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); err != nil && (!ok || exitErr.ExitCode() != 1) {
+		return Stat{}, fmt.Errorf("git diff --no-index: %w", err)
+	}
+
+	var stat Stat
+
+	for line := range strings.Lines(string(out)) {
+		added, rest, _ := strings.Cut(line, "\t")
+		deleted, _, _ := strings.Cut(rest, "\t")
+
+		if added == "0" && deleted == "0" {
+			continue
 		}
 
-		return "", false, fmt.Errorf("git diff --no-index: %w\n%s", err, out)
+		a, _ := strconv.Atoi(added)
+		d, _ := strconv.Atoi(deleted)
+		stat.Added += a
+		stat.Deleted += d
+		stat.Files++
 	}
 
-	return string(out), false, nil
+	return stat, nil
 }

@@ -9,7 +9,7 @@ Reads and writes both [vercel-labs/skills](https://github.com/vercel-labs/skills
 
 - Version-control skills from external repositories, say in your dotfiles
 - Selectively install only the skills you need
-- Review upstream diffs before applying changes
+- See which skills changed, moved, or disappeared upstream before applying
 
 ## Install
 
@@ -35,15 +35,16 @@ skolar add h3y6e/spec-skills#main             # pin a ref
 skolar add -s spec-plan h3y6e/spec-skills     # only some skills
 skolar add -d dot_agents/exact_skills ...     # other directory (default .agents/skills)
 skolar list
-skolar check
-skolar update                                 # show diffs, then confirm
+skolar update --dry-run                       # changes upstream, by source
+skolar update                                 # then confirm
 skolar verify                                 # files on disk match the record
 skolar remove spec-plan
 ```
 
 - Without `-s`, `add` installs the skills vercel-labs/skills or `gh skill` finds by default; `-s` reaches any directory with a `SKILL.md`.
 - `add`, `update`, and `remove` take `--dry-run`, and confirm before overwriting or deleting; pass `-y` without a TTY.
-- `list --json` and `check --json` print `{"skills": [...]}` and `{"results": [...]}`, plus `"error": {"code", "message", "fix"}` on failure.
+- `update` lists only changed skills: `M` changed, `R` moved (followed), `D` removed upstream (kept), `A` not installed, `!` unchecked.
+- `list --json` and `update --json` print `{"skills": [...]}` and `{"results": [...]}`, plus `"error": {"code", "message", "fix"}` on failure.
 - Any flag except `--help` and `--version` can be set as `SKOLAR_<FLAG>`, e.g. `SKOLAR_DIR`.
 - Exit status: 0 success, 1 failure (including a skill that could not be checked), 2 usage error or missing `-y`.
 

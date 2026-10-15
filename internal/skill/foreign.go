@@ -5,10 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 
 	"github.com/h3y6e/skolar/internal/git"
 	"github.com/h3y6e/skolar/internal/lock"
@@ -140,7 +140,24 @@ type UpstreamFuncs struct {
 // NewUpstreamFuncs returns the production UpstreamFuncs along with a cleanup
 // function removing all cloned temp directories.
 func NewUpstreamFuncs(ctx context.Context, tmpPrefix string) (UpstreamFuncs, func()) {
-	var dirs []string
+	var (
+		dirs []string
+		mu   sync.Mutex
+	)
+
+	tempDir := func() (string, error) {
+		dir, err := os.MkdirTemp("", tmpPrefix)
+		if err != nil {
+			return "", fmt.Errorf("create temp dir: %w", err)
+		}
+
+		mu.Lock()
+		defer mu.Unlock()
+
+		dirs = append(dirs, dir)
+
+		return dir, nil
+	}
 
 	fns := UpstreamFuncs{
 		FetchLatest: func(repoURL string) (string, git.ResolvedRef, error) {
@@ -149,23 +166,21 @@ func NewUpstreamFuncs(ctx context.Context, tmpPrefix string) (UpstreamFuncs, fun
 				return "", git.ResolvedRef{}, err
 			}
 
-			tmpDir, err := os.MkdirTemp("", tmpPrefix)
+			tmpDir, err := tempDir()
 			if err != nil {
-				return "", git.ResolvedRef{}, fmt.Errorf("create temp dir: %w", err)
+				return "", git.ResolvedRef{}, err
 			}
 
-			dirs = append(dirs, tmpDir)
 			cloneDir := filepath.Join(tmpDir, "repo")
 
 			return cloneDir, resolved, git.ShallowClone(ctx, repoURL, resolved.Full, cloneDir)
 		},
 		FetchRef: func(repoURL, ref string) (string, error) {
-			tmpDir, err := os.MkdirTemp("", tmpPrefix)
+			tmpDir, err := tempDir()
 			if err != nil {
-				return "", fmt.Errorf("create temp dir: %w", err)
+				return "", err
 			}
 
-			dirs = append(dirs, tmpDir)
 			cloneDir := filepath.Join(tmpDir, "repo")
 
 			return cloneDir, git.ShallowClone(ctx, repoURL, ref, cloneDir)
@@ -184,12 +199,11 @@ func NewUpstreamFuncs(ctx context.Context, tmpPrefix string) (UpstreamFuncs, fun
 	return fns, cleanup
 }
 
-// AggregateForeignUpdateCandidates resolves update candidates for skills
-// installed by gh-compatible tooling (no lockfile entry). Update detection
-// compares the installed github-tree-sha against the upstream tree SHA at the
-// latest ref, mirroring gh skill update. Pinned and local skills are reported
-// with their own statuses and never fetched.
-func AggregateForeignUpdateCandidates(installed []InstalledSkill, fns UpstreamFuncs) []UpdateCandidate {
+// partitionInstalled reports pinned, local and unlocatable gh skill installs
+// as candidates without fetching, and groups the rest by repository. Update
+// detection compares github-tree-sha with the upstream tree at the latest
+// ref, as gh skill update does.
+func partitionInstalled(installed []InstalledSkill) ([]UpdateCandidate, map[string][]InstalledSkill) {
 	byRepo := make(map[string][]InstalledSkill)
 
 	var candidates []UpdateCandidate
@@ -206,103 +220,125 @@ func AggregateForeignUpdateCandidates(installed []InstalledSkill, fns UpstreamFu
 				Foreign:   true,
 			})
 		case s.Meta.Path == "":
-			source, _ := OwnerRepoFromURL(s.Meta.RepoURL)
-			candidates = append(candidates, UpdateCandidate{
-				SkillName: s.Name,
-				Source:    source,
-				Status:    StatusCheckFailed,
-				Reason:    "missing github-path in skill metadata",
-				Foreign:   true,
-			})
+			candidates = append(candidates, failedCandidate(s, "missing github-path in skill metadata"))
 		default:
 			byRepo[s.Meta.RepoURL] = append(byRepo[s.Meta.RepoURL], s)
 		}
 	}
 
-	for _, repoURL := range slices.Sorted(maps.Keys(byRepo)) {
-		repoCandidates, err := resolveRepoCandidates(byRepo[repoURL], fns)
-		if err != nil {
-			// A failing repository must not block other skills (gh skill
-			// update behaves the same way).
-			for _, s := range byRepo[repoURL] {
-				source, _ := OwnerRepoFromURL(s.Meta.RepoURL)
-				candidates = append(candidates, UpdateCandidate{
-					SkillName: s.Name,
-					Source:    source,
-					Status:    StatusCheckFailed,
-					Reason:    err.Error(),
-					Foreign:   true,
-				})
-			}
-
-			continue
-		}
-
-		candidates = append(candidates, repoCandidates...)
-	}
-
-	sortCandidates(candidates)
-
-	return candidates
+	return candidates, byRepo
 }
 
-func resolveRepoCandidates(group []InstalledSkill, fns UpstreamFuncs) ([]UpdateCandidate, error) {
+func trackedCandidate(s InstalledSkill) UpdateCandidate {
+	source, _ := OwnerRepoFromURL(s.Meta.RepoURL)
+
+	return UpdateCandidate{SkillName: s.Name, Source: source, CurrentHash: s.Meta.TreeSHA, Foreign: true}
+}
+
+func failedCandidate(s InstalledSkill, reason string) UpdateCandidate {
+	c := trackedCandidate(s)
+	c.Status, c.Reason = StatusCheckFailed, reason
+
+	return c
+}
+
+func resolveRepoCandidates(group []InstalledSkill, fns UpstreamFuncs) []UpdateCandidate {
 	repoURL := group[0].Meta.RepoURL
 
-	source, err := OwnerRepoFromURL(repoURL)
+	cloneDir, resolved, upstream, err := fetchRepo(repoURL, fns)
 	if err != nil {
-		return nil, err
-	}
+		candidates := make([]UpdateCandidate, 0, len(group))
+		for _, s := range group {
+			candidates = append(candidates, failedCandidate(s, err.Error()))
+		}
 
-	cloneDir, resolved, err := fns.FetchLatest(repoURL)
-	if err != nil {
-		return nil, fmt.Errorf("fetch %s: %w", source, err)
+		return candidates
 	}
 
 	candidates := make([]UpdateCandidate, 0, len(group))
 	for _, s := range group {
-		candidate := UpdateCandidate{
-			SkillName:   s.Name,
-			Source:      source,
-			Ref:         resolved.Full,
-			CurrentHash: s.Meta.TreeSHA,
-			Foreign:     true,
-		}
+		candidate := trackedCandidate(s)
+		candidate.Ref = resolved.Full
 
-		treeSHA, err := fns.TreeSHA(cloneDir, s.Meta.Path)
-		if err != nil {
-			candidate.Status = StatusCheckFailed
-			candidate.Reason = err.Error()
-			candidates = append(candidates, candidate)
-
-			continue
-		}
-
-		candidate.LatestHash = treeSHA
-
-		candidate.Status = StatusUpToDate
-		if treeSHA != s.Meta.TreeSHA {
-			candidate.Status = StatusUpdateAvailable
-		}
-
-		candidate.StagedDir = filepath.Join(cloneDir, filepath.FromSlash(s.Meta.Path))
-		if candidate.Status == StatusUpdateAvailable {
-			candidate.StagedDir, err = stageWithMetadata(cloneDir, candidate.StagedDir, SourceMetadata{
-				RepoURL: repoURL,
-				Ref:     resolved.Full,
-				TreeSHA: treeSHA,
-				Path:    s.Meta.Path,
-			})
-			if err != nil {
-				candidate.Status = StatusCheckFailed
-				candidate.Reason = err.Error()
-			}
+		up, err := resolveTrackedUpstream(s, cloneDir, upstream)
+		switch {
+		case errors.Is(err, errRemoved):
+			candidate.Status, candidate.PreviousPath = StatusRemoved, s.Meta.Path
+		case err != nil:
+			candidate.Status, candidate.Reason = StatusCheckFailed, err.Error()
+		default:
+			candidate = resolveTracked(candidate, s, up, cloneDir, resolved, fns)
 		}
 
 		candidates = append(candidates, candidate)
 	}
 
-	return candidates, nil
+	sortCandidates(candidates)
+
+	return append(candidates, newCandidates(candidates, upstream)...)
+}
+
+// resolveTrackedUpstream finds the upstream skill at github-path even when
+// discovery skips it, so that it fails on its own content rather than
+// passing for removed.
+func resolveTrackedUpstream(s InstalledSkill, cloneDir string, upstream []DiscoveredSkill) (DiscoveredSkill, error) {
+	dir := filepath.Join(cloneDir, filepath.FromSlash(s.Meta.Path))
+	if _, err := os.Lstat(filepath.Join(dir, "SKILL.md")); err == nil {
+		return DiscoveredSkill{Name: s.Name, Dir: dir, Path: s.Meta.Path}, nil
+	}
+
+	return resolveUpstream(s.Name, s.Meta.Path, upstream)
+}
+
+func fetchRepo(repoURL string, fns UpstreamFuncs) (string, git.ResolvedRef, []DiscoveredSkill, error) {
+	source, err := OwnerRepoFromURL(repoURL)
+	if err != nil {
+		return "", git.ResolvedRef{}, nil, err
+	}
+
+	cloneDir, resolved, err := fns.FetchLatest(repoURL)
+	if err != nil {
+		return "", git.ResolvedRef{}, nil, fmt.Errorf("fetch %s: %w", source, err)
+	}
+
+	upstream, err := DiscoverSkills(cloneDir)
+	if err != nil {
+		return "", git.ResolvedRef{}, nil, fmt.Errorf("discover skills in %s: %w", source, err)
+	}
+
+	return cloneDir, resolved, upstream, nil
+}
+
+// resolveTracked compares an installed skill with the upstream skill it
+// resolved to, staging the upstream skill with fresh metadata when update
+// would replace it.
+func resolveTracked(
+	candidate UpdateCandidate, s InstalledSkill, up DiscoveredSkill, cloneDir string, resolved git.ResolvedRef, fns UpstreamFuncs,
+) UpdateCandidate {
+	treeSHA, err := fns.TreeSHA(cloneDir, up.Path)
+	if err != nil {
+		candidate.Status, candidate.Reason = StatusCheckFailed, err.Error()
+		return candidate
+	}
+
+	candidate.Path, candidate.LatestHash, candidate.StagedDir = up.Path, treeSHA, up.Dir
+	candidate.Status, candidate.PreviousPath = changeStatus(s.Meta.Path, up.Path, treeSHA != s.Meta.TreeSHA)
+
+	if !candidate.Applicable() {
+		return candidate
+	}
+
+	candidate.StagedDir, err = stageWithMetadata(cloneDir, up.Dir, SourceMetadata{
+		RepoURL: s.Meta.RepoURL,
+		Ref:     resolved.Full,
+		TreeSHA: treeSHA,
+		Path:    up.Path,
+	})
+	if err != nil {
+		candidate.Status, candidate.Reason = StatusCheckFailed, err.Error()
+	}
+
+	return candidate
 }
 
 func pinnedCandidate(s InstalledSkill) UpdateCandidate {

@@ -152,97 +152,48 @@ func TestShallowClone(t *testing.T) {
 	})
 }
 
-func TestDiffNoIndex(t *testing.T) {
+func TestDiffStat(t *testing.T) {
 	t.Parallel()
 
-	t.Run("no diff when directories are identical", func(t *testing.T) {
+	t.Run("when two directories are identical, the stat is zero", func(t *testing.T) {
 		t.Parallel()
-
+		// Arrange
 		dir := t.TempDir()
-		a := filepath.Join(dir, "a")
-		b := filepath.Join(dir, "b")
 		testutil.WriteFiles(t, dir, map[string]string{"a/file.txt": "same\n", "b/file.txt": "same\n"})
 
-		output, hasDiff, err := git.DiffNoIndex(t.Context(), a, b)
-		if err != nil {
-			t.Fatalf("DiffNoIndex() error = %v", err)
-		}
+		// Act
+		got, err := git.DiffStat(t.Context(), filepath.Join(dir, "a"), filepath.Join(dir, "b"))
 
-		if hasDiff {
-			t.Errorf("expected hasDiff=false for identical dirs, got true; output:\n%s", output)
-		}
-	})
-
-	t.Run("reports diff when files differ", func(t *testing.T) {
-		t.Parallel()
-
-		dir := t.TempDir()
-		a := filepath.Join(dir, "a")
-		b := filepath.Join(dir, "b")
-		testutil.WriteFiles(t, dir, map[string]string{"a/file.txt": "old\n", "b/file.txt": "new\n"})
-
-		output, hasDiff, err := git.DiffNoIndex(t.Context(), a, b)
-		if err != nil {
-			t.Fatalf("DiffNoIndex() error = %v", err)
-		}
-
-		if !hasDiff {
-			t.Error("expected hasDiff=true for differing files")
-		}
-
-		if len(output) == 0 {
-			t.Error("expected non-empty diff output")
+		// Assert
+		if err != nil || got != (git.Stat{}) {
+			t.Errorf("DiffStat() = %+v, %v, want zero", got, err)
 		}
 	})
 
-	t.Run("reports diff for added file", func(t *testing.T) {
+	t.Run("when files change, are added and are binary, the stat counts their lines and files but not mode changes", func(t *testing.T) {
 		t.Parallel()
-
+		// Arrange
 		dir := t.TempDir()
-		a := filepath.Join(dir, "a")
-		b := filepath.Join(dir, "b")
+		testutil.WriteFiles(t, dir, map[string]string{
+			"a/file.txt": "one\ntwo\n",
+			"b/file.txt": "one\nthree\nfour\n",
+			"b/new.md":   "added\n",
+			"a/bin":      "\x00a",
+			"b/bin":      "\x00b",
+			"a/run.sh":   "echo\n",
+			"b/run.sh":   "echo\n",
+		})
 
-		if err := os.MkdirAll(a, 0o755); err != nil {
+		if err := os.Chmod(filepath.Join(dir, "b", "run.sh"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 
-		testutil.WriteFiles(t, dir, map[string]string{"b/new-file.txt": "added\n"})
+		// Act
+		got, err := git.DiffStat(t.Context(), filepath.Join(dir, "a"), filepath.Join(dir, "b"))
 
-		output, hasDiff, err := git.DiffNoIndex(t.Context(), a, b)
-		if err != nil {
-			t.Fatalf("DiffNoIndex() error = %v", err)
-		}
-
-		if !hasDiff {
-			t.Error("expected hasDiff=true for added file")
-		}
-
-		if len(output) == 0 {
-			t.Error("expected non-empty diff output for added file")
-		}
-	})
-
-	t.Run("respects context cancellation", func(t *testing.T) {
-		t.Parallel()
-
-		dir := t.TempDir()
-		a := filepath.Join(dir, "a")
-		b := filepath.Join(dir, "b")
-
-		if err := os.MkdirAll(a, 0o755); err != nil {
-			t.Fatal(err)
-		}
-
-		if err := os.MkdirAll(b, 0o755); err != nil {
-			t.Fatal(err)
-		}
-
-		ctx, cancel := context.WithCancel(t.Context())
-		cancel()
-
-		_, _, err := git.DiffNoIndex(ctx, a, b)
-		if err == nil {
-			t.Fatal("expected error for cancelled context, got nil")
+		// Assert
+		if err != nil || got != (git.Stat{Added: 3, Deleted: 1, Files: 3}) {
+			t.Errorf("DiffStat() = %+v, %v, want +3 -1 in 3 files", got, err)
 		}
 	})
 }
