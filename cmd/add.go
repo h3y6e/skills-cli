@@ -26,7 +26,10 @@ func newAddCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "add <source>",
 		Short: "Add skills from a source repository (destructive when overwriting)",
-		Args:  usageArgs(cobra.ExactArgs(1)),
+		Long: `Add skills from a source repository (destructive when overwriting).
+
+Without --skill, installs the skills vercel-labs/skills or gh skill finds by default; --skill reaches any directory with a SKILL.md.`,
+		Args: usageArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAdd(cmd, args[0], opts)
 		},
