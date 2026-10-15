@@ -79,8 +79,15 @@ var homes sync.Map
 // global lock and other user state stay out of the real home directory.
 func homeOf(tb testing.TB) string {
 	tb.Helper()
-	home, _ := homes.LoadOrStore(tb.Name(), tb.TempDir())
-	h, _ := home.(string)
+
+	if home, ok := homes.Load(tb.Name()); ok {
+		h, _ := home.(string)
+		return h
+	}
+
+	h := tb.TempDir()
+	homes.Store(tb.Name(), h)
+	tb.Cleanup(func() { homes.Delete(tb.Name()) })
 
 	return h
 }
@@ -112,6 +119,19 @@ func runStderr(tb testing.TB, dir, name string, args ...string) (string, string)
 	tb.Helper()
 
 	return runIn(tb, homeOf(tb), dir, name, args...)
+}
+
+// ghUpdate runs gh skill update and fails on the warnings gh prints when it
+// skips a skill, since it still exits 0.
+func ghUpdate(tb testing.TB, home, dir string, args ...string) {
+	tb.Helper()
+
+	_, stderr := runIn(tb, home, filepath.Dir(dir), "gh", append([]string{"skill", "update", "--dir", dir}, args...)...)
+	for line := range strings.Lines(stderr) {
+		if strings.HasPrefix(line, "!") {
+			tb.Errorf("gh skill update warned: %s", strings.TrimSpace(line))
+		}
+	}
 }
 
 func run(tb testing.TB, dir, name string, args ...string) string {

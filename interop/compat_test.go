@@ -15,19 +15,6 @@ import (
 	"testing"
 )
 
-// ghUpdate runs gh skill update and fails on the warnings gh prints when it
-// skips a skill, since it still exits 0.
-func ghUpdate(t *testing.T, dir string, args ...string) {
-	t.Helper()
-
-	_, stderr := runStderr(t, filepath.Dir(dir), "gh", append([]string{"skill", "update", "--dir", dir}, args...)...)
-	for line := range strings.Lines(stderr) {
-		if strings.HasPrefix(line, "!") {
-			t.Errorf("gh skill update warned: %s", strings.TrimSpace(line))
-		}
-	}
-}
-
 // snapshot maps each file and directory under dir to its mode, and a file
 // to its content too, or a link to its target.
 func snapshot(t *testing.T, dir string) map[string]string {
@@ -356,7 +343,7 @@ func TestGhFormat(t *testing.T) {
 		// Act
 		run(t, filepath.Dir(own), skolar, "add", fixtureRepo, "-d", own, "-y")
 		installed := snapshot(t, own)
-		ghUpdate(t, own, "--all")
+		ghUpdate(t, homeOf(t), own, "--all")
 
 		// Assert
 		want := snapshot(t, gh)
@@ -376,7 +363,7 @@ func TestGhFormat(t *testing.T) {
 		}
 
 		// Act
-		ghUpdate(t, gh, "--all")
+		ghUpdate(t, homeOf(t), gh, "--all")
 		run(t, filepath.Dir(own), skolar, "update", "-d", own, "-y")
 
 		// Assert
@@ -392,7 +379,7 @@ func TestGhFormat(t *testing.T) {
 		before := snapshot(t, dest)
 
 		// Act
-		ghUpdate(t, dest, "--all")
+		ghUpdate(t, homeOf(t), dest, "--all")
 
 		// Assert
 		assertSameFiles(t, before, snapshot(t, dest))
@@ -407,7 +394,7 @@ func TestGhFormat(t *testing.T) {
 		run(t, filepath.Dir(own), skolar, "update", "-d", own, "-y")
 
 		// Act
-		ghUpdate(t, own, "--all", "--force")
+		ghUpdate(t, homeOf(t), own, "--all", "--force")
 
 		// Assert
 		assertSameFiles(t, snapshot(t, gh), snapshot(t, own))
@@ -450,7 +437,7 @@ func TestGhUndiscoverableLayouts(t *testing.T) {
 			before := snapshot(t, dir)
 
 			// Act
-			ghUpdate(t, dir, "--all")
+			ghUpdate(t, homeOf(t), dir, "--all")
 
 			// Assert
 			if got := metadataValue(before[tc.skill+"/SKILL.md"], "github-path"); got != tc.path {

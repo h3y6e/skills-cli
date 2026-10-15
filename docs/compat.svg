@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 384" width="900" height="384" role="img" aria-labelledby="t d">
   <title id="t">skolar alongside vercel-labs/skills and gh skill</title>
-  <desc id="d">10 checks pass · 2 gaps in gh skill, with skolar d299120 · skills 1.7.1 · gh skill 2.102.0.
+  <desc id="d">10 checks pass · 2 gaps in gh skill, with skolar 71abff8 · skills 1.7.1 · gh skill 2.102.0.
 skills, detect (pass): when vercel installed the skills, skolar reports them up to date and update changes nothing
 gh skill, detect (pass): when gh installed the skills, skolar reports them up to date and update changes nothing
 skills, detect without skillPath (pass): when the lock entries have no skillPath, skolar still finds every skill vercel installed
@@ -46,7 +46,7 @@ gh skill, undiscoverable path (gap): when skolar records theta in gh format, the
     }
   </style>
   <rect class="card" x=".5" y=".5" width="899" height="383"/>
-  <text class="corner" x="34" y="44">skolar d299120 · skills 1.7.1 · gh skill 2.102.0</text>
+  <text class="corner" x="34" y="44">skolar 71abff8 · skills 1.7.1 · gh skill 2.102.0</text>
   <text class="h" x="600" y="44" text-anchor="middle">skills</text>
   <text class="h" x="760" y="44" text-anchor="middle">gh skill</text>
   <line class="rule" x1="34" x2="866" y1="68" y2="68"/>

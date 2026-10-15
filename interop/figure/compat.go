@@ -45,9 +45,14 @@ var tools = [2]tool{
 	{Name: "gh skill", X: 760},
 }
 
+type outcome struct {
+	Sentence string
+	Status   status
+}
+
 type cell struct {
 	Status status
-	Cases  []string
+	Cases  []outcome
 }
 
 type row struct {
@@ -141,7 +146,7 @@ func (c *compat) record(e event) error {
 
 	cl := &c.Rows[i].Cells[s.tool]
 	cl.Status = max(cl.Status, got)
-	cl.Cases = append(cl.Cases, sentence)
+	cl.Cases = append(cl.Cases, outcome{Sentence: sentence, Status: got})
 
 	return nil
 }
@@ -159,9 +164,11 @@ func (c *compat) layout() {
 
 	for _, r := range c.Rows {
 		for ti, cl := range r.Cells {
-			counts[cl.Status] += max(len(cl.Cases), 1)
-			if cl.Status == gap {
-				gaps[ti] += len(cl.Cases)
+			for _, o := range cl.Cases {
+				counts[o.Status]++
+				if o.Status == gap {
+					gaps[ti]++
+				}
 			}
 		}
 	}

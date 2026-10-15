@@ -94,7 +94,8 @@ func parseBench(r io.Reader, vs versions) (map[string]string, map[string][]float
 
 	var order []string
 
-	for sc := bufio.NewScanner(r); sc.Scan(); {
+	sc := bufio.NewScanner(r)
+	for sc.Scan() {
 		line := sc.Text()
 		if vs.add(line) {
 			continue
@@ -121,6 +122,10 @@ func parseBench(r io.Reader, vs versions) (map[string]string, map[string][]float
 		}
 
 		samples[name] = append(samples[name], ns/1e9)
+	}
+
+	if err := sc.Err(); err != nil {
+		return nil, nil, nil, err
 	}
 
 	if len(order) == 0 {

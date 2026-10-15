@@ -131,7 +131,7 @@ func BenchmarkUpdate(b *testing.B) {
 		contender{"gh", func(b *testing.B, home, dir string) {
 			b.Helper()
 
-			runIn(b, home, filepath.Dir(dir), "gh", "skill", "update", "--all", "--dir", dir)
+			ghUpdate(b, home, dir, "--all")
 		}},
 	)
 }

@@ -1,7 +1,7 @@
 // Command figure renders the output of the interop tests, read from stdin, as
 // the figures the README embeds.
 //
-//	go test -tags interop -json ./interop | go run ./interop/figure compat > docs/compat.svg
+//	go test -tags interop -count 1 -json ./interop | go run ./interop/figure compat > docs/compat.svg
 //	go test -tags interop -run '^$' -bench . -benchtime 1x -count 5 ./interop | go run ./interop/figure bench > docs/bench.svg
 package main
 

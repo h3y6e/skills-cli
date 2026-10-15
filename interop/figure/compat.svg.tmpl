@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 {{.Card}}" width="900" height="{{.Card}}" role="img" aria-labelledby="t d">
   <title id="t">skolar alongside vercel-labs/skills and gh skill</title>
   <desc id="d">{{.Readout}}, with {{.Versions}}.{{range .Rows}}{{$label := .Label}}{{range $i, $c := .Cells}}{{range $c.Cases}}
-{{(index $.Tools $i).Name}}, {{$label}} ({{$c.Status}}): {{html .}}{{end}}{{end}}{{end}}
+{{(index $.Tools $i).Name}}, {{$label}} ({{.Status}}): {{html .Sentence}}{{end}}{{end}}{{end}}
 </desc>
   <style>
     {{template "style"}}
