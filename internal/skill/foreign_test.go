@@ -440,6 +440,45 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 	})
 
+	t.Run("when one upstream skill has invalid frontmatter, only that skill is check-failed and its sibling stays update-available", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		skills := []skill.InstalledSkill{
+			installed("bad", "https://github.com/o/r", "tree-old", "skills/bad"),
+			installed("good", "https://github.com/o/r", "tree-old", "skills/good"),
+		}
+		fns := skill.UpstreamFuncs{
+			FetchLatest: func(string) (string, git.ResolvedRef, error) {
+				dir := t.TempDir()
+				testutil.WriteFiles(t, dir, map[string]string{
+					"skills/bad/SKILL.md":  "---\nname: bad\ncompatibility: MCP (tools: search)\n---\n",
+					"skills/good/SKILL.md": "---\nname: good\n---\n",
+				})
+
+				return dir, git.ResolvedRef{Full: "refs/tags/v2.0.0"}, nil
+			},
+			TreeSHA: func(_, _ string) (string, error) { return "tree-new", nil },
+		}
+
+		// Act
+		candidates := skill.AggregateForeignUpdateCandidates(skills, fns)
+
+		// Assert
+		byName := map[string]skill.UpdateCandidate{}
+		for _, c := range candidates {
+			byName[c.SkillName] = c
+		}
+
+		if byName["bad"].Status != skill.StatusCheckFailed {
+			t.Errorf("bad Status = %q, want %q", byName["bad"].Status, skill.StatusCheckFailed)
+		}
+
+		if byName["good"].Status != skill.StatusUpdateAvailable {
+			t.Errorf("good Status = %q, want %q", byName["good"].Status, skill.StatusUpdateAvailable)
+		}
+	})
+
 	t.Run("when a skill has no github-path, the candidate is check-failed without fetching", func(t *testing.T) {
 		t.Parallel()
 
