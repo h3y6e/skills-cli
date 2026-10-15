@@ -325,7 +325,7 @@ func skipCopy(d os.DirEntry, vercel bool) bool {
 }
 
 // copyDir copies the regular files of src into dst, leaving out dst itself
-// and what skipCopy skips. Reads stay within src even if it changes meanwhile.
+// and what skipCopy skips.
 func copyDir(src, dst string, vercel bool) (err error) {
 	root, err := os.OpenRoot(src)
 	if err != nil {

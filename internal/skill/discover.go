@@ -29,7 +29,6 @@ func (s DiscoveredSkill) SkillMDPath() string {
 	return path.Join(s.Path, "SKILL.md")
 }
 
-// skillsSegment is the directory name both tools look for skills under.
 const skillsSegment = "skills"
 
 // skipDirs are never searched, as in vercel-labs/skills.
@@ -206,16 +205,12 @@ func vercelDefaults(repoRoot string, all map[string]skillDir) []string {
 	return valid
 }
 
-// vercelSearch collects, in the order vercel-labs/skills searches them, the
-// skills it installs by default.
 type vercelSearch struct {
 	repoRoot string
 	all      map[string]skillDir
 	found    []string
 }
 
-// walk searches the subdirectories of dir down to maxDepth, stopping at each
-// skill directory.
 func (s *vercelSearch) walk(dir string, depth, maxDepth int) {
 	entries, _ := os.ReadDir(filepath.Join(s.repoRoot, filepath.FromSlash(dir)))
 	for _, e := range entries {
