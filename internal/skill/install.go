@@ -380,6 +380,9 @@ func copyDir(src, dst string, vercel bool) error {
 		if d.IsDir() {
 			return os.MkdirAll(target, 0o755)
 		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
 
 		return copyFile(path, target)
 	})

@@ -262,6 +262,40 @@ func TestInstallRootSkill(t *testing.T) {
 	})
 }
 
+func TestInstallSkipsSymlinks(t *testing.T) {
+	t.Parallel()
+
+	t.Run("when a skill contains a symlink, the install leaves it out instead of copying its target", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		srcDir := t.TempDir()
+		writeFiles(t, srcDir, map[string]string{"skills/s/SKILL.md": "---\nname: s\ndescription: d\n---\n"})
+		secret := filepath.Join(t.TempDir(), "secret")
+		if err := os.WriteFile(secret, []byte("secret\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(secret, filepath.Join(srcDir, "skills", "s", "leak")); err != nil {
+			t.Fatal(err)
+		}
+		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
+		discovered, err := skill.DiscoverSkills(srcDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Act
+		err = skill.InstallSkills(discovered, skill.SourceRef{CanonicalSource: "o/r", SourceType: "github"}, lock.NewLayout(skillsDir))
+
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := listFiles(t, filepath.Join(skillsDir, "s")); !slices.Equal(got, []string{"SKILL.md"}) {
+			t.Errorf("installed files = %v, want [SKILL.md]", got)
+		}
+	})
+}
+
 func listFiles(t *testing.T, dir string) []string {
 	t.Helper()
 	var files []string
