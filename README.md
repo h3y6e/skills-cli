@@ -54,8 +54,6 @@ skolar remove spec-plan
 
 skolar records each skill in `gh skill` metadata in its `SKILL.md`, in any directory, so skills installed by either tool are managed by both. In a project with a `skills-lock.json`, `.agents/skills` keeps using the lockfile so vercel-labs/skills still works. Non-GitHub sources need the lockfile, so they can only be added to `.agents/skills`.
 
-Each format installs the files its tool would, except that a link leading out of the repository is never followed.
-
 In `gh skill` format:
 
 - Without `#ref`, `update` follows the highest non-prerelease semver tag.
