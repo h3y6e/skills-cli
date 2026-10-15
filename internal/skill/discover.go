@@ -109,7 +109,7 @@ func findSkillDirs(repoRoot string) (map[string]skillDir, error) {
 		if err != nil || !d.IsDir() {
 			return err
 		}
-		if info, err := os.Stat(filepath.Join(p, "SKILL.md")); err == nil && info.Mode().IsRegular() {
+		if info, err := os.Lstat(filepath.Join(p, "SKILL.md")); err == nil && info.Mode().IsRegular() {
 			rel, err := filepath.Rel(repoRoot, p)
 			if err != nil {
 				return err
@@ -138,7 +138,7 @@ func readSkillDir(dir, rel string) (skillDir, bool) {
 		return skillDir{}, false
 	}
 	name, _ := raw["name"].(string)
-	if name != "" && (!filepath.IsLocal(name) || filepath.Base(name) != name) {
+	if name != "" && (name == "." || !filepath.IsLocal(name) || filepath.Base(name) != name) {
 		return skillDir{}, false
 	}
 	description, _ := raw["description"].(string)

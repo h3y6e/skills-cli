@@ -200,7 +200,31 @@ func TestDiscoverSkillsEdges(t *testing.T) {
 			"skills/up/SKILL.md":   fm("../../escape"),
 			"skills/abs/SKILL.md":  fm("/tmp/escape"),
 			"skills/deep/SKILL.md": fm("a/b"),
+			"skills/dot/SKILL.md":  fm("."),
 		})
+
+		// Act
+		skills, err := skill.DiscoverSkills(root)
+
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := discoveredPaths(t, skills, false); !maps.Equal(got, map[string]string{"good": "skills/good"}) {
+			t.Errorf("DiscoverSkills() = %v", got)
+		}
+	})
+
+	t.Run("when a SKILL.md is a symlink, its directory is not a skill", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		root := writeRepo(t, map[string]string{"skills/good/SKILL.md": fm("good"), "elsewhere.md": fm("link")})
+		if err := os.MkdirAll(filepath.Join(root, "skills", "link"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(root, "elsewhere.md"), filepath.Join(root, "skills", "link", "SKILL.md")); err != nil {
+			t.Fatal(err)
+		}
 
 		// Act
 		skills, err := skill.DiscoverSkills(root)
