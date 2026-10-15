@@ -2,6 +2,7 @@ package lock
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,15 +19,31 @@ type File struct {
 	Skills  map[string]Entry `json:"skills"`
 }
 
-// Entry represents a single skill in the lockfile.
-type Entry struct {
-	Source       string `json:"source"`
-	Ref          string `json:"ref,omitempty"`
-	SourceType   string `json:"sourceType"`
-	SkillPath    string `json:"skillPath,omitempty"`
-	ComputedHash string `json:"computedHash"`
+// SourceType is the kind of repository a skill is installed from.
+type SourceType string
+
+const (
+	SourceGitHub SourceType = "github"
+	SourceGitLab SourceType = "gitlab"
+	SourceGit    SourceType = "git"
+	SourceLocal  SourceType = "local"
+)
+
+// Supported reports whether skills from this source type can be cloned and updated.
+func (t SourceType) Supported() bool {
+	return t == SourceGitHub || t == SourceGitLab || t == SourceGit || t == SourceLocal
 }
 
+// Entry represents a single skill in the lockfile.
+type Entry struct {
+	Source       string     `json:"source"`
+	Ref          string     `json:"ref,omitempty"`
+	SourceType   SourceType `json:"sourceType"`
+	SkillPath    string     `json:"skillPath,omitempty"`
+	ComputedHash string     `json:"computedHash"`
+}
+
+// ReadFile reads the lockfile at path.
 func ReadFile(path string) (File, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -119,6 +136,19 @@ func FilePath(skillsDir string) string {
 func (l Layout) UsesLockfile() bool {
 	rel, err := filepath.Rel(filepath.Dir(l.LockPath()), filepath.Clean(l.Dir))
 	return err == nil && rel == filepath.Clean(DefaultDir)
+}
+
+// ReadLockFile reads the layout's lockfile, or returns an empty one when the
+// layout does not use a lockfile or it does not exist yet.
+func (l Layout) ReadLockFile() (File, error) {
+	if !l.UsesLockfile() {
+		return File{Version: 1, Skills: map[string]Entry{}}, nil
+	}
+	f, err := ReadFile(l.LockPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return File{Version: 1, Skills: map[string]Entry{}}, nil
+	}
+	return f, err
 }
 
 // Entries returns the lockfile's skills when the lockfile records this

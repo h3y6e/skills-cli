@@ -12,34 +12,51 @@ import (
 )
 
 type listEntryJSON struct {
-	SkillName    string `json:"skillName"`
-	Source       string `json:"source"`
-	Ref          string `json:"ref,omitempty"`
-	SourceType   string `json:"sourceType"`
-	ComputedHash string `json:"computedHash"`
+	SkillName    string          `json:"skillName"`
+	Source       string          `json:"source"`
+	Ref          string          `json:"ref,omitempty"`
+	SourceType   lock.SourceType `json:"sourceType"`
+	ComputedHash string          `json:"computedHash"`
 }
 
-func runList(cmd *cobra.Command, skillsDir string, jsonFlag bool) (err error) {
+type listOptions struct {
+	dir  string
+	json bool
+}
+
+func newListCmd() *cobra.Command {
+	var opts listOptions
+
+	c := &cobra.Command{
+		Use:         "list",
+		Aliases:     []string{"ls"},
+		Annotations: map[string]string{recordKey: "skills"},
+		Short:       "List installed skills",
+		Args:        usageArgs(cobra.NoArgs),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runList(cmd, opts)
+		},
+	}
+
+	bindDirFlag(c, &opts.dir)
+	c.Flags().BoolVar(&opts.json, "json", false, "Output results in JSON format")
+
+	return c
+}
+
+func runList(cmd *cobra.Command, opts listOptions) (err error) {
 	payload := []listEntryJSON{}
-	if jsonFlag {
+	if opts.json {
 		defer func() { err = writeRecord(cmd.OutOrStdout(), cmd.Annotations[recordKey], payload, err) }()
 	}
 
-	layout := lock.NewLayout(skillsDir)
-	lf, err := loadLockFile(layout)
+	inv, err := loadInventory(opts.dir)
 	if err != nil {
 		return err
 	}
-	entries := layout.Entries(lf)
 
-	installed, err := skill.ScanInstalledSkills(layout.Dir)
-	if err != nil {
-		return err
-	}
-	foreign := skill.UnmanagedSkills(installed, entries)
-
-	for _, name := range slices.Sorted(maps.Keys(entries)) {
-		entry := entries[name]
+	for _, name := range slices.Sorted(maps.Keys(inv.entries)) {
+		entry := inv.entries[name]
 		payload = append(payload, listEntryJSON{
 			SkillName:    name,
 			Source:       entry.Source,
@@ -48,7 +65,7 @@ func runList(cmd *cobra.Command, skillsDir string, jsonFlag bool) (err error) {
 			ComputedHash: entry.ComputedHash,
 		})
 	}
-	for _, s := range foreign {
+	for _, s := range inv.foreign {
 		payload = append(payload, listEntryJSON{
 			SkillName:    s.Name,
 			Source:       foreignSource(s.Meta),
@@ -61,7 +78,7 @@ func runList(cmd *cobra.Command, skillsDir string, jsonFlag bool) (err error) {
 		return cmp.Compare(a.SkillName, b.SkillName)
 	})
 
-	if jsonFlag {
+	if opts.json {
 		return nil
 	}
 
@@ -71,7 +88,7 @@ func runList(cmd *cobra.Command, skillsDir string, jsonFlag bool) (err error) {
 	}
 
 	for _, entry := range payload {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s\n", entry.SkillName, skill.FormatSourceInput(entry.Source, entry.Ref), ShortHash(entry.ComputedHash))
+		fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s\n", entry.SkillName, skill.FormatSourceInput(entry.Source, entry.Ref), shortHash(entry.ComputedHash))
 	}
 	return nil
 }
@@ -86,9 +103,9 @@ func foreignSource(meta skill.SourceMetadata) string {
 	return meta.LocalPath
 }
 
-func foreignSourceType(meta skill.SourceMetadata) string {
+func foreignSourceType(meta skill.SourceMetadata) lock.SourceType {
 	if meta.IsGitHub() {
-		return "github"
+		return lock.SourceGitHub
 	}
-	return "local"
+	return lock.SourceLocal
 }

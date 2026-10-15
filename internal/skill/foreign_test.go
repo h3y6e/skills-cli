@@ -156,12 +156,9 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 
 		// Act
-		candidates, err := skill.AggregateForeignUpdateCandidates(skills, fns)
+		candidates := skill.AggregateForeignUpdateCandidates(skills, fns)
 
 		// Assert
-		if err != nil {
-			t.Fatalf("AggregateForeignUpdateCandidates() error = %v", err)
-		}
 		if len(candidates) != 1 {
 			t.Fatalf("expected 1 candidate, got %d", len(candidates))
 		}
@@ -196,12 +193,9 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 
 		// Act
-		candidates, err := skill.AggregateForeignUpdateCandidates(skills, fns)
+		candidates := skill.AggregateForeignUpdateCandidates(skills, fns)
 
 		// Assert
-		if err != nil {
-			t.Fatalf("AggregateForeignUpdateCandidates() error = %v", err)
-		}
 		if len(candidates) != 1 {
 			t.Fatalf("expected 1 candidate, got %d", len(candidates))
 		}
@@ -256,12 +250,9 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 
 		// Act
-		_, err := skill.AggregateForeignUpdateCandidates(skills, fns)
+		_ = skill.AggregateForeignUpdateCandidates(skills, fns)
 
 		// Assert
-		if err != nil {
-			t.Fatalf("AggregateForeignUpdateCandidates() error = %v", err)
-		}
 		data, readErr := os.ReadFile(outside)
 		if readErr != nil {
 			t.Fatal(readErr)
@@ -283,12 +274,9 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 
 		// Act
-		candidates, err := skill.AggregateForeignUpdateCandidates(skills, fns)
+		candidates := skill.AggregateForeignUpdateCandidates(skills, fns)
 
 		// Assert
-		if err != nil {
-			t.Fatalf("AggregateForeignUpdateCandidates() error = %v", err)
-		}
 		if candidates[0].Status != skill.StatusCheckFailed {
 			t.Errorf("Status = %q, want %q", candidates[0].Status, skill.StatusCheckFailed)
 		}
@@ -309,12 +297,9 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 
 		// Act
-		candidates, err := skill.AggregateForeignUpdateCandidates([]skill.InstalledSkill{pinned}, fns)
+		candidates := skill.AggregateForeignUpdateCandidates([]skill.InstalledSkill{pinned}, fns)
 
 		// Assert
-		if err != nil {
-			t.Fatalf("AggregateForeignUpdateCandidates() error = %v", err)
-		}
 		c := candidates[0]
 		if c.Status != skill.StatusPinned {
 			t.Errorf("Status = %q, want %q", c.Status, skill.StatusPinned)
@@ -342,12 +327,9 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 
 		// Act
-		candidates, err := skill.AggregateForeignUpdateCandidates([]skill.InstalledSkill{local}, fns)
+		candidates := skill.AggregateForeignUpdateCandidates([]skill.InstalledSkill{local}, fns)
 
 		// Assert
-		if err != nil {
-			t.Fatalf("AggregateForeignUpdateCandidates() error = %v", err)
-		}
 		c := candidates[0]
 		if c.Status != skill.StatusLocal {
 			t.Errorf("Status = %q, want %q", c.Status, skill.StatusLocal)
@@ -378,12 +360,9 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 
 		// Act
-		candidates, err := skill.AggregateForeignUpdateCandidates(skills, fns)
+		candidates := skill.AggregateForeignUpdateCandidates(skills, fns)
 
 		// Assert
-		if err != nil {
-			t.Fatalf("AggregateForeignUpdateCandidates() error = %v", err)
-		}
 		if len(candidates) != 2 {
 			t.Fatalf("expected 2 candidates, got %d", len(candidates))
 		}
@@ -413,12 +392,9 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 
 		// Act
-		candidates, err := skill.AggregateForeignUpdateCandidates([]skill.InstalledSkill{broken}, fns)
+		candidates := skill.AggregateForeignUpdateCandidates([]skill.InstalledSkill{broken}, fns)
 
 		// Assert
-		if err != nil {
-			t.Fatalf("AggregateForeignUpdateCandidates() error = %v", err)
-		}
 		c := candidates[0]
 		if c.Status != skill.StatusCheckFailed {
 			t.Errorf("Status = %q, want %q", c.Status, skill.StatusCheckFailed)
@@ -456,12 +432,9 @@ func TestAggregateForeignUpdateCandidates(t *testing.T) {
 		}
 
 		// Act
-		candidates, err := skill.AggregateForeignUpdateCandidates(skills, fns)
+		candidates := skill.AggregateForeignUpdateCandidates(skills, fns)
 
 		// Assert
-		if err != nil {
-			t.Fatalf("AggregateForeignUpdateCandidates() error = %v", err)
-		}
 		if fetches != 1 {
 			t.Errorf("fetches = %d, want 1", fetches)
 		}
@@ -516,7 +489,7 @@ func TestPreferTrackedInstall(t *testing.T) {
 		lockfileExists := false
 
 		// Act
-		for _, sourceType := range []string{"local", "gitlab", "git"} {
+		for _, sourceType := range []lock.SourceType{lock.SourceLocal, lock.SourceGitLab, lock.SourceGit} {
 			if got := skill.PreferTrackedInstall(lockfileExists, sourceType); got {
 				t.Errorf("PreferTrackedInstall(%q) = true, want false", sourceType)
 			}

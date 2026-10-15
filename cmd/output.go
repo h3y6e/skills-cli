@@ -62,7 +62,7 @@ func writeRecord(w io.Writer, key string, value any, err error) error {
 	return errors.Join(err, writeErr)
 }
 
-type CheckResult struct {
+type checkResult struct {
 	SkillName   string       `json:"skillName"`
 	Status      skill.Status `json:"status"`
 	Source      string       `json:"source"`
@@ -72,8 +72,8 @@ type CheckResult struct {
 	Reason      string       `json:"reason,omitempty"`
 }
 
-func NewCheckResult(candidate skill.UpdateCandidate) CheckResult {
-	return CheckResult{
+func newCheckResult(candidate skill.UpdateCandidate) checkResult {
+	return checkResult{
 		SkillName:   candidate.SkillName,
 		Status:      candidate.Status,
 		Source:      candidate.Source,
@@ -84,12 +84,12 @@ func NewCheckResult(candidate skill.UpdateCandidate) CheckResult {
 	}
 }
 
-func renderCheckResult(w io.Writer, result CheckResult) {
+func renderCheckResult(w io.Writer, result checkResult) {
 	switch result.Status {
 	case skill.StatusUpToDate:
 		fmt.Fprintf(w, "%s: %s\n", result.SkillName, result.Status)
 	case skill.StatusUpdateAvailable:
-		fmt.Fprintf(w, "%s: update available (%s -> %s)\n", result.SkillName, ShortHash(result.CurrentHash), ShortHash(result.LatestHash))
+		fmt.Fprintf(w, "%s: update available (%s -> %s)\n", result.SkillName, shortHash(result.CurrentHash), shortHash(result.LatestHash))
 	case skill.StatusCheckFailed:
 		fmt.Fprintf(w, "%s: check failed (%s)\n", result.SkillName, result.Reason)
 	case skill.StatusPinned:
@@ -101,7 +101,7 @@ func renderCheckResult(w io.Writer, result CheckResult) {
 	}
 }
 
-func ShortHash(h string) string {
+func shortHash(h string) string {
 	if len(h) <= 7 {
 		return h
 	}

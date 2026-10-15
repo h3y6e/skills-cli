@@ -3,61 +3,63 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
 	"github.com/spf13/cobra"
 )
 
-func runCheck(cmd *cobra.Command, skillsDir string, jsonFlag bool) (err error) {
-	results := []CheckResult{}
-	if jsonFlag {
+type checkOptions struct {
+	dir  string
+	json bool
+}
+
+func newCheckCmd() *cobra.Command {
+	var opts checkOptions
+
+	c := &cobra.Command{
+		Use:         "check",
+		Short:       "Check installed skills for updates",
+		Annotations: map[string]string{recordKey: "results"},
+		Args:        usageArgs(cobra.NoArgs),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCheck(cmd, opts)
+		},
+	}
+
+	bindDirFlag(c, &opts.dir)
+	c.Flags().BoolVar(&opts.json, "json", false, "Output results in JSON format")
+
+	return c
+}
+
+func runCheck(cmd *cobra.Command, opts checkOptions) (err error) {
+	results := []checkResult{}
+	if opts.json {
 		defer func() { err = writeRecord(cmd.OutOrStdout(), cmd.Annotations[recordKey], results, err) }()
 	}
 
-	layout := lock.NewLayout(skillsDir)
-	lf, err := loadLockFile(layout)
+	inv, err := loadInventory(opts.dir)
 	if err != nil {
 		return err
 	}
-	entries := layout.Entries(lf)
-
-	installed, err := skill.ScanInstalledSkills(layout.Dir)
-	if err != nil {
-		return err
-	}
-	foreign := skill.UnmanagedSkills(installed, entries)
-
-	if len(entries) == 0 && len(foreign) == 0 {
-		if !jsonFlag {
+	if len(inv.entries) == 0 && len(inv.foreign) == 0 {
+		if !opts.json {
 			fmt.Fprintln(cmd.ErrOrStderr(), "no installed skills to check")
 		}
 		return nil
 	}
 
-	cloneFn, cleanup := skill.NewCloneFunc(cmd.Context(), "skolar-check-*")
+	candidates, skipped, cleanup, err := collectCandidates(cmd.Context(), "skolar-check", inv.entries, inv.foreign)
 	defer cleanup()
-
-	candidates, skipped, err := skill.AggregateUpdateCandidates(entries, cloneFn)
 	if err != nil {
 		return err
 	}
-
-	fns, foreignCleanup := NewUpstreamFuncs(cmd.Context(), "skolar-check-foreign-*")
-	defer foreignCleanup()
-
-	foreignCandidates, err := skill.AggregateForeignUpdateCandidates(foreign, fns)
-	if err != nil {
-		return err
-	}
-	candidates = append(candidates, foreignCandidates...)
-
 	printSkippedEntries(cmd.ErrOrStderr(), skipped)
 
 	var failed []string
 	for _, c := range candidates {
-		result := NewCheckResult(c)
+		result := newCheckResult(c)
 		results = append(results, result)
-		if !jsonFlag {
+		if !opts.json {
 			renderCheckResult(cmd.OutOrStdout(), result)
 		}
 		if c.Status == skill.StatusCheckFailed {

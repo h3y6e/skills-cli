@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/h3y6e/skolar/internal/git"
@@ -11,26 +12,45 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func runAdd(cmd *cobra.Command, source string, dryRun, yes bool, skillFilter []string, skillsDir string) error {
+type addOptions struct {
+	dir    string
+	skills []string
+	dryRun bool
+	yes    bool
+}
+
+func newAddCmd() *cobra.Command {
+	var opts addOptions
+
+	c := &cobra.Command{
+		Use:   "add <source>",
+		Short: "Add skills from a source repository (destructive when overwriting)",
+		Args:  usageArgs(cobra.ExactArgs(1)),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAdd(cmd, args[0], opts)
+		},
+	}
+
+	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Show the skills that would be installed without installing")
+	c.Flags().BoolVarP(&opts.yes, "yes", "y", false, "Overwrite existing skills without confirmation")
+	c.Flags().StringSliceVarP(&opts.skills, "skill", "s", nil, "Install only specified skills (repeatable)")
+	bindDirFlag(c, &opts.dir)
+
+	return c
+}
+
+func runAdd(cmd *cobra.Command, source string, opts addOptions) error {
 	ctx := cmd.Context()
-	layout := lock.NewLayout(skillsDir)
+	layout := lock.NewLayout(opts.dir)
 
 	ref, err := skill.ParseSource(source)
 	if err != nil {
 		return err
 	}
 
-	lockfileForDir := false
-	if layout.UsesLockfile() {
-		_, err := lock.ReadFile(layout.LockPath())
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		lockfileForDir = err == nil
-	}
-	tracked := skill.PreferTrackedInstall(lockfileForDir, ref.SourceType)
-	if !tracked && !layout.UsesLockfile() {
-		return fmt.Errorf("%s sources can't be added to %q: skills-lock.json records only %s", ref.SourceType, layout.Dir, lock.DefaultDir)
+	tracked, err := installsTracked(layout, ref)
+	if err != nil {
+		return err
 	}
 
 	// gh skill format resolves the ref like gh skill install: explicit ref,
@@ -59,25 +79,17 @@ func runAdd(cmd *cobra.Command, source string, dryRun, yes bool, skillFilter []s
 	if err != nil {
 		return fmt.Errorf("discover skills: %w", err)
 	}
-	discovered = skill.FilterDiscoveredSkills(discovered, skillFilter)
+	discovered = skill.FilterDiscoveredSkills(discovered, opts.skills)
 	if len(discovered) == 0 {
-		return fmt.Errorf("no skills found to install")
+		return errors.New("no skills found to install")
 	}
 
-	overwrite := false
-	for _, s := range discovered {
-		action := "install"
-		if _, err := os.Stat(layout.SkillDir(s.Name)); err == nil {
-			action = "overwrite"
-			overwrite = true
-		}
-		fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n", action, layout.SkillDir(s.Name))
-	}
-	if dryRun {
+	overwrite := printInstallPlan(cmd.OutOrStdout(), layout, discovered)
+	if opts.dryRun {
 		return nil
 	}
 	if overwrite {
-		if err := approve(cmd, yes, "Overwrite existing skills?"); err != nil {
+		if err := approve(cmd, opts.yes, "Overwrite existing skills?"); err != nil {
 			return err
 		}
 	}
@@ -86,4 +98,37 @@ func runAdd(cmd *cobra.Command, source string, dryRun, yes bool, skillFilter []s
 		return skill.InstallTrackedSkills(ctx, discovered, tmpDir, ref, resolved, layout)
 	}
 	return skill.InstallSkills(discovered, ref, layout)
+}
+
+// installsTracked reports whether ref is installed in gh skill format rather
+// than recorded in the lockfile.
+func installsTracked(layout lock.Layout, ref skill.SourceRef) (bool, error) {
+	lockfileExists := false
+	if layout.UsesLockfile() {
+		_, err := lock.ReadFile(layout.LockPath())
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
+		lockfileExists = err == nil
+	}
+	tracked := skill.PreferTrackedInstall(lockfileExists, ref.SourceType)
+	if !tracked && !layout.UsesLockfile() {
+		return false, fmt.Errorf("%s sources can't be added to %q: skills-lock.json records only %s", ref.SourceType, layout.Dir, lock.DefaultDir)
+	}
+	return tracked, nil
+}
+
+// printInstallPlan prints where each skill goes and reports whether any
+// overwrites an installed skill.
+func printInstallPlan(w io.Writer, layout lock.Layout, skills []skill.DiscoveredSkill) bool {
+	overwrite := false
+	for _, s := range skills {
+		action := "install"
+		if _, err := os.Stat(layout.SkillDir(s.Name)); err == nil {
+			action = "overwrite"
+			overwrite = true
+		}
+		fmt.Fprintf(w, "%s %s\n", action, layout.SkillDir(s.Name))
+	}
+	return overwrite
 }

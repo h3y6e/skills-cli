@@ -24,8 +24,6 @@ const (
 	StatusLocal           Status = "local"
 )
 
-func (s Status) String() string { return string(s) }
-
 // UpdateCandidate represents the update status of an installed skill.
 type UpdateCandidate struct {
 	SkillName   string
@@ -50,7 +48,7 @@ type CloneFunc func(source string) (string, error)
 // SkippedEntry is a lock entry skipped due to an unsupported source type.
 type SkippedEntry struct {
 	SkillName  string
-	SourceType string
+	SourceType lock.SourceType
 }
 
 // ResolveUpdateCandidates compares lock entries against upstream skills
@@ -248,7 +246,7 @@ func partitionSupportedEntries(entries map[string]lock.Entry) (map[string]lock.E
 	var skipped []SkippedEntry
 
 	for name, entry := range entries {
-		if SupportedSourceType(entry.SourceType) {
+		if entry.SourceType.Supported() {
 			supported[name] = entry
 			continue
 		}

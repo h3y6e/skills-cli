@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"path/filepath"
@@ -16,7 +17,7 @@ var shorthandPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`)
 // SourceRef holds a parsed skill source.
 type SourceRef struct {
 	Raw             string
-	SourceType      string
+	SourceType      lock.SourceType
 	CanonicalSource string
 	CloneURL        string
 	Ref             string
@@ -27,61 +28,47 @@ type SourceRef struct {
 func ParseSource(raw string) (SourceRef, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return SourceRef{}, fmt.Errorf("parse source: empty source")
+		return SourceRef{}, errors.New("parse source: empty source")
 	}
 
-	rawWithoutFragment, ref := splitSourceFragment(raw)
-
-	if looksLikeLocalPath(rawWithoutFragment) {
-		return SourceRef{
-			Raw:             raw,
-			SourceType:      "local",
-			CanonicalSource: filepath.Clean(rawWithoutFragment),
-			CloneURL:        filepath.Clean(rawWithoutFragment),
-			Ref:             ref,
-		}, nil
-	}
-
-	if shorthandPattern.MatchString(rawWithoutFragment) {
-		return SourceRef{
-			Raw:             raw,
-			SourceType:      "github",
-			CanonicalSource: rawWithoutFragment,
-			CloneURL:        "https://github.com/" + rawWithoutFragment + ".git",
-			Ref:             ref,
-		}, nil
-	}
-
-	if strings.HasPrefix(rawWithoutFragment, "git@") {
-		return parseSCPSource(raw, rawWithoutFragment, ref)
-	}
-
-	u, err := url.Parse(rawWithoutFragment)
+	location, ref := splitSourceFragment(raw)
+	sourceType, canonical, cloneURL, err := parseLocation(location)
 	if err != nil {
-		return SourceRef{}, fmt.Errorf("parse source %q: %w", rawWithoutFragment, err)
+		return SourceRef{}, err
+	}
+	return SourceRef{Raw: raw, SourceType: sourceType, CanonicalSource: canonical, CloneURL: cloneURL, Ref: ref}, nil
+}
+
+// parseLocation returns the source type, canonical source and clone URL of a
+// source without its #ref fragment.
+func parseLocation(location string) (lock.SourceType, string, string, error) {
+	if looksLikeLocalPath(location) {
+		return lock.SourceLocal, filepath.Clean(location), filepath.Clean(location), nil
+	}
+	if shorthandPattern.MatchString(location) {
+		return lock.SourceGitHub, location, "https://github.com/" + location + ".git", nil
+	}
+	if rest, found := strings.CutPrefix(location, "git@"); found {
+		return parseSCPLocation(location, rest)
 	}
 
-	if u.Scheme == "http" || u.Scheme == "https" || u.Scheme == "ssh" {
-		return parseURLSource(raw, rawWithoutFragment, u, ref)
+	u, err := url.Parse(location)
+	if err != nil {
+		return "", "", "", fmt.Errorf("parse source %q: %w", location, err)
 	}
-
-	if u.Scheme == "file" {
-		return SourceRef{
-			Raw:             raw,
-			SourceType:      "local",
-			CanonicalSource: rawWithoutFragment,
-			CloneURL:        rawWithoutFragment,
-			Ref:             ref,
-		}, nil
+	switch u.Scheme {
+	case "http", "https", "ssh":
+		return parseURLLocation(location, u)
+	case "file":
+		return lock.SourceLocal, location, location, nil
 	}
-
-	return SourceRef{}, fmt.Errorf("parse source %q: unsupported format", rawWithoutFragment)
+	return "", "", "", fmt.Errorf("parse source %q: unsupported format", location)
 }
 
 // SourceInput returns the add argument that reinstalls a lock entry.
 func SourceInput(entry lock.Entry) string {
 	source := entry.Source
-	if entry.SourceType == "gitlab" {
+	if entry.SourceType == lock.SourceGitLab {
 		source = "https://gitlab.com/" + source
 	}
 	return FormatSourceInput(source, entry.Ref)
@@ -127,84 +114,47 @@ func splitSourceFragment(raw string) (string, string) {
 	return raw[:hashIndex], raw[hashIndex+1:]
 }
 
-func parseSCPSource(raw, rawWithoutFragment, ref string) (SourceRef, error) {
-	rest, found := strings.CutPrefix(rawWithoutFragment, "git@")
-	if !found {
-		return SourceRef{}, fmt.Errorf("parse source %q: invalid scp url", rawWithoutFragment)
-	}
-
+func parseSCPLocation(location, rest string) (lock.SourceType, string, string, error) {
 	host, path, ok := strings.Cut(rest, ":")
 	if !ok || host == "" || path == "" {
-		return SourceRef{}, fmt.Errorf("parse source %q: invalid scp url", rawWithoutFragment)
+		return "", "", "", fmt.Errorf("parse source %q: invalid scp url", location)
 	}
 
-	path = strings.TrimSuffix(path, ".git")
-
-	if host == "github.com" || host == "gitlab.com" {
-		return SourceRef{
-			Raw:             raw,
-			SourceType:      sourceTypeForHost(host),
-			CanonicalSource: path,
-			CloneURL:        rawWithoutFragment,
-			Ref:             ref,
-		}, nil
+	switch host {
+	case "github.com":
+		return lock.SourceGitHub, strings.TrimSuffix(path, ".git"), location, nil
+	case "gitlab.com":
+		return lock.SourceGitLab, strings.TrimSuffix(path, ".git"), location, nil
 	}
-
-	return SourceRef{
-		Raw:             raw,
-		SourceType:      "git",
-		CanonicalSource: rawWithoutFragment,
-		CloneURL:        rawWithoutFragment,
-		Ref:             ref,
-	}, nil
+	return lock.SourceGit, location, location, nil
 }
 
-func parseURLSource(raw, rawWithoutFragment string, u *url.URL, ref string) (SourceRef, error) {
+func parseURLLocation(location string, u *url.URL) (lock.SourceType, string, string, error) {
 	host := strings.ToLower(u.Hostname())
 	path := strings.Trim(strings.TrimSuffix(u.EscapedPath(), ".git"), "/")
 	if path == "" {
-		return SourceRef{}, fmt.Errorf("parse source %q: missing repository path", rawWithoutFragment)
+		return "", "", "", fmt.Errorf("parse source %q: missing repository path", location)
 	}
+	segments := splitPathSegments(path)
 
-	if host == "github.com" {
-		segments := splitPathSegments(path)
+	switch host {
+	case "github.com":
 		if len(segments) != 2 {
-			return SourceRef{}, fmt.Errorf("parse source %q: unsupported github url path", rawWithoutFragment)
+			return "", "", "", fmt.Errorf("parse source %q: unsupported github url path", location)
 		}
-		return SourceRef{
-			Raw:             raw,
-			SourceType:      "github",
-			CanonicalSource: strings.Join(segments, "/"),
-			CloneURL:        "https://" + host + "/" + strings.Join(segments, "/") + ".git",
-			Ref:             ref,
-		}, nil
-	}
-
-	if host == "gitlab.com" {
+		canonical := strings.Join(segments, "/")
+		return lock.SourceGitHub, canonical, "https://" + host + "/" + canonical + ".git", nil
+	case "gitlab.com":
 		if strings.Contains(path, "/-/") {
-			return SourceRef{}, fmt.Errorf("parse source %q: unsupported gitlab url path", rawWithoutFragment)
+			return "", "", "", fmt.Errorf("parse source %q: unsupported gitlab url path", location)
 		}
-		segments := splitPathSegments(path)
 		if len(segments) < 2 {
-			return SourceRef{}, fmt.Errorf("parse source %q: missing repository path", rawWithoutFragment)
+			return "", "", "", fmt.Errorf("parse source %q: missing repository path", location)
 		}
-		canonicalPath := strings.Join(segments, "/")
-		return SourceRef{
-			Raw:             raw,
-			SourceType:      "gitlab",
-			CanonicalSource: canonicalPath,
-			CloneURL:        "https://" + host + "/" + canonicalPath + ".git",
-			Ref:             ref,
-		}, nil
+		canonical := strings.Join(segments, "/")
+		return lock.SourceGitLab, canonical, "https://" + host + "/" + canonical + ".git", nil
 	}
-
-	return SourceRef{
-		Raw:             raw,
-		SourceType:      "git",
-		CanonicalSource: rawWithoutFragment,
-		CloneURL:        rawWithoutFragment,
-		Ref:             ref,
-	}, nil
+	return lock.SourceGit, location, location, nil
 }
 
 func splitPathSegments(path string) []string {
@@ -214,14 +164,6 @@ func splitPathSegments(path string) []string {
 	})
 }
 
-func sourceTypeForHost(host string) string {
-	if host == "gitlab.com" {
-		return "gitlab"
-	}
-
-	return "github"
-}
-
 func looksLikeLocalPath(raw string) bool {
 	if filepath.IsAbs(raw) {
 		return true
@@ -229,14 +171,4 @@ func looksLikeLocalPath(raw string) bool {
 
 	return raw == "." || raw == ".." ||
 		strings.HasPrefix(raw, "./") || strings.HasPrefix(raw, "../")
-}
-
-// SupportedSourceType reports whether the source type can be cloned/updated.
-func SupportedSourceType(sourceType string) bool {
-	switch sourceType {
-	case "github", "gitlab", "git", "local":
-		return true
-	default:
-		return false
-	}
 }

@@ -592,7 +592,7 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 		for _, s := range skipped {
 			skippedByName[s.SkillName] = s
 		}
-		wantSkipped := map[string]string{
+		wantSkipped := map[string]lock.SourceType{
 			"wellknown-skill": "well-known",
 			"npm-skill":       "node_modules",
 		}

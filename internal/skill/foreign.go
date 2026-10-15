@@ -68,8 +68,8 @@ func ScanInstalledSkills(skillsDir string) ([]InstalledSkill, error) {
 // (frontmatter metadata, no lockfile): when no lockfile exists yet and the
 // source is a GitHub repository. Other source types keep the lockfile format,
 // which unlike gh skill metadata can track them for updates.
-func PreferTrackedInstall(lockfileExists bool, sourceType string) bool {
-	return !lockfileExists && sourceType == "github"
+func PreferTrackedInstall(lockfileExists bool, sourceType lock.SourceType) bool {
+	return !lockfileExists && sourceType == lock.SourceGitHub
 }
 
 // UnmanagedSkills returns installed skills whose names are absent from the
@@ -173,7 +173,7 @@ func NewUpstreamFuncs(ctx context.Context, tmpPrefix string) (UpstreamFuncs, fun
 // compares the installed github-tree-sha against the upstream tree SHA at the
 // latest ref, mirroring gh skill update. Pinned and local skills are reported
 // with their own statuses and never fetched.
-func AggregateForeignUpdateCandidates(installed []InstalledSkill, fns UpstreamFuncs) ([]UpdateCandidate, error) {
+func AggregateForeignUpdateCandidates(installed []InstalledSkill, fns UpstreamFuncs) []UpdateCandidate {
 	byRepo := make(map[string][]InstalledSkill)
 	var candidates []UpdateCandidate
 
@@ -223,7 +223,7 @@ func AggregateForeignUpdateCandidates(installed []InstalledSkill, fns UpstreamFu
 	}
 
 	sortCandidates(candidates)
-	return candidates, nil
+	return candidates
 }
 
 func resolveRepoCandidates(group []InstalledSkill, fns UpstreamFuncs) ([]UpdateCandidate, error) {

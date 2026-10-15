@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -39,15 +40,8 @@ func ShallowClone(ctx context.Context, cloneURL, ref, destDir string) error {
 }
 
 func shallowCloneDefault(ctx context.Context, cloneURL, destDir string) error {
-	cmd, err := gitCommand(ctx, "clone", "--depth", "1", "--", cloneURL, destDir)
-	if err != nil {
-		return err
-	}
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("git clone %q: %w\n%s", cloneURL, err, out)
-	}
-	return nil
+	_, err := runGit(ctx, "clone", "--depth", "1", "--", cloneURL, destDir)
+	return err
 }
 
 func shallowCloneRef(ctx context.Context, cloneURL, ref, destDir string) error {
@@ -76,18 +70,10 @@ func DiffNoIndex(ctx context.Context, pathA, pathB string) (string, bool, error)
 	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && exitErr.ExitCode() == 1 {
 			return string(out), true, nil
 		}
 		return "", false, fmt.Errorf("git diff --no-index: %w\n%s", err, out)
 	}
 	return string(out), false, nil
-}
-
-func IsRepository(ctx context.Context, dir string) bool {
-	cmd, err := gitCommand(ctx, "-C", dir, "rev-parse", "--show-toplevel")
-	if err != nil {
-		return false
-	}
-	return cmd.Run() == nil
 }
