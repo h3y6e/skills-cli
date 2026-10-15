@@ -1,13 +1,14 @@
 package skill_test
 
 import (
-	"fmt"
+	"errors"
 	"slices"
 	"testing"
 	"time"
 
 	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
+	"github.com/h3y6e/skolar/internal/testutil"
 )
 
 func TestResolveUpdateCandidates(t *testing.T) {
@@ -42,12 +43,15 @@ func TestResolveUpdateCandidates(t *testing.T) {
 		if c.SkillName != "my-skill" {
 			t.Errorf("SkillName = %q, want %q", c.SkillName, "my-skill")
 		}
+
 		if c.Status != skill.StatusUpToDate {
 			t.Errorf("Status = %q, want %q", c.Status, skill.StatusUpToDate)
 		}
+
 		if c.CurrentHash != "abc123" {
 			t.Errorf("CurrentHash = %q, want %q", c.CurrentHash, "abc123")
 		}
+
 		if c.LatestHash != "abc123" {
 			t.Errorf("LatestHash = %q, want %q", c.LatestHash, "abc123")
 		}
@@ -82,12 +86,15 @@ func TestResolveUpdateCandidates(t *testing.T) {
 		if c.Status != skill.StatusUpdateAvailable {
 			t.Errorf("Status = %q, want %q", c.Status, skill.StatusUpdateAvailable)
 		}
+
 		if c.CurrentHash != "old-hash" {
 			t.Errorf("CurrentHash = %q, want %q", c.CurrentHash, "old-hash")
 		}
+
 		if c.LatestHash != "new-hash" {
 			t.Errorf("LatestHash = %q, want %q", c.LatestHash, "new-hash")
 		}
+
 		if c.StagedDir != "/tmp/staged/my-skill" {
 			t.Errorf("StagedDir = %q, want %q", c.StagedDir, "/tmp/staged/my-skill")
 		}
@@ -116,6 +123,7 @@ func TestResolveUpdateCandidates(t *testing.T) {
 		if c.Status != skill.StatusCheckFailed {
 			t.Errorf("Status = %q, want %q", c.Status, skill.StatusCheckFailed)
 		}
+
 		if c.Reason == "" {
 			t.Error("expected non-empty Reason for check-failed")
 		}
@@ -156,6 +164,7 @@ func TestResolveUpdateCandidates(t *testing.T) {
 		if byName["skill-a"].Status != skill.StatusUpToDate {
 			t.Errorf("skill-a Status = %q, want %q", byName["skill-a"].Status, skill.StatusUpToDate)
 		}
+
 		if byName["skill-b"].Status != skill.StatusUpdateAvailable {
 			t.Errorf("skill-b Status = %q, want %q", byName["skill-b"].Status, skill.StatusUpdateAvailable)
 		}
@@ -179,9 +188,11 @@ func TestResolveUpdateCandidates(t *testing.T) {
 		if len(candidates) != 2 {
 			t.Fatalf("expected 2 candidates, got %d", len(candidates))
 		}
+
 		if candidates[0].SkillName != "alpha" {
 			t.Errorf("first candidate = %q, want %q", candidates[0].SkillName, "alpha")
 		}
+
 		if candidates[1].SkillName != "zeta" {
 			t.Errorf("second candidate = %q, want %q", candidates[1].SkillName, "zeta")
 		}
@@ -222,6 +233,7 @@ func TestFilterCandidates(t *testing.T) {
 		if len(result) != 1 {
 			t.Fatalf("expected 1, got %d", len(result))
 		}
+
 		if result[0].SkillName != "b" {
 			t.Errorf("SkillName = %q, want %q", result[0].SkillName, "b")
 		}
@@ -246,15 +258,22 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 		srcA := t.TempDir()
 		srcB := t.TempDir()
 
-		writeFiles(t, srcA, map[string]string{
+		testutil.WriteFiles(t, srcA, map[string]string{
 			"skills/skill-x/SKILL.md": "# Skill X updated\n",
 		})
-		writeFiles(t, srcB, map[string]string{
+		testutil.WriteFiles(t, srcB, map[string]string{
 			"skills/skill-y/SKILL.md": "# Skill Y same\n",
 		})
 
-		discoveredA, _ := skill.DiscoverSkills(srcA)
-		discoveredB, _ := skill.DiscoverSkills(srcB)
+		discoveredA, err := skill.DiscoverSkills(srcA)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		discoveredB, err := skill.DiscoverSkills(srcB)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		entries := map[string]lock.Entry{
 			"skill-x": {
@@ -278,6 +297,7 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 			if !ok {
 				t.Fatalf("unexpected clone for source %q", source)
 			}
+
 			return dir, nil
 		}
 
@@ -298,9 +318,11 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 		if byName["skill-x"].Status != skill.StatusUpdateAvailable {
 			t.Errorf("skill-x Status = %q, want %q", byName["skill-x"].Status, skill.StatusUpdateAvailable)
 		}
+
 		if byName["skill-x"].LatestHash != discoveredA[0].ComputedHash {
 			t.Errorf("skill-x LatestHash = %q, want %q", byName["skill-x"].LatestHash, discoveredA[0].ComputedHash)
 		}
+
 		if byName["skill-y"].Status != skill.StatusUpToDate {
 			t.Errorf("skill-y Status = %q, want %q", byName["skill-y"].Status, skill.StatusUpToDate)
 		}
@@ -312,15 +334,22 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 		srcMain := t.TempDir()
 		srcFeature := t.TempDir()
 
-		writeFiles(t, srcMain, map[string]string{
+		testutil.WriteFiles(t, srcMain, map[string]string{
 			"skills/shared-main/SKILL.md": "# Main\n",
 		})
-		writeFiles(t, srcFeature, map[string]string{
+		testutil.WriteFiles(t, srcFeature, map[string]string{
 			"skills/shared-feature/SKILL.md": "# Feature\n",
 		})
 
-		discoveredMain, _ := skill.DiscoverSkills(srcMain)
-		discoveredFeature, _ := skill.DiscoverSkills(srcFeature)
+		discoveredMain, err := skill.DiscoverSkills(srcMain)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		discoveredFeature, err := skill.DiscoverSkills(srcFeature)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		entries := map[string]lock.Entry{
 			"shared-main": {
@@ -346,6 +375,7 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 			if !ok {
 				t.Fatalf("unexpected clone for source %q", source)
 			}
+
 			return dir, nil
 		}
 
@@ -353,6 +383,7 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 		if err != nil {
 			t.Fatalf("AggregateUpdateCandidates() error = %v", err)
 		}
+
 		if len(candidates) != 2 {
 			t.Fatalf("expected 2 candidates, got %d", len(candidates))
 		}
@@ -365,12 +396,15 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 		if byName["shared-main"].Ref != "main" {
 			t.Errorf("shared-main Ref = %q, want %q", byName["shared-main"].Ref, "main")
 		}
+
 		if byName["shared-main"].LatestHash != discoveredMain[0].ComputedHash {
 			t.Errorf("shared-main LatestHash = %q, want %q", byName["shared-main"].LatestHash, discoveredMain[0].ComputedHash)
 		}
+
 		if byName["shared-feature"].Ref != "feature/install" {
 			t.Errorf("shared-feature Ref = %q, want %q", byName["shared-feature"].Ref, "feature/install")
 		}
+
 		if byName["shared-feature"].LatestHash != discoveredFeature[0].ComputedHash {
 			t.Errorf("shared-feature LatestHash = %q, want %q", byName["shared-feature"].LatestHash, discoveredFeature[0].ComputedHash)
 		}
@@ -380,12 +414,16 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 		t.Parallel()
 
 		srcDir := t.TempDir()
-		writeFiles(t, srcDir, map[string]string{
+		testutil.WriteFiles(t, srcDir, map[string]string{
 			"skills/zeta/SKILL.md":  "# Zeta\n",
 			"skills/alpha/SKILL.md": "# Alpha\n",
 		})
 
-		discovered, _ := skill.DiscoverSkills(srcDir)
+		discovered, err := skill.DiscoverSkills(srcDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		hashByName := map[string]string{}
 		for _, d := range discovered {
 			hashByName[d.Name] = d.ComputedHash
@@ -396,7 +434,7 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 			"alpha": {Source: "o/r", SourceType: "github", ComputedHash: hashByName["alpha"]},
 		}
 
-		cloneFn := func(source string) (string, error) {
+		cloneFn := func(_ string) (string, error) {
 			return srcDir, nil
 		}
 
@@ -408,9 +446,11 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 		if len(candidates) != 2 {
 			t.Fatalf("expected 2 candidates, got %d", len(candidates))
 		}
+
 		if candidates[0].SkillName != "alpha" {
 			t.Errorf("first = %q, want 'alpha'", candidates[0].SkillName)
 		}
+
 		if candidates[1].SkillName != "zeta" {
 			t.Errorf("second = %q, want 'zeta'", candidates[1].SkillName)
 		}
@@ -422,10 +462,10 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 		srcA := t.TempDir()
 		srcB := t.TempDir()
 
-		writeFiles(t, srcA, map[string]string{
+		testutil.WriteFiles(t, srcA, map[string]string{
 			"skills/alpha/SKILL.md": "# Alpha\n",
 		})
-		writeFiles(t, srcB, map[string]string{
+		testutil.WriteFiles(t, srcB, map[string]string{
 			"skills/beta/SKILL.md": "# Beta\n",
 		})
 
@@ -448,17 +488,21 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 			}
 
 			started <- source
+
 			<-release
+
 			return dir, nil
 		}
 
 		done := make(chan struct{})
+
 		var (
 			candidates []skill.UpdateCandidate
 			err        error
 		)
 		go func() {
 			candidates, _, err = skill.AggregateUpdateCandidates(entries, cloneFn)
+
 			close(done)
 		}()
 
@@ -483,6 +527,7 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 		if err != nil {
 			t.Fatalf("AggregateUpdateCandidates() error = %v", err)
 		}
+
 		if len(candidates) != 2 {
 			t.Fatalf("expected 2 candidates, got %d", len(candidates))
 		}
@@ -495,8 +540,8 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 			"skill-a": {Source: "bad/source", SourceType: "github", ComputedHash: "h"},
 		}
 
-		cloneFn := func(source string) (string, error) {
-			return "", fmt.Errorf("clone failed")
+		cloneFn := func(_ string) (string, error) {
+			return "", errors.New("clone failed")
 		}
 
 		_, _, err := skill.AggregateUpdateCandidates(entries, cloneFn)
@@ -508,7 +553,7 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 	t.Run("empty lockfile returns empty candidates", func(t *testing.T) {
 		t.Parallel()
 
-		cloneFn := func(source string) (string, error) {
+		cloneFn := func(_ string) (string, error) {
 			t.Fatal("should not be called")
 			return "", nil
 		}
@@ -517,6 +562,7 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 		if err != nil {
 			t.Fatalf("AggregateUpdateCandidates() error = %v", err)
 		}
+
 		if len(candidates) != 0 {
 			t.Errorf("expected 0 candidates, got %d", len(candidates))
 		}
@@ -527,15 +573,22 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 
 		srcDir := t.TempDir()
 		localSrcDir := t.TempDir()
-		writeFiles(t, srcDir, map[string]string{
+		testutil.WriteFiles(t, srcDir, map[string]string{
 			"skills/supported-skill/SKILL.md": "# Supported\n",
 		})
-		writeFiles(t, localSrcDir, map[string]string{
+		testutil.WriteFiles(t, localSrcDir, map[string]string{
 			"skills/local-skill/SKILL.md": "# Local\n",
 		})
 
-		discovered, _ := skill.DiscoverSkills(srcDir)
-		localDiscovered, _ := skill.DiscoverSkills(localSrcDir)
+		discovered, err := skill.DiscoverSkills(srcDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		localDiscovered, err := skill.DiscoverSkills(localSrcDir)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		entries := map[string]lock.Entry{
 			"supported-skill": {
@@ -564,10 +617,13 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 			if source == "h3y6e/spec-skills" {
 				return srcDir, nil
 			}
+
 			if source == localSrcDir {
 				return localSrcDir, nil
 			}
+
 			t.Fatalf("unexpected clone for source %q", source)
+
 			return "", nil
 		}
 
@@ -579,6 +635,7 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 		if len(candidates) != 2 {
 			t.Fatalf("expected 2 candidates, got %d", len(candidates))
 		}
+
 		candidateNames := []string{candidates[0].SkillName, candidates[1].SkillName}
 		if !slices.Equal(candidateNames, []string{"local-skill", "supported-skill"}) {
 			t.Errorf("candidate names = %v, want %v", candidateNames, []string{"local-skill", "supported-skill"})
@@ -592,7 +649,8 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 		for _, s := range skipped {
 			skippedByName[s.SkillName] = s
 		}
-		wantSkipped := map[string]string{
+
+		wantSkipped := map[string]lock.SourceType{
 			"wellknown-skill": "well-known",
 			"npm-skill":       "node_modules",
 		}
@@ -602,6 +660,7 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 				t.Errorf("expected %q in skipped entries", name)
 				continue
 			}
+
 			if got.SourceType != wantType {
 				t.Errorf("skipped %q SourceType = %q, want %q", name, got.SourceType, wantType)
 			}
@@ -611,6 +670,7 @@ func TestAggregateUpdateCandidates(t *testing.T) {
 
 func TestResolveUpdateCandidatesBySkillPath(t *testing.T) {
 	t.Parallel()
+
 	at := func(name, path, hash string) skill.DiscoveredSkill {
 		return skill.DiscoveredSkill{Name: name, Path: path, ComputedHash: hash, Dir: "/clone/" + path}
 	}

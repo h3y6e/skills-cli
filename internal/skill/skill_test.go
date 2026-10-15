@@ -6,21 +6,8 @@ import (
 	"testing"
 
 	"github.com/h3y6e/skolar/internal/skill"
+	"github.com/h3y6e/skolar/internal/testutil"
 )
-
-// writeFiles creates files for testing.
-func writeFiles(t *testing.T, base string, files map[string]string) {
-	t.Helper()
-	for name, content := range files {
-		p := filepath.Join(base, name)
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
 
 func TestDiscoverSkills(t *testing.T) {
 	t.Parallel()
@@ -28,7 +15,7 @@ func TestDiscoverSkills(t *testing.T) {
 	t.Run("discovers skills under skills/ directory", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"skills/my-skill/SKILL.md":        "# My Skill\n",
 			"skills/other-skill/SKILL.md":     "# Other\n",
 			"skills/other-skill/reference.md": "ref\n",
@@ -39,6 +26,7 @@ func TestDiscoverSkills(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
+
 		if len(skills) != 2 {
 			t.Fatalf("expected 2 skills, got %d", len(skills))
 		}
@@ -46,6 +34,7 @@ func TestDiscoverSkills(t *testing.T) {
 		if skills[0].Name != "my-skill" {
 			t.Errorf("skills[0].Name = %q, want %q", skills[0].Name, "my-skill")
 		}
+
 		if skills[1].Name != "other-skill" {
 			t.Errorf("skills[1].Name = %q, want %q", skills[1].Name, "other-skill")
 		}
@@ -54,6 +43,7 @@ func TestDiscoverSkills(t *testing.T) {
 			if s.ComputedHash == "" {
 				t.Errorf("skill %q has empty ComputedHash", s.Name)
 			}
+
 			if s.Dir == "" {
 				t.Errorf("skill %q has empty Dir", s.Name)
 			}
@@ -63,7 +53,7 @@ func TestDiscoverSkills(t *testing.T) {
 	t.Run("falls back to root when no skills/ directory", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"my-skill/SKILL.md": "# Root Skill\n",
 			"README.md":         "# Repo\n",
 		})
@@ -72,9 +62,11 @@ func TestDiscoverSkills(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
+
 		if len(skills) != 1 {
 			t.Fatalf("expected 1 skill, got %d", len(skills))
 		}
+
 		if skills[0].Name != "my-skill" {
 			t.Errorf("Name = %q, want %q", skills[0].Name, "my-skill")
 		}
@@ -85,24 +77,26 @@ func TestDiscoverSkills(t *testing.T) {
 
 		// Arrange
 		root := t.TempDir()
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"skills/engineering/codebase-design/SKILL.md": "# Codebase Design\n",
 			"skills/writing/writing-japanese/SKILL.md":    "# Writing Japanese\n",
 		})
 
 		// Act
 		skills, err := skill.DiscoverSkills(root)
-
 		// Assert
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
+
 		if len(skills) != 2 {
 			t.Fatalf("expected 2 skills, got %d", len(skills))
 		}
+
 		if skills[0].Name != "codebase-design" || skills[0].Path != "skills/engineering/codebase-design" {
 			t.Errorf("skills[0] = %q (%q)", skills[0].Name, skills[0].Path)
 		}
+
 		if skills[1].Name != "writing-japanese" || skills[1].Path != "skills/writing/writing-japanese" {
 			t.Errorf("skills[1] = %q (%q)", skills[1].Name, skills[1].Path)
 		}
@@ -113,24 +107,26 @@ func TestDiscoverSkills(t *testing.T) {
 
 		// Arrange
 		root := t.TempDir()
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"skills/cxg/SKILL.md":                         "# cxg\n",
 			"skills/engineering/diagnosing-bugs/SKILL.md": "# Diagnosing Bugs\n",
 		})
 
 		// Act
 		skills, err := skill.DiscoverSkills(root)
-
 		// Assert
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
+
 		if len(skills) != 2 {
 			t.Fatalf("expected 2 skills, got %d", len(skills))
 		}
+
 		if skills[0].Name != "cxg" || skills[0].Path != "skills/cxg" {
 			t.Errorf("skills[0] = %q (%q)", skills[0].Name, skills[0].Path)
 		}
+
 		if skills[1].Name != "diagnosing-bugs" || skills[1].Path != "skills/engineering/diagnosing-bugs" {
 			t.Errorf("skills[1] = %q (%q)", skills[1].Name, skills[1].Path)
 		}
@@ -141,18 +137,18 @@ func TestDiscoverSkills(t *testing.T) {
 
 		// Arrange
 		root := t.TempDir()
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"skills/a/code-review/SKILL.md": "# A\n",
 			"skills/b/code-review/SKILL.md": "# B\n",
 		})
 
 		// Act
 		skills, err := skill.DiscoverSkills(root)
-
 		// Assert
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		picked := skill.FilterDiscoveredSkills(skills, nil)
 		if len(skills) != 2 || len(picked) != 1 || picked[0].Path != "skills/a/code-review" {
 			t.Errorf("skills = %+v, picked = %+v, want both found and skills/a/code-review picked", skills, picked)
@@ -164,11 +160,11 @@ func TestDiscoverSkills(t *testing.T) {
 
 		// Arrange
 		skillsRoot := t.TempDir()
-		writeFiles(t, skillsRoot, map[string]string{
+		testutil.WriteFiles(t, skillsRoot, map[string]string{
 			"skills/my-skill/SKILL.md": "# My Skill\n",
 		})
 		flatRoot := t.TempDir()
-		writeFiles(t, flatRoot, map[string]string{
+		testutil.WriteFiles(t, flatRoot, map[string]string{
 			"my-skill/SKILL.md": "# My Skill\n",
 		})
 
@@ -177,6 +173,7 @@ func TestDiscoverSkills(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
+
 		fromFlat, err := skill.DiscoverSkills(flatRoot)
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
@@ -186,6 +183,7 @@ func TestDiscoverSkills(t *testing.T) {
 		if got := fromSkillsDir[0].Path; got != "skills/my-skill" {
 			t.Errorf("Path = %q, want %q", got, "skills/my-skill")
 		}
+
 		if got := fromFlat[0].Path; got != "my-skill" {
 			t.Errorf("Path = %q, want %q", got, "my-skill")
 		}
@@ -195,18 +193,18 @@ func TestDiscoverSkills(t *testing.T) {
 		t.Parallel()
 		// Arrange
 		root := t.TempDir()
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"skills/preferred/SKILL.md": "# Preferred\n",
 			"root-skill/SKILL.md":       "# Root\n",
 		})
 
 		// Act
 		skills, err := skill.DiscoverSkills(root)
-
 		// Assert
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		if len(skills) != 2 || !skills[0].Default || !skills[1].Default {
 			t.Errorf("skills = %+v, want preferred and root-skill as defaults", skills)
 		}
@@ -215,7 +213,7 @@ func TestDiscoverSkills(t *testing.T) {
 	t.Run("ignores directories without SKILL.md", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"skills/valid/SKILL.md":    "# Valid\n",
 			"skills/invalid/README.md": "# Not a skill\n",
 		})
@@ -224,9 +222,11 @@ func TestDiscoverSkills(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
+
 		if len(skills) != 1 {
 			t.Fatalf("expected 1 skill, got %d", len(skills))
 		}
+
 		if skills[0].Name != "valid" {
 			t.Errorf("Name = %q, want %q", skills[0].Name, "valid")
 		}
@@ -235,7 +235,7 @@ func TestDiscoverSkills(t *testing.T) {
 	t.Run("returns empty for repo with no skills", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"README.md": "# Empty Repo\n",
 		})
 
@@ -243,6 +243,7 @@ func TestDiscoverSkills(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DiscoverSkills() error = %v", err)
 		}
+
 		if len(skills) != 0 {
 			t.Errorf("expected 0 skills, got %d", len(skills))
 		}
@@ -252,18 +253,18 @@ func TestDiscoverSkills(t *testing.T) {
 		t.Parallel()
 		// Arrange
 		root := t.TempDir()
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"skills/top/SKILL.md":        "# Top\n",
 			"skills/top/nested/SKILL.md": "# Nested\n",
 		})
 
 		// Act
 		skills, err := skill.DiscoverSkills(root)
-
 		// Assert
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		if len(skills) != 2 || skills[0].Name != "top" || !skills[0].Default || skills[1].Name != "nested" || !skills[1].Default {
 			t.Errorf("skills = %+v, want nested and top as defaults", skills)
 		}
@@ -272,18 +273,26 @@ func TestDiscoverSkills(t *testing.T) {
 	t.Run("hash includes all files in skill directory", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"skills/s1/SKILL.md": "# S1\n",
 		})
 
-		skills1, _ := skill.DiscoverSkills(root)
+		skills1, err := skill.DiscoverSkills(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		hash1 := skills1[0].ComputedHash
 
-		writeFiles(t, root, map[string]string{
+		testutil.WriteFiles(t, root, map[string]string{
 			"skills/s1/extra.md": "extra content\n",
 		})
 
-		skills2, _ := skill.DiscoverSkills(root)
+		skills2, err := skill.DiscoverSkills(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		hash2 := skills2[0].ComputedHash
 
 		if hash1 == hash2 {
@@ -294,7 +303,7 @@ func TestDiscoverSkills(t *testing.T) {
 
 func TestComputeHashIsDeterministicAndContentSensitive(t *testing.T) {
 	root := t.TempDir()
-	writeFiles(t, root, map[string]string{
+	testutil.WriteFiles(t, root, map[string]string{
 		"spec-plan/SKILL.md": "# My Skill\n",
 	})
 	skillPath := filepath.Join(root, "spec-plan")
@@ -344,17 +353,18 @@ func TestComputeHashMatchesVercel(t *testing.T) {
 			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 				t.Fatal(err)
 			}
+
 			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 				t.Fatal(err)
 			}
 		}
+
 		if err := os.Symlink("a.md", filepath.Join(dir, "link.md")); err != nil {
 			t.Fatal(err)
 		}
 
 		// Act
 		got, err := skill.ComputeHash(dir)
-
 		// Assert
 		if err != nil {
 			t.Fatal(err)

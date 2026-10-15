@@ -11,6 +11,7 @@ import (
 
 	"github.com/h3y6e/skolar/cmd"
 	"github.com/h3y6e/skolar/internal/lock"
+	"github.com/h3y6e/skolar/internal/testutil"
 )
 
 func TestCheckFlags(t *testing.T) {
@@ -21,6 +22,7 @@ func TestCheckFlags(t *testing.T) {
 
 	t.Run("--json flag is registered", func(t *testing.T) {
 		t.Parallel()
+
 		flag := checkCmd.Flags().Lookup("json")
 		if flag == nil {
 			t.Fatal("expected --json flag on check command")
@@ -34,7 +36,7 @@ func TestCheckHuman(t *testing.T) {
 	t.Run("shows up-to-date when no changes", func(t *testing.T) {
 		t.Parallel()
 
-		bareURL := initBareRepo(t, map[string]string{
+		bareURL := testutil.BareRepo(t, map[string]string{
 			"skills/alpha/SKILL.md": "# Alpha\n",
 		})
 
@@ -43,15 +45,18 @@ func TestCheckHuman(t *testing.T) {
 		// Install.
 		root1 := cmd.NewRootCmd("test")
 		root1.SetArgs([]string{"add", "-d", skillsDir, bareURL})
+
 		if err := root1.Execute(); err != nil {
 			t.Fatalf("add error: %v", err)
 		}
 
 		// Check.
 		var out bytes.Buffer
+
 		root2 := cmd.NewRootCmd("test")
 		root2.SetOut(&out)
 		root2.SetArgs([]string{"check", "-d", skillsDir})
+
 		if err := root2.Execute(); err != nil {
 			t.Fatalf("check error: %v", err)
 		}
@@ -65,7 +70,7 @@ func TestCheckHuman(t *testing.T) {
 	t.Run("shows update-available with stale hash", func(t *testing.T) {
 		t.Parallel()
 
-		bareURL := initBareRepo(t, map[string]string{
+		bareURL := testutil.BareRepo(t, map[string]string{
 			"skills/alpha/SKILL.md": "# Alpha\n",
 		})
 
@@ -74,22 +79,33 @@ func TestCheckHuman(t *testing.T) {
 		// Install.
 		root1 := cmd.NewRootCmd("test")
 		root1.SetArgs([]string{"add", "-d", skillsDir, bareURL})
+
 		if err := root1.Execute(); err != nil {
 			t.Fatalf("add error: %v", err)
 		}
 
 		// Tamper hash.
 		lockPath := lock.FilePath(skillsDir)
-		lf, _ := lock.ReadFile(lockPath)
+
+		lf, err := lock.ReadFile(lockPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		entry := lf.Skills["alpha"]
 		entry.ComputedHash = "stale-hash"
+
 		lf.Skills["alpha"] = entry
-		lock.WriteFile(lockPath, lf)
+		if err := lock.WriteFile(lockPath, lf); err != nil {
+			t.Fatal(err)
+		}
 
 		var out bytes.Buffer
+
 		root2 := cmd.NewRootCmd("test")
 		root2.SetOut(&out)
 		root2.SetArgs([]string{"check", "-d", skillsDir})
+
 		if err := root2.Execute(); err != nil {
 			t.Fatalf("check error: %v", err)
 		}
@@ -103,15 +119,14 @@ func TestCheckHuman(t *testing.T) {
 	t.Run("does not contain diff output", func(t *testing.T) {
 		t.Parallel()
 
-		bareURL := initBareRepo(t, map[string]string{
+		bareURL := testutil.BareRepo(t, map[string]string{
 			"skills/alpha/SKILL.md": "# Alpha v2\n",
 		})
 
 		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 		// Manually install old content with stale hash.
-		os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755)
-		os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("# Alpha v1\n"), 0o644)
+		testutil.WriteFiles(t, skillsDir, map[string]string{"alpha/SKILL.md": "# Alpha v1\n"})
 
 		lf := lock.File{
 			Version: 1,
@@ -119,12 +134,16 @@ func TestCheckHuman(t *testing.T) {
 				"alpha": {Source: bareURL, SourceType: "git", ComputedHash: "stale"},
 			},
 		}
-		lock.WriteFile(lock.FilePath(skillsDir), lf)
+		if err := lock.WriteFile(lock.FilePath(skillsDir), lf); err != nil {
+			t.Fatal(err)
+		}
 
 		var out bytes.Buffer
+
 		root := cmd.NewRootCmd("test")
 		root.SetOut(&out)
 		root.SetArgs([]string{"check", "-d", skillsDir})
+
 		if err := root.Execute(); err != nil {
 			t.Fatalf("check error: %v", err)
 		}
@@ -134,6 +153,7 @@ func TestCheckHuman(t *testing.T) {
 		if strings.Contains(got, "diff --git") {
 			t.Errorf("check should not contain diff output, got: %q", got)
 		}
+
 		if strings.Contains(got, "@@") {
 			t.Errorf("check should not contain patch markers, got: %q", got)
 		}
@@ -144,7 +164,7 @@ func TestCheckHuman(t *testing.T) {
 
 		rootDir := t.TempDir()
 		dirA := filepath.Join(rootDir, ".agents", "skills")
-		bareURL := initBareRepo(t, map[string]string{
+		bareURL := testutil.BareRepo(t, map[string]string{
 			"skills/alpha/SKILL.md": "# Alpha\n",
 			"skills/beta/SKILL.md":  "# Beta\n",
 		})
@@ -164,17 +184,21 @@ func TestCheckHuman(t *testing.T) {
 		    }
 		  }
 		}`)
+
 		if err := os.MkdirAll(filepath.Dir(lock.FilePath(dirA)), 0o755); err != nil {
 			t.Fatalf("mkdir lockfile parent: %v", err)
 		}
+
 		if err := os.WriteFile(lock.FilePath(dirA), lockData, 0o644); err != nil {
 			t.Fatalf("write lockfile: %v", err)
 		}
 
 		var out bytes.Buffer
+
 		root := cmd.NewRootCmd("test")
 		root.SetOut(&out)
 		root.SetArgs([]string{"check", "-d", filepath.Join(rootDir, "custom", "skills")})
+
 		if err := root.Execute(); err != nil {
 			t.Fatalf("check error: %v", err)
 		}
@@ -193,15 +217,16 @@ func TestCheckHuman(t *testing.T) {
 
 		// Act
 		var out bytes.Buffer
+
 		root := cmd.NewRootCmd("test")
 		root.SetErr(&out)
 		root.SetArgs([]string{"check", "-d", skillsDir})
 		err := root.Execute()
-
 		// Assert
 		if err != nil {
 			t.Fatalf("check: %v", err)
 		}
+
 		if !strings.Contains(out.String(), "no installed skills to check") {
 			t.Errorf("output = %q, want %q", out.String(), "no installed skills to check")
 		}
@@ -211,7 +236,7 @@ func TestCheckHuman(t *testing.T) {
 func TestCheckJSON(t *testing.T) {
 	t.Parallel()
 
-	bareURL := initBareRepo(t, map[string]string{
+	bareURL := testutil.BareRepo(t, map[string]string{
 		"skills/alpha/SKILL.md": "# Alpha\n",
 		"skills/beta/SKILL.md":  "# Beta\n",
 	})
@@ -224,22 +249,33 @@ func TestCheckJSON(t *testing.T) {
 		// Install.
 		root1 := cmd.NewRootCmd("test")
 		root1.SetArgs([]string{"add", "-d", skillsDir, bareURL})
+
 		if err := root1.Execute(); err != nil {
 			t.Fatalf("add error: %v", err)
 		}
 
 		// Tamper one hash.
 		lockPath := lock.FilePath(skillsDir)
-		lf, _ := lock.ReadFile(lockPath)
+
+		lf, err := lock.ReadFile(lockPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		entry := lf.Skills["alpha"]
 		entry.ComputedHash = "stale"
+
 		lf.Skills["alpha"] = entry
-		lock.WriteFile(lockPath, lf)
+		if err := lock.WriteFile(lockPath, lf); err != nil {
+			t.Fatal(err)
+		}
 
 		var out bytes.Buffer
+
 		root2 := cmd.NewRootCmd("test")
 		root2.SetOut(&out)
 		root2.SetArgs([]string{"check", "--json", "-d", skillsDir})
+
 		if err := root2.Execute(); err != nil {
 			t.Fatalf("check --json error: %v", err)
 		}
@@ -252,6 +288,7 @@ func TestCheckJSON(t *testing.T) {
 
 		// Find alpha and beta in results.
 		var alphaResult, betaResult map[string]any
+
 		for _, r := range results {
 			switch r["skillName"] {
 			case "alpha":
@@ -264,6 +301,7 @@ func TestCheckJSON(t *testing.T) {
 		if alphaResult == nil {
 			t.Fatal("alpha not found in JSON results")
 		}
+
 		if betaResult == nil {
 			t.Fatal("beta not found in JSON results")
 		}
@@ -271,6 +309,7 @@ func TestCheckJSON(t *testing.T) {
 		if alphaResult["status"] != "update-available" {
 			t.Errorf("alpha status = %v, want update-available", alphaResult["status"])
 		}
+
 		if betaResult["status"] != "up-to-date" {
 			t.Errorf("beta status = %v, want up-to-date", betaResult["status"])
 		}
@@ -287,15 +326,14 @@ func TestCheckJSON(t *testing.T) {
 func TestCheckNonMutating(t *testing.T) {
 	t.Parallel()
 
-	bareURL := initBareRepo(t, map[string]string{
+	bareURL := testutil.BareRepo(t, map[string]string{
 		"skills/alpha/SKILL.md": "# Alpha v2\n",
 	})
 
 	skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 	// Manually install old version with stale hash.
-	os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755)
-	os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("# Alpha v1\n"), 0o644)
+	testutil.WriteFiles(t, skillsDir, map[string]string{"alpha/SKILL.md": "# Alpha v1\n"})
 
 	lf := lock.File{
 		Version: 1,
@@ -303,8 +341,11 @@ func TestCheckNonMutating(t *testing.T) {
 			"alpha": {Source: bareURL, SourceType: "git", ComputedHash: "stale-hash"},
 		},
 	}
+
 	lockPath := lock.FilePath(skillsDir)
-	lock.WriteFile(lockPath, lf)
+	if err := lock.WriteFile(lockPath, lf); err != nil {
+		t.Fatal(err)
+	}
 
 	// Record lockfile content before check.
 	lockBefore, _ := os.ReadFile(lockPath)
@@ -313,15 +354,18 @@ func TestCheckNonMutating(t *testing.T) {
 	// Run check (human mode).
 	root1 := cmd.NewRootCmd("test")
 	root1.SetArgs([]string{"check", "-d", skillsDir})
+
 	if err := root1.Execute(); err != nil {
 		t.Fatalf("check error: %v", err)
 	}
 
 	// Run check --json.
 	var out bytes.Buffer
+
 	root2 := cmd.NewRootCmd("test")
 	root2.SetOut(&out)
 	root2.SetArgs([]string{"check", "--json", "-d", skillsDir})
+
 	if err := root2.Execute(); err != nil {
 		t.Fatalf("check --json error: %v", err)
 	}
@@ -346,6 +390,7 @@ func TestCheckJSONIncludesRef(t *testing.T) {
 
 	bareURLWithRefs := initBareRepoWithRefs(t)
 	skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
+
 	lf := lock.File{
 		Version: 1,
 		Skills: map[string]lock.Entry{
@@ -362,9 +407,11 @@ func TestCheckJSONIncludesRef(t *testing.T) {
 	}
 
 	var out bytes.Buffer
+
 	root := cmd.NewRootCmd("test")
 	root.SetOut(&out)
 	root.SetArgs([]string{"check", "--json", "-d", skillsDir})
+
 	if err := root.Execute(); err != nil {
 		t.Fatalf("check --json error: %v", err)
 	}
@@ -373,6 +420,7 @@ func TestCheckJSONIncludesRef(t *testing.T) {
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
+
 	if results[0]["ref"] != "feature/install" {
 		t.Errorf("ref = %v, want %q", results[0]["ref"], "feature/install")
 	}
@@ -383,18 +431,20 @@ func TestCheckJSONWithoutSkills(t *testing.T) {
 
 	// Arrange
 	skillsDir := filepath.Join(t.TempDir(), "skills")
+
 	var out bytes.Buffer
+
 	root := cmd.NewRootCmd("test")
 	root.SetOut(&out)
 	root.SetArgs([]string{"check", "--json", "-d", skillsDir})
 
 	// Act
 	err := root.Execute()
-
 	// Assert
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
+
 	if got := decodeRecord(t, out.Bytes(), "results"); len(got) != 0 {
 		t.Errorf("results = %v, want empty", got)
 	}
@@ -404,20 +454,24 @@ func TestCheckJSONWithFailedSkill(t *testing.T) {
 	t.Parallel()
 
 	// Arrange: the lockfile references alpha, which upstream no longer has.
-	bareURL := initBareRepo(t, map[string]string{
+	bareURL := testutil.BareRepo(t, map[string]string{
 		"skills/beta/SKILL.md": "# Beta\n",
 	})
+
 	skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+
 	lf := lock.File{Version: 1, Skills: map[string]lock.Entry{
 		"alpha": {Source: bareURL, SourceType: "git", ComputedHash: "h"},
 	}}
 	if err := lock.WriteFile(lock.FilePath(skillsDir), lf); err != nil {
 		t.Fatal(err)
 	}
+
 	var out bytes.Buffer
+
 	root := cmd.NewRootCmd("test")
 	root.SetOut(&out)
 	root.SetArgs([]string{"check", "--json", "-d", skillsDir})
@@ -429,6 +483,7 @@ func TestCheckJSONWithFailedSkill(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error for the failed check")
 	}
+
 	var record struct {
 		Results []map[string]any `json:"results"`
 		Error   struct {
@@ -439,6 +494,7 @@ func TestCheckJSONWithFailedSkill(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &record); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, out.String())
 	}
+
 	if len(record.Results) != 1 || record.Error.Code != "check_failed" || !strings.Contains(record.Error.Message, "alpha") {
 		t.Errorf("record = %+v, want one result and a check_failed error naming alpha", record)
 	}

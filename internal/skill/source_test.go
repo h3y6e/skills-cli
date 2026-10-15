@@ -190,6 +190,7 @@ func TestParseSource(t *testing.T) {
 				if err == nil {
 					t.Fatal("ParseSource() error = nil, want non-nil")
 				}
+
 				return
 			}
 
@@ -206,6 +207,7 @@ func TestParseSource(t *testing.T) {
 
 func TestSourceInput(t *testing.T) {
 	t.Parallel()
+
 	for _, tc := range []struct {
 		name  string
 		entry lock.Entry
@@ -223,6 +225,7 @@ func TestSourceInput(t *testing.T) {
 			if got != tc.want {
 				t.Errorf("SourceInput() = %q, want %q", got, tc.want)
 			}
+
 			if ref, err := skill.ParseSource(got); err != nil || ref.SourceType != tc.entry.SourceType {
 				t.Errorf("ParseSource(%q) = %+v, %v; want source type %s", got, ref, err, tc.entry.SourceType)
 			}

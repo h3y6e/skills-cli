@@ -15,28 +15,37 @@ import (
 
 func decodeRecord(t *testing.T, data []byte, key string) []map[string]any {
 	t.Helper()
+
 	var record map[string]json.RawMessage
 	if err := json.Unmarshal(data, &record); err != nil {
 		t.Fatalf("invalid JSON record: %v\n%s", err, data)
 	}
+
 	var values []map[string]any
 	if err := json.Unmarshal(record[key], &values); err != nil {
 		t.Fatalf("invalid %q in record: %v\n%s", key, err, data)
 	}
+
 	return values
 }
 
 func runMain(t *testing.T, env []string, args ...string) (string, string, int) {
 	t.Helper()
-	c := exec.Command(os.Args[0], args...)
+
+	c := exec.CommandContext(t.Context(), os.Args[0], args...)
+
 	c.Env = append(append(os.Environ(), "RUN_SKOLAR_MAIN=1"), env...)
+
 	var stdout, stderr bytes.Buffer
+
 	c.Stdout = &stdout
 	c.Stderr = &stderr
+
 	err := c.Run()
 	if _, ok := errors.AsType[*exec.ExitError](err); err != nil && !ok {
 		t.Fatalf("run: %v", err)
 	}
+
 	return stdout.String(), stderr.String(), c.ProcessState.ExitCode()
 }
 
@@ -53,9 +62,11 @@ func TestExitStatus(t *testing.T) {
 		if code != 2 {
 			t.Errorf("exit = %d, want 2", code)
 		}
+
 		if stdout != "" {
 			t.Errorf("stdout = %q, want empty", stdout)
 		}
+
 		if !strings.Contains(stderr, "Did you mean this?\n\tadd") || !strings.Contains(stderr, "--help") {
 			t.Errorf("stderr = %q, want a suggestion and a --help hint", stderr)
 		}
@@ -129,9 +140,11 @@ func TestUsageErrorRecord(t *testing.T) {
 			if err := json.Unmarshal([]byte(stdout), &record); err != nil {
 				t.Fatalf("stdout is not a record: %v\n%s", err, stdout)
 			}
+
 			if string(record[tc.key]) != "[]" || !strings.Contains(string(record["error"]), `"code": "usage"`) {
 				t.Errorf("record = %s, want empty %q and a usage error", stdout, tc.key)
 			}
+
 			if code != 2 {
 				t.Errorf("exit = %d, want 2", code)
 			}
@@ -152,6 +165,7 @@ func TestFlagsFromEnv(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr = %q, want 0", code, stderr)
 	}
+
 	if got := decodeRecord(t, []byte(stdout), "results"); len(got) != 0 {
 		t.Errorf("results = %v, want empty from SKOLAR_JSON", got)
 	}
@@ -184,6 +198,7 @@ func TestNewRootCmdRegistersCoreCommands(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Find(%q) error = %v", check.name, err)
 		}
+
 		if sub == nil || sub.Name() != check.name {
 			t.Fatalf("Find(%q) returned %v", check.name, sub)
 		}
@@ -196,6 +211,7 @@ func TestNewRootCmdRegistersCoreCommands(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Find(%q) error = %v", check.alias, err)
 		}
+
 		if aliasSub == nil || aliasSub.Name() != check.name {
 			t.Fatalf("Find(%q) returned %v, want command %q", check.alias, aliasSub, check.name)
 		}

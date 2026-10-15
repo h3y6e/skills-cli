@@ -1,7 +1,9 @@
+// Package skill discovers, installs, checks and verifies agent skills.
 package skill
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -22,20 +24,26 @@ func ComputeHash(dir string) (string, error) {
 		if err != nil {
 			return err
 		}
+
 		if d.IsDir() {
 			if path != dir && (d.Name() == ".git" || d.Name() == "node_modules") {
 				return filepath.SkipDir
 			}
+
 			return nil
 		}
+
 		if !d.Type().IsRegular() {
 			return nil
 		}
+
 		rel, err := filepath.Rel(dir, path)
 		if err != nil {
 			return err
 		}
+
 		files = append(files, filepath.ToSlash(rel))
+
 		return nil
 	})
 	if err != nil {
@@ -60,5 +68,5 @@ func ComputeHash(dir string) (string, error) {
 		}
 	}
 
-	return fmt.Sprintf("%x", h.Sum(nil)), nil
+	return hex.EncodeToString(h.Sum(nil)), nil
 }

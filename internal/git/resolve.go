@@ -23,6 +23,7 @@ func ResolveRef(ctx context.Context, cloneURL, ref string) (ResolvedRef, error) 
 	if ref != "" {
 		return resolveExplicitRef(ctx, cloneURL, ref)
 	}
+
 	return resolveLatestRef(ctx, cloneURL)
 }
 
@@ -33,6 +34,7 @@ func resolveExplicitRef(ctx context.Context, cloneURL, ref string) (ResolvedRef,
 	}
 
 	var branch, tag bool
+
 	for _, name := range refs {
 		switch name {
 		case "refs/heads/" + ref:
@@ -60,18 +62,22 @@ func resolveLatestRef(ctx context.Context, cloneURL string) (ResolvedRef, error)
 	}
 
 	latestVersion, latestTag := "", ""
+
 	for _, name := range tags {
 		tag, found := strings.CutPrefix(name, "refs/tags/")
 		if !found || strings.HasSuffix(tag, "^{}") {
 			continue
 		}
+
 		version := tag
 		if !strings.HasPrefix(version, "v") {
 			version = "v" + version
 		}
+
 		if !semver.IsValid(version) || semver.Prerelease(version) != "" {
 			continue
 		}
+
 		if latestVersion == "" || semver.Compare(version, latestVersion) > 0 {
 			latestVersion, latestTag = version, tag
 		}
@@ -85,38 +91,44 @@ func resolveLatestRef(ctx context.Context, cloneURL string) (ResolvedRef, error)
 	if err != nil {
 		return ResolvedRef{}, err
 	}
+
 	return ResolvedRef{Full: "refs/heads/" + branch}, nil
 }
 
 func defaultBranch(ctx context.Context, cloneURL string) (string, error) {
-	out, err := runGit(ctx, "ls-remote", "--symref", cloneURL, "HEAD")
+	out, err := runGit(ctx, "ls-remote", "--symref", "--", cloneURL, "HEAD")
 	if err != nil {
 		return "", err
 	}
+
 	for line := range strings.Lines(string(out)) {
 		if name, found := strings.CutPrefix(line, "ref: refs/heads/"); found {
 			branch, _, _ := strings.Cut(name, "\t")
 			return branch, nil
 		}
 	}
+
 	return "", fmt.Errorf("git ls-remote %q: could not determine default branch", cloneURL)
 }
 
 // lsRemote returns the ref names advertised by the remote matching patterns.
 func lsRemote(ctx context.Context, cloneURL string, patterns ...string) ([]string, error) {
-	args := append([]string{"ls-remote", cloneURL}, patterns...)
+	args := append([]string{"ls-remote", "--", cloneURL}, patterns...)
+
 	out, err := runGit(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
 
 	var refs []string
+
 	for line := range strings.Lines(string(out)) {
 		_, name, found := strings.Cut(strings.TrimSpace(line), "\t")
 		if found {
 			refs = append(refs, name)
 		}
 	}
+
 	return refs, nil
 }
 
@@ -126,9 +138,11 @@ func TreeSHA(ctx context.Context, repoDir, path string) (string, error) {
 	if path == "." {
 		rev = "HEAD^{tree}"
 	}
+
 	out, err := runGit(ctx, "-C", repoDir, "rev-parse", rev)
 	if err != nil {
 		return "", err
 	}
+
 	return strings.TrimSpace(string(out)), nil
 }

@@ -1,7 +1,9 @@
+// Package lock reads and writes skills-lock.json, the lockfile vercel-labs/skills shares.
 package lock
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +12,7 @@ import (
 // FileName is the standard lockfile name (compatible with vercel-labs/skills).
 const FileName = "skills-lock.json"
 
+// DefaultDir is the skills directory the lockfile records.
 const DefaultDir = ".agents/skills"
 
 // File represents the lockfile contents.
@@ -18,15 +21,32 @@ type File struct {
 	Skills  map[string]Entry `json:"skills"`
 }
 
-// Entry represents a single skill in the lockfile.
-type Entry struct {
-	Source       string `json:"source"`
-	Ref          string `json:"ref,omitempty"`
-	SourceType   string `json:"sourceType"`
-	SkillPath    string `json:"skillPath,omitempty"`
-	ComputedHash string `json:"computedHash"`
+// SourceType is the kind of repository a skill is installed from.
+type SourceType string
+
+// Source types as vercel-labs/skills records them.
+const (
+	SourceGitHub SourceType = "github"
+	SourceGitLab SourceType = "gitlab"
+	SourceGit    SourceType = "git"
+	SourceLocal  SourceType = "local"
+)
+
+// Supported reports whether skills from this source type can be cloned and updated.
+func (t SourceType) Supported() bool {
+	return t == SourceGitHub || t == SourceGitLab || t == SourceGit || t == SourceLocal
 }
 
+// Entry represents a single skill in the lockfile.
+type Entry struct {
+	Source       string     `json:"source"`
+	Ref          string     `json:"ref,omitempty"`
+	SourceType   SourceType `json:"sourceType"`
+	SkillPath    string     `json:"skillPath,omitempty"`
+	ComputedHash string     `json:"computedHash"`
+}
+
+// ReadFile reads the lockfile at path.
 func ReadFile(path string) (File, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -55,6 +75,7 @@ func WriteFile(path string, file File) error {
 	if err != nil {
 		return fmt.Errorf("encode lockfile %q: %w", path, err)
 	}
+
 	data = append(data, '\n')
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -69,9 +90,12 @@ func WriteFile(path string, file File) error {
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 
+	if err := tmp.Chmod(0o644); err != nil {
+		return errors.Join(fmt.Errorf("chmod temp lockfile for %q: %w", path, err), tmp.Close())
+	}
+
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return fmt.Errorf("write temp lockfile for %q: %w", path, err)
+		return errors.Join(fmt.Errorf("write temp lockfile for %q: %w", path, err), tmp.Close())
 	}
 
 	if err := tmp.Close(); err != nil {
@@ -90,21 +114,28 @@ type Layout struct {
 	Dir string
 }
 
+// NewLayout returns the layout of the skills directory skillsDir.
 func NewLayout(skillsDir string) Layout {
 	return Layout{Dir: filepath.Clean(skillsDir)}
 }
 
+// LockPath returns the lockfile path: two levels above an absolute skills
+// directory, the project root for .agents/skills, or in the working directory
+// for a relative one.
 func (l Layout) LockPath() string {
 	if filepath.IsAbs(l.Dir) {
 		return filepath.Join(filepath.Dir(filepath.Dir(l.Dir)), FileName)
 	}
+
 	return FileName
 }
 
+// SkillDir returns the directory of the installed skill name.
 func (l Layout) SkillDir(name string) string {
 	return filepath.Join(l.Dir, name)
 }
 
+// FilePath returns the lockfile path for skillsDir.
 func FilePath(skillsDir string) string {
 	return NewLayout(skillsDir).LockPath()
 }
@@ -116,11 +147,27 @@ func (l Layout) UsesLockfile() bool {
 	return err == nil && rel == filepath.Clean(DefaultDir)
 }
 
+// ReadLockFile reads the layout's lockfile, or returns an empty one when the
+// layout does not use a lockfile or it does not exist yet.
+func (l Layout) ReadLockFile() (File, error) {
+	if !l.UsesLockfile() {
+		return File{Version: 1, Skills: map[string]Entry{}}, nil
+	}
+
+	f, err := ReadFile(l.LockPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return File{Version: 1, Skills: map[string]Entry{}}, nil
+	}
+
+	return f, err
+}
+
 // Entries returns the lockfile's skills when the lockfile records this
 // layout's directory, and none otherwise.
 func (l Layout) Entries(f File) map[string]Entry {
 	if !l.UsesLockfile() {
 		return map[string]Entry{}
 	}
+
 	return f.Skills
 }

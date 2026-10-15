@@ -10,6 +10,7 @@ import (
 
 	"github.com/h3y6e/skolar/cmd"
 	"github.com/h3y6e/skolar/internal/lock"
+	"github.com/h3y6e/skolar/internal/testutil"
 )
 
 func TestUpdateFlags(t *testing.T) {
@@ -20,6 +21,7 @@ func TestUpdateFlags(t *testing.T) {
 
 		root := cmd.NewRootCmd("test")
 		updateCmd, _, _ := root.Find([]string{"update"})
+
 		flag := updateCmd.Flags().Lookup("skill")
 		if flag == nil {
 			t.Fatal("expected --skill flag on update command")
@@ -31,6 +33,7 @@ func TestUpdateFlags(t *testing.T) {
 
 		root := cmd.NewRootCmd("test")
 		updateCmd, _, _ := root.Find([]string{"update"})
+
 		flag := updateCmd.Flags().ShorthandLookup("s")
 		if flag == nil {
 			t.Fatal("expected -s shorthand on update command")
@@ -42,6 +45,7 @@ func TestUpdateFlags(t *testing.T) {
 
 		root := cmd.NewRootCmd("test")
 		updateCmd, _, _ := root.Find([]string{"update"})
+
 		flag := updateCmd.Flags().Lookup("dir")
 		if flag == nil {
 			t.Fatal("expected --dir flag on update command")
@@ -53,6 +57,7 @@ func TestUpdateFlags(t *testing.T) {
 
 		root := cmd.NewRootCmd("test")
 		updateCmd, _, _ := root.Find([]string{"update"})
+
 		flag := updateCmd.Flags().Lookup("yes")
 		if flag == nil {
 			t.Fatal("expected --yes flag on update command")
@@ -63,7 +68,7 @@ func TestUpdateFlags(t *testing.T) {
 func TestUpdateSkillFilter(t *testing.T) {
 	t.Parallel()
 
-	bareURL := initBareRepo(t, map[string]string{
+	bareURL := testutil.BareRepo(t, map[string]string{
 		"skills/alpha/SKILL.md": "# Alpha\n",
 		"skills/beta/SKILL.md":  "# Beta\n",
 	})
@@ -76,15 +81,18 @@ func TestUpdateSkillFilter(t *testing.T) {
 		// Install both skills.
 		root1 := cmd.NewRootCmd("test")
 		root1.SetArgs([]string{"add", "-d", skillsDir, bareURL})
+
 		if err := root1.Execute(); err != nil {
 			t.Fatalf("add error: %v", err)
 		}
 
 		// Run update with --skill alpha.
 		var out bytes.Buffer
+
 		root2 := cmd.NewRootCmd("test")
 		root2.SetOut(&out)
 		root2.SetArgs([]string{"update", "-s", "alpha", "-y", "-d", skillsDir})
+
 		if err := root2.Execute(); err != nil {
 			t.Fatalf("update error: %v", err)
 		}
@@ -93,6 +101,7 @@ func TestUpdateSkillFilter(t *testing.T) {
 		if !strings.Contains(got, "alpha") {
 			t.Errorf("output should mention alpha, got: %q", got)
 		}
+
 		if strings.Contains(got, "beta") {
 			t.Errorf("output should not mention beta when --skill alpha, got: %q", got)
 		}
@@ -103,7 +112,7 @@ func TestUpdateSkillFilter(t *testing.T) {
 
 		rootDir := t.TempDir()
 		dirA := filepath.Join(rootDir, ".agents", "skills")
-		bareURL := initBareRepo(t, map[string]string{
+		bareURL := testutil.BareRepo(t, map[string]string{
 			"skills/alpha/SKILL.md": "# Alpha v2\n",
 			"skills/beta/SKILL.md":  "# Beta v2\n",
 		})
@@ -111,6 +120,7 @@ func TestUpdateSkillFilter(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(dirA, "alpha"), 0o755); err != nil {
 			t.Fatalf("mkdir alpha: %v", err)
 		}
+
 		if err := os.WriteFile(filepath.Join(dirA, "alpha", "SKILL.md"), []byte("# Alpha v1\n"), 0o644); err != nil {
 			t.Fatalf("write alpha: %v", err)
 		}
@@ -125,17 +135,21 @@ func TestUpdateSkillFilter(t *testing.T) {
 		    }
 		  }
 		}`)
+
 		if err := os.MkdirAll(filepath.Dir(lock.FilePath(dirA)), 0o755); err != nil {
 			t.Fatalf("mkdir lockfile parent: %v", err)
 		}
+
 		if err := os.WriteFile(lock.FilePath(dirA), lockData, 0o644); err != nil {
 			t.Fatalf("write lockfile: %v", err)
 		}
 
 		var out bytes.Buffer
+
 		root := cmd.NewRootCmd("test")
 		root.SetOut(&out)
 		root.SetArgs([]string{"update", "-y", "-d", dirA})
+
 		if err := root.Execute(); err != nil {
 			t.Fatalf("update error: %v", err)
 		}
@@ -144,6 +158,7 @@ func TestUpdateSkillFilter(t *testing.T) {
 		if !strings.Contains(got, "alpha: updated") {
 			t.Errorf("expected alpha to be updated, got: %q", got)
 		}
+
 		if strings.Contains(got, "beta") {
 			t.Errorf("did not expect beta in output for dir %q, got: %q", dirA, got)
 		}
@@ -152,6 +167,7 @@ func TestUpdateSkillFilter(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read alpha after update: %v", err)
 		}
+
 		if string(data) != "# Alpha v2\n" {
 			t.Errorf("alpha content = %q, want %q", string(data), "# Alpha v2\n")
 		}
@@ -165,14 +181,17 @@ func TestUpdateSkillFilter(t *testing.T) {
 		// Install both skills.
 		root1 := cmd.NewRootCmd("test")
 		root1.SetArgs([]string{"add", "-d", skillsDir, bareURL})
+
 		if err := root1.Execute(); err != nil {
 			t.Fatalf("add error: %v", err)
 		}
 
 		var out bytes.Buffer
+
 		root2 := cmd.NewRootCmd("test")
 		root2.SetOut(&out)
 		root2.SetArgs([]string{"update", "-y", "-d", skillsDir})
+
 		if err := root2.Execute(); err != nil {
 			t.Fatalf("update error: %v", err)
 		}
@@ -181,6 +200,7 @@ func TestUpdateSkillFilter(t *testing.T) {
 		if !strings.Contains(got, "alpha") {
 			t.Errorf("output should mention alpha, got: %q", got)
 		}
+
 		if !strings.Contains(got, "beta") {
 			t.Errorf("output should mention beta, got: %q", got)
 		}
@@ -194,15 +214,16 @@ func TestUpdateSkillFilter(t *testing.T) {
 
 		// Act
 		var out bytes.Buffer
+
 		root := cmd.NewRootCmd("test")
 		root.SetErr(&out)
 		root.SetArgs([]string{"update", "-y", "-d", skillsDir})
 		err := root.Execute()
-
 		// Assert
 		if err != nil {
 			t.Fatalf("update: %v", err)
 		}
+
 		if !strings.Contains(out.String(), "no installed skills to update") {
 			t.Errorf("output = %q, want %q", out.String(), "no installed skills to update")
 		}
@@ -216,27 +237,33 @@ func TestUpdateSkillFilter(t *testing.T) {
 		// Install skills.
 		root1 := cmd.NewRootCmd("test")
 		root1.SetArgs([]string{"add", "-d", skillsDir, bareURL})
+
 		if err := root1.Execute(); err != nil {
 			t.Fatalf("add error: %v", err)
 		}
 
 		// Tamper lockfile hash to simulate outdated install.
 		lockPath := lock.FilePath(skillsDir)
+
 		lf, err := lock.ReadFile(lockPath)
 		if err != nil {
 			t.Fatalf("read lockfile: %v", err)
 		}
+
 		entry := lf.Skills["alpha"]
 		entry.ComputedHash = "stale-hash"
+
 		lf.Skills["alpha"] = entry
 		if err := lock.WriteFile(lockPath, lf); err != nil {
 			t.Fatalf("write lockfile: %v", err)
 		}
 
 		var out bytes.Buffer
+
 		root2 := cmd.NewRootCmd("test")
 		root2.SetOut(&out)
 		root2.SetArgs([]string{"update", "-s", "alpha", "-y", "-d", skillsDir})
+
 		if err := root2.Execute(); err != nil {
 			t.Fatalf("update error: %v", err)
 		}
@@ -250,7 +277,7 @@ func TestUpdateSkillFilter(t *testing.T) {
 	t.Run("source argument filters to entries from that source", func(t *testing.T) {
 		t.Parallel()
 
-		bareURL2 := initBareRepo(t, map[string]string{
+		bareURL2 := testutil.BareRepo(t, map[string]string{
 			"skills/gamma/SKILL.md": "# Gamma\n",
 		})
 
@@ -259,6 +286,7 @@ func TestUpdateSkillFilter(t *testing.T) {
 		// Install from first source.
 		root1 := cmd.NewRootCmd("test")
 		root1.SetArgs([]string{"add", "-d", skillsDir, bareURL})
+
 		if err := root1.Execute(); err != nil {
 			t.Fatalf("add 1 error: %v", err)
 		}
@@ -266,15 +294,18 @@ func TestUpdateSkillFilter(t *testing.T) {
 		// Install from second source.
 		root2 := cmd.NewRootCmd("test")
 		root2.SetArgs([]string{"add", "-d", skillsDir, bareURL2})
+
 		if err := root2.Execute(); err != nil {
 			t.Fatalf("add 2 error: %v", err)
 		}
 
 		// Update only from the second source.
 		var out bytes.Buffer
+
 		root3 := cmd.NewRootCmd("test")
 		root3.SetOut(&out)
 		root3.SetArgs([]string{"update", "-y", "-d", skillsDir, bareURL2})
+
 		if err := root3.Execute(); err != nil {
 			t.Fatalf("update error: %v", err)
 		}
@@ -284,6 +315,7 @@ func TestUpdateSkillFilter(t *testing.T) {
 		if strings.Contains(got, "alpha") {
 			t.Errorf("output should not mention alpha when source is second repo, got: %q", got)
 		}
+
 		if strings.Contains(got, "beta") {
 			t.Errorf("output should not mention beta when source is second repo, got: %q", got)
 		}
@@ -295,20 +327,11 @@ func TestUpdateSkillFilter(t *testing.T) {
 		bareURLWithRefs := initBareRepoWithSplitRefSkills(t)
 		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
-		if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755); err != nil {
-			t.Fatalf("mkdir alpha: %v", err)
-		}
-		if err := os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("# Alpha old\n"), 0o644); err != nil {
-			t.Fatalf("write alpha: %v", err)
-		}
-		if err := os.MkdirAll(filepath.Join(skillsDir, "beta"), 0o755); err != nil {
-			t.Fatalf("mkdir beta: %v", err)
-		}
-		if err := os.WriteFile(filepath.Join(skillsDir, "beta", "SKILL.md"), []byte("# Beta old\n"), 0o644); err != nil {
-			t.Fatalf("write beta: %v", err)
-		}
+		testutil.WriteFiles(t, skillsDir, map[string]string{"alpha/SKILL.md": "# Alpha old\n"})
+		testutil.WriteFiles(t, skillsDir, map[string]string{"beta/SKILL.md": "# Beta old\n"})
 
 		lockPath := lock.FilePath(skillsDir)
+
 		lf := lock.File{
 			Version: 1,
 			Skills: map[string]lock.Entry{
@@ -331,9 +354,11 @@ func TestUpdateSkillFilter(t *testing.T) {
 		}
 
 		var out bytes.Buffer
+
 		root := cmd.NewRootCmd("test")
 		root.SetOut(&out)
 		root.SetArgs([]string{"update", "-y", "-d", skillsDir, bareURLWithRefs + "#feature/install"})
+
 		if err := root.Execute(); err != nil {
 			t.Fatalf("update error: %v", err)
 		}
@@ -342,6 +367,7 @@ func TestUpdateSkillFilter(t *testing.T) {
 		if strings.Contains(got, "alpha") {
 			t.Errorf("output should not mention alpha when ref is feature/install, got: %q", got)
 		}
+
 		if !strings.Contains(got, "beta: updated") {
 			t.Errorf("expected beta to be updated, got: %q", got)
 		}
@@ -350,6 +376,7 @@ func TestUpdateSkillFilter(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read alpha: %v", err)
 		}
+
 		if string(alphaData) != "# Alpha old\n" {
 			t.Errorf("alpha = %q, want %q", string(alphaData), "# Alpha old\n")
 		}
@@ -358,6 +385,7 @@ func TestUpdateSkillFilter(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read beta: %v", err)
 		}
+
 		if string(betaData) != "# Beta feature\n" {
 			t.Errorf("beta = %q, want %q", string(betaData), "# Beta feature\n")
 		}
@@ -366,9 +394,11 @@ func TestUpdateSkillFilter(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read updated lockfile: %v", err)
 		}
+
 		if updatedLF.Skills["alpha"].ComputedHash != "stale-alpha" {
 			t.Errorf("alpha hash = %q, want %q", updatedLF.Skills["alpha"].ComputedHash, "stale-alpha")
 		}
+
 		if updatedLF.Skills["beta"].ComputedHash == "stale-beta" {
 			t.Error("beta hash should be refreshed")
 		}
@@ -378,7 +408,7 @@ func TestUpdateSkillFilter(t *testing.T) {
 func TestUpdateNoChanges(t *testing.T) {
 	t.Parallel()
 
-	bareURL := initBareRepo(t, map[string]string{
+	bareURL := testutil.BareRepo(t, map[string]string{
 		"skills/alpha/SKILL.md": "# Alpha\n",
 	})
 
@@ -387,15 +417,18 @@ func TestUpdateNoChanges(t *testing.T) {
 	// Install.
 	root1 := cmd.NewRootCmd("test")
 	root1.SetArgs([]string{"add", "-d", skillsDir, bareURL})
+
 	if err := root1.Execute(); err != nil {
 		t.Fatalf("add error: %v", err)
 	}
 
 	// Update with no changes upstream — should show up-to-date.
 	var out bytes.Buffer
+
 	root2 := cmd.NewRootCmd("test")
 	root2.SetOut(&out)
 	root2.SetArgs([]string{"update", "-y", "-d", skillsDir})
+
 	if err := root2.Execute(); err != nil {
 		t.Fatalf("update error: %v", err)
 	}
@@ -413,8 +446,7 @@ func TestUpdateNoChanges(t *testing.T) {
 
 func TestUpdateApply(t *testing.T) {
 	// Not parallel: subtests override package-level IsTTY.
-
-	bareURL := initBareRepo(t, map[string]string{
+	bareURL := testutil.BareRepo(t, map[string]string{
 		"skills/alpha/SKILL.md": "# Alpha v2\n",
 		"skills/beta/SKILL.md":  "# Beta\n",
 	})
@@ -425,10 +457,8 @@ func TestUpdateApply(t *testing.T) {
 		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 		// Manually install with old content and stale lockfile hash.
-		os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755)
-		os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("# Alpha v1\n"), 0o644)
-		os.MkdirAll(filepath.Join(skillsDir, "beta"), 0o755)
-		os.WriteFile(filepath.Join(skillsDir, "beta", "SKILL.md"), []byte("# Beta\n"), 0o644)
+		testutil.WriteFiles(t, skillsDir, map[string]string{"alpha/SKILL.md": "# Alpha v1\n"})
+		testutil.WriteFiles(t, skillsDir, map[string]string{"beta/SKILL.md": "# Beta\n"})
 
 		// Parse the source to get canonical form.
 		lf := lock.File{
@@ -438,6 +468,7 @@ func TestUpdateApply(t *testing.T) {
 				"beta":  {Source: bareURL, SourceType: "git", ComputedHash: "stale-hash-beta"},
 			},
 		}
+
 		lockPath := lock.FilePath(skillsDir)
 		if err := lock.WriteFile(lockPath, lf); err != nil {
 			t.Fatalf("write lockfile: %v", err)
@@ -445,9 +476,11 @@ func TestUpdateApply(t *testing.T) {
 
 		// Run update with -y.
 		var out bytes.Buffer
+
 		root := cmd.NewRootCmd("test")
 		root.SetOut(&out)
 		root.SetArgs([]string{"update", "-y", "-d", skillsDir})
+
 		if err := root.Execute(); err != nil {
 			t.Fatalf("update error: %v", err)
 		}
@@ -457,6 +490,7 @@ func TestUpdateApply(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read alpha SKILL.md: %v", err)
 		}
+
 		if string(data) != "# Alpha v2\n" {
 			t.Errorf("alpha content = %q, want %q", string(data), "# Alpha v2\n")
 		}
@@ -466,10 +500,12 @@ func TestUpdateApply(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read updated lockfile: %v", err)
 		}
+
 		alphaEntry := updatedLF.Skills["alpha"]
 		if alphaEntry.ComputedHash == "stale-hash-alpha" {
 			t.Error("alpha hash should have been updated from stale value")
 		}
+
 		if alphaEntry.ComputedHash == "" {
 			t.Error("alpha hash should not be empty after update")
 		}
@@ -479,13 +515,13 @@ func TestUpdateApply(t *testing.T) {
 		// Cannot be parallel: overrides package-level IsTTY.
 		origIsTTY := cmd.IsTTY
 		cmd.IsTTY = func() bool { return false }
+
 		t.Cleanup(func() { cmd.IsTTY = origIsTTY })
 
 		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 		// Install with stale hash.
-		os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755)
-		os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("# Alpha v1\n"), 0o644)
+		testutil.WriteFiles(t, skillsDir, map[string]string{"alpha/SKILL.md": "# Alpha v1\n"})
 
 		lf := lock.File{
 			Version: 1,
@@ -493,6 +529,7 @@ func TestUpdateApply(t *testing.T) {
 				"alpha": {Source: bareURL, SourceType: "git", ComputedHash: "stale-hash"},
 			},
 		}
+
 		lockPath := lock.FilePath(skillsDir)
 		if err := lock.WriteFile(lockPath, lf); err != nil {
 			t.Fatalf("write lockfile: %v", err)
@@ -500,6 +537,7 @@ func TestUpdateApply(t *testing.T) {
 
 		// Run update WITHOUT -y (non-interactive since tests aren't TTY).
 		var out bytes.Buffer
+
 		root := cmd.NewRootCmd("test")
 		root.SetOut(&out)
 		root.SetArgs([]string{"update", "-d", skillsDir})
@@ -514,6 +552,7 @@ func TestUpdateApply(t *testing.T) {
 		if err2 != nil {
 			t.Fatalf("read alpha: %v", err2)
 		}
+
 		if string(data) != "# Alpha v1\n" {
 			t.Errorf("alpha should not have been updated, got: %q", string(data))
 		}
@@ -523,6 +562,7 @@ func TestUpdateApply(t *testing.T) {
 		if err2 != nil {
 			t.Fatalf("read lockfile: %v", err2)
 		}
+
 		if updatedLF.Skills["alpha"].ComputedHash != "stale-hash" {
 			t.Error("lockfile should not have been modified in non-interactive mode")
 		}
@@ -534,10 +574,8 @@ func TestUpdateApply(t *testing.T) {
 		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 		// Install with stale hashes for both.
-		os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755)
-		os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("# Alpha v1\n"), 0o644)
-		os.MkdirAll(filepath.Join(skillsDir, "beta"), 0o755)
-		os.WriteFile(filepath.Join(skillsDir, "beta", "SKILL.md"), []byte("# Beta old\n"), 0o644)
+		testutil.WriteFiles(t, skillsDir, map[string]string{"alpha/SKILL.md": "# Alpha v1\n"})
+		testutil.WriteFiles(t, skillsDir, map[string]string{"beta/SKILL.md": "# Beta old\n"})
 
 		lf := lock.File{
 			Version: 1,
@@ -546,6 +584,7 @@ func TestUpdateApply(t *testing.T) {
 				"beta":  {Source: bareURL, SourceType: "git", ComputedHash: "stale-beta"},
 			},
 		}
+
 		lockPath := lock.FilePath(skillsDir)
 		if err := lock.WriteFile(lockPath, lf); err != nil {
 			t.Fatalf("write lockfile: %v", err)
@@ -554,6 +593,7 @@ func TestUpdateApply(t *testing.T) {
 		// Update only alpha.
 		root := cmd.NewRootCmd("test")
 		root.SetArgs([]string{"update", "-s", "alpha", "-y", "-d", skillsDir})
+
 		if err := root.Execute(); err != nil {
 			t.Fatalf("update error: %v", err)
 		}
@@ -563,6 +603,7 @@ func TestUpdateApply(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read alpha: %v", err)
 		}
+
 		if string(data) != "# Alpha v2\n" {
 			t.Errorf("alpha = %q, want %q", string(data), "# Alpha v2\n")
 		}
@@ -572,6 +613,7 @@ func TestUpdateApply(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read beta: %v", err)
 		}
+
 		if string(data) != "# Beta old\n" {
 			t.Errorf("beta = %q, want %q (should not be updated)", string(data), "# Beta old\n")
 		}
@@ -581,9 +623,11 @@ func TestUpdateApply(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read lockfile: %v", err)
 		}
+
 		if updatedLF.Skills["alpha"].ComputedHash == "stale-alpha" {
 			t.Error("alpha hash should be refreshed")
 		}
+
 		if updatedLF.Skills["beta"].ComputedHash != "stale-beta" {
 			t.Error("beta hash should still be stale")
 		}
@@ -592,11 +636,10 @@ func TestUpdateApply(t *testing.T) {
 
 func TestUpdateIntegration(t *testing.T) {
 	// Not parallel: subtests override package-level IsTTY.
-
 	t.Run("up-to-date skills are not modified during update", func(t *testing.T) {
 		t.Parallel()
 
-		bareURL := initBareRepo(t, map[string]string{
+		bareURL := testutil.BareRepo(t, map[string]string{
 			"skills/alpha/SKILL.md": "# Alpha\n",
 			"skills/beta/SKILL.md":  "# Beta\n",
 		})
@@ -606,12 +649,14 @@ func TestUpdateIntegration(t *testing.T) {
 		// Install normally.
 		root1 := cmd.NewRootCmd("test")
 		root1.SetArgs([]string{"add", "-d", skillsDir, bareURL})
+
 		if err := root1.Execute(); err != nil {
 			t.Fatalf("add error: %v", err)
 		}
 
 		// Record alpha's mod time before update.
 		alphaPath := filepath.Join(skillsDir, "alpha", "SKILL.md")
+
 		infoBefore, err := os.Stat(alphaPath)
 		if err != nil {
 			t.Fatalf("stat alpha: %v", err)
@@ -619,9 +664,11 @@ func TestUpdateIntegration(t *testing.T) {
 
 		// Run update -y (no changes upstream).
 		var out bytes.Buffer
+
 		root2 := cmd.NewRootCmd("test")
 		root2.SetOut(&out)
 		root2.SetArgs([]string{"update", "-y", "-d", skillsDir})
+
 		if err := root2.Execute(); err != nil {
 			t.Fatalf("update error: %v", err)
 		}
@@ -630,6 +677,7 @@ func TestUpdateIntegration(t *testing.T) {
 		if !strings.Contains(got, "up-to-date") {
 			t.Errorf("expected 'up-to-date' in output, got: %q", got)
 		}
+
 		if strings.Contains(got, "updated") {
 			t.Errorf("no skill should have been updated, got: %q", got)
 		}
@@ -639,6 +687,7 @@ func TestUpdateIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("stat alpha after: %v", err)
 		}
+
 		if infoBefore.ModTime() != infoAfter.ModTime() {
 			t.Error("alpha should not have been modified when up-to-date")
 		}
@@ -648,17 +697,15 @@ func TestUpdateIntegration(t *testing.T) {
 		t.Parallel()
 
 		// Upstream has only beta, but lockfile references alpha too.
-		bareURL := initBareRepo(t, map[string]string{
+		bareURL := testutil.BareRepo(t, map[string]string{
 			"skills/beta/SKILL.md": "# Beta\n",
 		})
 
 		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 		// Manually install alpha and beta, lockfile references both.
-		os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755)
-		os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("# Alpha\n"), 0o644)
-		os.MkdirAll(filepath.Join(skillsDir, "beta"), 0o755)
-		os.WriteFile(filepath.Join(skillsDir, "beta", "SKILL.md"), []byte("# Beta\n"), 0o644)
+		testutil.WriteFiles(t, skillsDir, map[string]string{"alpha/SKILL.md": "# Alpha\n"})
+		testutil.WriteFiles(t, skillsDir, map[string]string{"beta/SKILL.md": "# Beta\n"})
 
 		lf := lock.File{
 			Version: 1,
@@ -667,15 +714,18 @@ func TestUpdateIntegration(t *testing.T) {
 				"beta":  {Source: bareURL, SourceType: "git", ComputedHash: "some-hash"},
 			},
 		}
+
 		lockPath := lock.FilePath(skillsDir)
 		if err := lock.WriteFile(lockPath, lf); err != nil {
 			t.Fatalf("write lockfile: %v", err)
 		}
 
 		var out bytes.Buffer
+
 		root := cmd.NewRootCmd("test")
 		root.SetOut(&out)
 		root.SetArgs([]string{"update", "-y", "-d", skillsDir})
+
 		if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "could not check alpha") {
 			t.Fatalf("err = %v, want it to name alpha", err)
 		}
@@ -684,6 +734,7 @@ func TestUpdateIntegration(t *testing.T) {
 		if !strings.Contains(got, "check-failed") {
 			t.Errorf("expected 'check-failed' for alpha (removed from upstream), got: %q", got)
 		}
+
 		if !strings.Contains(got, "alpha") {
 			t.Errorf("expected alpha to be mentioned in output, got: %q", got)
 		}
@@ -693,9 +744,10 @@ func TestUpdateIntegration(t *testing.T) {
 		// Cannot be parallel: overrides IsTTY.
 		origIsTTY := cmd.IsTTY
 		cmd.IsTTY = func() bool { return false }
+
 		t.Cleanup(func() { cmd.IsTTY = origIsTTY })
 
-		bareURL := initBareRepo(t, map[string]string{
+		bareURL := testutil.BareRepo(t, map[string]string{
 			"skills/alpha/SKILL.md": "# Alpha v2\n",
 			"skills/beta/SKILL.md":  "# Beta v2\n",
 		})
@@ -703,10 +755,8 @@ func TestUpdateIntegration(t *testing.T) {
 		skillsDir := filepath.Join(t.TempDir(), ".agents", "skills")
 
 		// Install with stale hashes.
-		os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755)
-		os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("# Alpha v1\n"), 0o644)
-		os.MkdirAll(filepath.Join(skillsDir, "beta"), 0o755)
-		os.WriteFile(filepath.Join(skillsDir, "beta", "SKILL.md"), []byte("# Beta v1\n"), 0o644)
+		testutil.WriteFiles(t, skillsDir, map[string]string{"alpha/SKILL.md": "# Alpha v1\n"})
+		testutil.WriteFiles(t, skillsDir, map[string]string{"beta/SKILL.md": "# Beta v1\n"})
 
 		lf := lock.File{
 			Version: 1,
@@ -715,15 +765,18 @@ func TestUpdateIntegration(t *testing.T) {
 				"beta":  {Source: bareURL, SourceType: "git", ComputedHash: "stale-b"},
 			},
 		}
+
 		lockPath := lock.FilePath(skillsDir)
 		if err := lock.WriteFile(lockPath, lf); err != nil {
 			t.Fatalf("write lockfile: %v", err)
 		}
 
 		var out bytes.Buffer
+
 		root := cmd.NewRootCmd("test")
 		root.SetOut(&out)
 		root.SetArgs([]string{"update", "-d", skillsDir})
+
 		err := root.Execute()
 		if err == nil {
 			t.Fatal("expected error in non-interactive mode")
@@ -739,13 +792,18 @@ func TestUpdateIntegration(t *testing.T) {
 		if string(data) != "# Alpha v1\n" {
 			t.Error("alpha should not have been modified in preview mode")
 		}
+
 		data, _ = os.ReadFile(filepath.Join(skillsDir, "beta", "SKILL.md"))
 		if string(data) != "# Beta v1\n" {
 			t.Error("beta should not have been modified in preview mode")
 		}
 
 		// Lockfile unchanged.
-		updatedLF, _ := lock.ReadFile(lockPath)
+		updatedLF, err := lock.ReadFile(lockPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		if updatedLF.Skills["alpha"].ComputedHash != "stale-a" {
 			t.Error("alpha hash should be unchanged in preview mode")
 		}

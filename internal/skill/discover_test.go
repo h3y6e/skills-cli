@@ -11,16 +11,19 @@ import (
 
 func writeRepo(t *testing.T, files map[string]string) string {
 	t.Helper()
+
 	root := t.TempDir()
 	for name, content := range files {
 		path := filepath.Join(root, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
+
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
+
 	return root
 }
 
@@ -39,12 +42,15 @@ var mixedLayouts = map[string]string{
 
 func discoveredPaths(t *testing.T, skills []skill.DiscoveredSkill, defaultOnly bool) map[string]string {
 	t.Helper()
+
 	got := map[string]string{}
+
 	for _, s := range skills {
 		if !defaultOnly || s.Default {
 			got[s.Name] = s.Path
 		}
 	}
+
 	return got
 }
 
@@ -55,18 +61,16 @@ func TestDiscoverSkillsLayouts(t *testing.T) {
 		t.Parallel()
 		// Arrange
 		files := map[string]string{"SKILL.md": fm("root-skill")}
-		for k, v := range mixedLayouts {
-			files[k] = v
-		}
+		maps.Copy(files, mixedLayouts)
 		root := writeRepo(t, files)
 
 		// Act
 		skills, err := skill.DiscoverSkills(root)
-
 		// Assert
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		want := map[string]string{
 			"root-skill": ".", "alpha": "skills/alpha", "beta": "skills/team/beta", "gamma": "skills/.curated/gamma",
 			"delta": ".claude/skills/delta", "zeta": "zeta", "eta": "plugins/p/skills/eta", "theta": "extras/theta",
@@ -80,18 +84,16 @@ func TestDiscoverSkillsLayouts(t *testing.T) {
 		t.Parallel()
 		// Arrange
 		files := map[string]string{"SKILL.md": fm("root-skill")}
-		for k, v := range mixedLayouts {
-			files[k] = v
-		}
+		maps.Copy(files, mixedLayouts)
 		root := writeRepo(t, files)
 
 		// Act
 		skills, err := skill.DiscoverSkills(root)
-
 		// Assert
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		want := map[string]string{"root-skill": ".", "alpha": "skills/alpha", "beta": "skills/team/beta", "zeta": "zeta", "eta": "plugins/p/skills/eta"}
 		if got := discoveredPaths(t, skills, true); !maps.Equal(got, want) {
 			t.Errorf("defaults = %v, want %v", got, want)
@@ -105,11 +107,11 @@ func TestDiscoverSkillsLayouts(t *testing.T) {
 
 		// Act
 		skills, err := skill.DiscoverSkills(root)
-
 		// Assert
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		want := map[string]string{
 			"alpha": "skills/alpha", "beta": "skills/team/beta", "gamma": "skills/.curated/gamma",
 			"delta": ".claude/skills/delta", "zeta": "zeta", "eta": "plugins/p/skills/eta",
@@ -129,11 +131,11 @@ func TestDiscoverSkillsLayouts(t *testing.T) {
 
 		// Act
 		skills, err := skill.DiscoverSkills(root)
-
 		// Assert
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		if got := discoveredPaths(t, skill.FilterDiscoveredSkills(skills, []string{"dup"}), false); !maps.Equal(got, map[string]string{"dup": "skills/dup"}) {
 			t.Errorf("FilterDiscoveredSkills() = %v", got)
 		}
@@ -146,11 +148,11 @@ func TestDiscoverSkillsLayouts(t *testing.T) {
 
 		// Act
 		skills, err := skill.DiscoverSkills(root)
-
 		// Assert
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		if got := discoveredPaths(t, skills, true); !maps.Equal(got, map[string]string{"plain": "skills/plain"}) {
 			t.Errorf("DiscoverSkills() = %v", got)
 		}
@@ -165,11 +167,11 @@ func TestDiscoverSkillsEdges(t *testing.T) {
 
 		// Act
 		skills, err := skill.DiscoverSkills(root)
-
 		// Assert
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		if got := discoveredPaths(t, skills, false); !maps.Equal(got, map[string]string{"build": "skills/build"}) {
 			t.Errorf("DiscoverSkills() = %v", got)
 		}
@@ -182,11 +184,58 @@ func TestDiscoverSkillsEdges(t *testing.T) {
 
 		// Act
 		skills, err := skill.DiscoverSkills(root)
-
 		// Assert
 		if err != nil {
 			t.Fatal(err)
 		}
+
+		if got := discoveredPaths(t, skills, false); !maps.Equal(got, map[string]string{"good": "skills/good"}) {
+			t.Errorf("DiscoverSkills() = %v", got)
+		}
+	})
+
+	t.Run("when a SKILL.md names a path instead of a skill, it is skipped", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		root := writeRepo(t, map[string]string{
+			"skills/good/SKILL.md": fm("good"),
+			"skills/up/SKILL.md":   fm("../../escape"),
+			"skills/abs/SKILL.md":  fm("/tmp/escape"),
+			"skills/deep/SKILL.md": fm("a/b"),
+			"skills/dot/SKILL.md":  fm("."),
+		})
+
+		// Act
+		skills, err := skill.DiscoverSkills(root)
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := discoveredPaths(t, skills, false); !maps.Equal(got, map[string]string{"good": "skills/good"}) {
+			t.Errorf("DiscoverSkills() = %v", got)
+		}
+	})
+
+	t.Run("when a SKILL.md is a symlink, its directory is not a skill", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		root := writeRepo(t, map[string]string{"skills/good/SKILL.md": fm("good"), "elsewhere.md": fm("link")})
+		if err := os.MkdirAll(filepath.Join(root, "skills", "link"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.Symlink(filepath.Join(root, "elsewhere.md"), filepath.Join(root, "skills", "link", "SKILL.md")); err != nil {
+			t.Fatal(err)
+		}
+
+		// Act
+		skills, err := skill.DiscoverSkills(root)
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		if got := discoveredPaths(t, skills, false); !maps.Equal(got, map[string]string{"good": "skills/good"}) {
 			t.Errorf("DiscoverSkills() = %v", got)
 		}
@@ -199,11 +248,11 @@ func TestDiscoverSkillsEdges(t *testing.T) {
 
 		// Act
 		skills, err := skill.DiscoverSkills(root)
-
 		// Assert
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		if len(skills) != 1 || skills[0].Default {
 			t.Errorf("skills = %+v, want secret found but not a default", skills)
 		}
@@ -216,11 +265,11 @@ func TestDiscoverSkillsEdges(t *testing.T) {
 
 		// Act
 		skills, err := skill.DiscoverSkills(root)
-
 		// Assert
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		if len(skills) != 1 || !skills[0].Default {
 			t.Errorf("skills = %+v, want secret as a default", skills)
 		}

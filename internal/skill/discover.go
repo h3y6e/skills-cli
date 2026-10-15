@@ -29,6 +29,8 @@ func (s DiscoveredSkill) SkillMDPath() string {
 	return path.Join(s.Path, "SKILL.md")
 }
 
+const skillsSegment = "skills"
+
 // skipDirs are never searched, as in vercel-labs/skills.
 var skipDirs = []string{".git", "node_modules", "dist", "build", "__pycache__"}
 
@@ -61,10 +63,12 @@ func DiscoverSkills(repoRoot string) ([]DiscoveredSkill, error) {
 	}
 
 	vercel := vercelDefaults(repoRoot, all)
+
 	defaults := map[string]bool{}
 	for _, p := range vercel {
 		defaults[p] = true
 	}
+
 	for p := range all {
 		if ghDefault(p) {
 			defaults[p] = true
@@ -78,6 +82,7 @@ func DiscoverSkills(repoRoot string) ([]DiscoveredSkill, error) {
 			}
 		}
 	}))
+
 	var picked []skillDir
 	for _, p := range slices.Compact(ordered) {
 		if d := all[p]; d.name != "" && !slices.ContainsFunc(picked, func(o skillDir) bool { return o.path == p }) {
@@ -87,6 +92,7 @@ func DiscoverSkills(repoRoot string) ([]DiscoveredSkill, error) {
 
 	skills := make([]DiscoveredSkill, len(picked))
 	errs := make([]error, len(picked))
+
 	var wg sync.WaitGroup
 	for i, d := range picked {
 		wg.Go(func() {
@@ -96,10 +102,13 @@ func DiscoverSkills(repoRoot string) ([]DiscoveredSkill, error) {
 			errs[i] = err
 		})
 	}
+
 	wg.Wait()
+
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
+
 	return skills, nil
 }
 
@@ -109,20 +118,25 @@ func findSkillDirs(repoRoot string) (map[string]skillDir, error) {
 		if err != nil || !d.IsDir() {
 			return err
 		}
-		if info, err := os.Stat(filepath.Join(p, "SKILL.md")); err == nil && info.Mode().IsRegular() {
+
+		if info, err := os.Lstat(filepath.Join(p, "SKILL.md")); err == nil && info.Mode().IsRegular() {
 			rel, err := filepath.Rel(repoRoot, p)
 			if err != nil {
 				return err
 			}
+
 			if dir, ok := readSkillDir(p, filepath.ToSlash(rel)); ok {
 				dirs[dir.path] = dir
 			}
 		}
+
 		if p != repoRoot && slices.Contains(skipDirs, d.Name()) {
 			return filepath.SkipDir
 		}
+
 		return nil
 	})
+
 	return dirs, err
 }
 
@@ -133,18 +147,26 @@ func readSkillDir(dir, rel string) (skillDir, bool) {
 	if err != nil {
 		return skillDir{}, false
 	}
+
 	raw, _, err := parseFrontmatter(string(data))
 	if err != nil {
 		return skillDir{}, false
 	}
+
 	name, _ := raw["name"].(string)
+	if name != "" && (name == "." || !filepath.IsLocal(name) || filepath.Base(name) != name) {
+		return skillDir{}, false
+	}
+
 	description, _ := raw["description"].(string)
 	metadata, _ := raw["metadata"].(map[string]any)
 	internal := metadata["internal"] == true && !slices.Contains([]string{"1", "true"}, os.Getenv("INSTALL_INTERNAL_SKILLS"))
+
 	d := skillDir{path: rel, name: name, vercelValid: name != "" && description != "" && !internal}
 	if d.name == "" && rel != "." {
 		d.name = path.Base(rel)
 	}
+
 	return d, true
 }
 
@@ -154,60 +176,78 @@ func vercelDefaults(repoRoot string, all map[string]skillDir) []string {
 	if root, ok := all["."]; ok && root.vercelValid {
 		return []string{"."}
 	}
-	var found []string
-	walk := func(base string, maxDepth int) {
-		var visit func(dir string, depth int)
-		visit = func(dir string, depth int) {
-			entries, _ := os.ReadDir(filepath.Join(repoRoot, filepath.FromSlash(dir)))
-			for _, e := range entries {
-				if !e.IsDir() {
-					continue
-				}
-				child := path.Join(dir, e.Name())
-				if d, ok := all[child]; ok {
-					if d.vercelValid && !slices.Contains(found, child) {
-						found = append(found, child)
-					}
-					continue
-				}
-				if depth < maxDepth && !slices.Contains(skipDirs, e.Name()) {
-					visit(child, depth+1)
-				}
-			}
-		}
-		visit(base, 1)
-	}
-	walk(".", 1)
+
+	search := &vercelSearch{repoRoot: repoRoot, all: all}
+	search.walk(".", 1, 1)
+
 	for _, c := range vercelContainers {
-		walk(c, 3)
+		search.walk(c, 1, 3)
 	}
+
 	for _, p := range pluginSkillDirs(repoRoot) {
-		walk(p, 1)
+		search.walk(p, 1, 1)
 	}
-	if len(found) > 0 {
-		return found
+
+	if len(search.found) > 0 {
+		return search.found
 	}
-	return slices.Sorted(func(yield func(string) bool) {
-		for p, d := range all {
-			if d.vercelValid && !yield(p) {
-				return
-			}
+
+	var valid []string
+
+	for p, d := range all {
+		if d.vercelValid {
+			valid = append(valid, p)
 		}
-	})
+	}
+
+	slices.Sort(valid)
+
+	return valid
+}
+
+type vercelSearch struct {
+	repoRoot string
+	all      map[string]skillDir
+	found    []string
+}
+
+func (s *vercelSearch) walk(dir string, depth, maxDepth int) {
+	entries, _ := os.ReadDir(filepath.Join(s.repoRoot, filepath.FromSlash(dir)))
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+
+		child := path.Join(dir, e.Name())
+		if d, ok := s.all[child]; ok {
+			if d.vercelValid && !slices.Contains(s.found, child) {
+				s.found = append(s.found, child)
+			}
+
+			continue
+		}
+
+		if depth < maxDepth && !slices.Contains(skipDirs, e.Name()) {
+			s.walk(child, depth+1, maxDepth)
+		}
+	}
 }
 
 // pluginSkillDirs returns the directories a Claude plugin manifest declares
 // skills in, as vercel-labs/skills reads them.
 func pluginSkillDirs(repoRoot string) []string {
 	var dirs []string
+
 	add := func(base string, skills []string) {
 		for _, s := range skills {
 			if strings.HasPrefix(s, "./") {
 				dirs = append(dirs, path.Dir(path.Join(base, s)))
 			}
 		}
-		dirs = append(dirs, path.Join(base, "skills"))
+
+		dirs = append(dirs, path.Join(base, skillsSegment))
 	}
+
 	var market struct {
 		Metadata struct {
 			PluginRoot string `json:"pluginRoot"`
@@ -223,15 +263,18 @@ func pluginSkillDirs(repoRoot string) []string {
 			if p.Source != nil && (!ok || !strings.HasPrefix(source, "./")) {
 				continue
 			}
+
 			add(path.Join(market.Metadata.PluginRoot, source), p.Skills)
 		}
 	}
+
 	var plugin struct {
 		Skills []string `json:"skills"`
 	}
 	if data, err := os.ReadFile(filepath.Join(repoRoot, ".claude-plugin", "plugin.json")); err == nil && json.Unmarshal(data, &plugin) == nil {
 		add(".", plugin.Skills)
 	}
+
 	return dirs
 }
 
@@ -241,21 +284,25 @@ func ghDefault(p string) bool {
 	if p == "." {
 		return false
 	}
+
 	segments := strings.Split(p, "/")
 	for _, s := range segments {
 		if strings.HasPrefix(s, ".") {
 			return false
 		}
 	}
+
 	n := len(segments)
+
 	name := segments[n-1]
 	switch {
 	case n == 1:
-		return name != "skills" && name != "plugins"
-	case segments[n-2] == "skills":
+		return name != skillsSegment && name != "plugins"
+	case segments[n-2] == skillsSegment:
 		return true
-	case n >= 3 && segments[n-3] == "skills":
+	case n >= 3 && segments[n-3] == skillsSegment:
 		return true
 	}
+
 	return false
 }

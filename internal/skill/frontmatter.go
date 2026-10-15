@@ -36,6 +36,7 @@ func ParseSourceMetadata(content string) (SourceMetadata, error) {
 	}
 
 	meta, _ := raw["metadata"].(map[string]any)
+
 	return SourceMetadata{
 		RepoURL:   stringValue(meta, "github-repo"),
 		Ref:       stringValue(meta, "github-ref"),
@@ -54,6 +55,7 @@ func InjectSourceMetadata(content string, m SourceMetadata) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	if raw == nil {
 		raw = make(map[string]any)
 	}
@@ -72,6 +74,7 @@ func InjectSourceMetadata(content string, m SourceMetadata) (string, error) {
 		meta["github-repo"] = m.RepoURL
 		meta["github-ref"] = m.Ref
 		meta["github-tree-sha"] = m.TreeSHA
+
 		meta["github-path"] = m.Path
 		if m.Pinned != "" {
 			meta["github-pinned"] = m.Pinned
@@ -82,8 +85,10 @@ func InjectSourceMetadata(content string, m SourceMetadata) (string, error) {
 		for _, key := range []string{"github-repo", "github-ref", "github-tree-sha", "github-path", "github-pinned"} {
 			delete(meta, key)
 		}
+
 		meta["local-path"] = m.LocalPath
 	}
+
 	raw["metadata"] = meta
 
 	return serializeFrontmatter(raw, body)
@@ -105,6 +110,7 @@ func parseFrontmatter(content string) (map[string]any, string, error) {
 	}
 
 	rest := strings.TrimLeft(trimmed[len(frontmatterDelimiter):], "\r\n")
+
 	before, after, ok := strings.Cut(rest, "\n"+frontmatterDelimiter)
 	if !ok {
 		return nil, content, nil
@@ -116,6 +122,7 @@ func parseFrontmatter(content string) (map[string]any, string, error) {
 	}
 
 	body := strings.TrimLeft(after, "\r\n")
+
 	return raw, body, nil
 }
 
@@ -129,11 +136,14 @@ func serializeFrontmatter(raw map[string]any, body string) (string, error) {
 	buf.WriteString(frontmatterDelimiter + "\n")
 	buf.Write(yamlBytes)
 	buf.WriteString(frontmatterDelimiter + "\n")
+
 	if body != "" {
 		buf.WriteString(body)
+
 		if !strings.HasSuffix(body, "\n") {
 			buf.WriteString("\n")
 		}
 	}
+
 	return buf.String(), nil
 }

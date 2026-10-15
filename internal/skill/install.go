@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -39,18 +40,18 @@ type replacementTxn struct {
 }
 
 // InstallSkills copies discovered skills to skillsDir and updates the lockfile.
-func InstallSkills(skills []DiscoveredSkill, ref SourceRef, layout lock.Layout) error {
+func InstallSkills(skills []DiscoveredSkill, ref SourceRef, layout lock.Layout) (err error) {
 	if len(skills) == 0 {
-		return fmt.Errorf("no skills to install")
+		return errors.New("no skills to install")
 	}
 
 	tx, err := stageSkillReplacements(layout, discoveredSkillReplacements(skills, true))
 	if err != nil {
 		return err
 	}
-	defer tx.Cleanup()
+	defer func() { err = errors.Join(err, tx.Cleanup()) }()
 
-	lf, err := readOrInitLockFile(layout.LockPath())
+	lf, err := layout.ReadLockFile()
 	if err != nil {
 		return err
 	}
@@ -70,7 +71,7 @@ func InstallSkills(skills []DiscoveredSkill, ref SourceRef, layout lock.Layout) 
 	}
 
 	if err := lock.WriteFile(layout.LockPath(), lf); err != nil {
-		return rollbackAfterLockFailure(tx, fmt.Errorf("write lockfile: %w", err))
+		return errors.Join(fmt.Errorf("write lockfile: %w", err), tx.Rollback())
 	}
 
 	return nil
@@ -82,11 +83,12 @@ func InstallSkills(skills []DiscoveredSkill, ref SourceRef, layout lock.Layout) 
 // gh skill install. Only github sources are supported.
 // repoRoot is the cloned repository the skills were discovered in, and
 // resolved is the ref the clone was made from.
-func InstallTrackedSkills(ctx context.Context, skills []DiscoveredSkill, repoRoot string, ref SourceRef, resolved git.ResolvedRef, layout lock.Layout) error {
+func InstallTrackedSkills(ctx context.Context, skills []DiscoveredSkill, repoRoot string, ref SourceRef, resolved git.ResolvedRef, layout lock.Layout) (err error) {
 	if len(skills) == 0 {
-		return fmt.Errorf("no skills to install")
+		return errors.New("no skills to install")
 	}
-	if ref.SourceType != "github" {
+
+	if ref.SourceType != lock.SourceGitHub {
 		return fmt.Errorf("gh skill format supports only github sources, got %q", ref.SourceType)
 	}
 
@@ -94,13 +96,14 @@ func InstallTrackedSkills(ctx context.Context, skills []DiscoveredSkill, repoRoo
 	if err != nil {
 		return err
 	}
-	defer tx.Cleanup()
+	defer func() { err = errors.Join(err, tx.Cleanup()) }()
 
 	for i, s := range skills {
 		treeSHA, err := git.TreeSHA(ctx, repoRoot, s.Path)
 		if err != nil {
 			return fmt.Errorf("resolve tree SHA for %q: %w", s.Name, err)
 		}
+
 		meta := SourceMetadata{
 			RepoURL: RepoURLForSource(ref.CanonicalSource),
 			Ref:     resolved.Full,
@@ -116,57 +119,43 @@ func InstallTrackedSkills(ctx context.Context, skills []DiscoveredSkill, repoRoo
 	return tx.Apply()
 }
 
-// ApplyCandidateUpdates replaces updated skills and persists hashes to the lockfile.
-// On lockfile write failure, filesystem changes are rolled back.
-func ApplyCandidateUpdates(lf lock.File, candidates []UpdateCandidate, layout lock.Layout) (lock.File, []string, error) {
+// ApplyCandidateUpdates replaces the skills of candidates with their staged
+// content and records the new hashes in lf. On lockfile write failure,
+// filesystem changes are rolled back.
+func ApplyCandidateUpdates(lf lock.File, candidates []UpdateCandidate, layout lock.Layout) (err error) {
 	replacements := make([]skillReplacement, 0, len(candidates))
-	appliedNames := make([]string, 0, len(candidates))
-	updated := lf
-	if updated.Skills == nil {
-		updated.Skills = map[string]lock.Entry{}
-	}
-
 	for _, c := range candidates {
-		if c.Status != StatusUpdateAvailable {
-			continue
-		}
-
 		replacements = append(replacements, skillReplacement{
 			Name:      c.SkillName,
 			SourceDir: c.StagedDir,
 			Vercel:    true,
 		})
 
-		entry := updated.Skills[c.SkillName]
+		entry := lf.Skills[c.SkillName]
 		entry.ComputedHash = c.LatestHash
 		entry.SkillPath = c.SkillPath
-		updated.Skills[c.SkillName] = entry
-		appliedNames = append(appliedNames, c.SkillName)
-	}
-
-	if len(replacements) == 0 {
-		return updated, nil, nil
+		lf.Skills[c.SkillName] = entry
 	}
 
 	tx, err := stageSkillReplacements(layout, replacements)
 	if err != nil {
-		return lf, nil, err
+		return err
 	}
-	defer tx.Cleanup()
+	defer func() { err = errors.Join(err, tx.Cleanup()) }()
 
 	if err := tx.Apply(); err != nil {
-		return lf, nil, err
+		return err
 	}
 
-	if err := lock.WriteFile(layout.LockPath(), updated); err != nil {
-		return lf, nil, rollbackAfterLockFailure(tx, fmt.Errorf("write updated lockfile: %w", err))
+	if err := lock.WriteFile(layout.LockPath(), lf); err != nil {
+		return errors.Join(fmt.Errorf("write updated lockfile: %w", err), tx.Rollback())
 	}
 
-	return updated, appliedNames, nil
+	return nil
 }
 
 // ReplaceSkill atomically replaces an installed skill directory with staged content.
-func ReplaceSkill(skillName, stagedDir string, layout lock.Layout) error {
+func ReplaceSkill(skillName, stagedDir string, layout lock.Layout) (err error) {
 	tx, err := stageSkillReplacements(layout, []skillReplacement{{
 		Name:      skillName,
 		SourceDir: stagedDir,
@@ -174,7 +163,7 @@ func ReplaceSkill(skillName, stagedDir string, layout lock.Layout) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Cleanup()
+	defer func() { err = errors.Join(err, tx.Cleanup()) }()
 
 	return tx.Apply()
 }
@@ -184,12 +173,13 @@ func discoveredSkillReplacements(skills []DiscoveredSkill, vercel bool) []skillR
 	for _, s := range skills {
 		replacements = append(replacements, skillReplacement{Name: s.Name, SourceDir: s.Dir, Vercel: vercel})
 	}
+
 	return replacements
 }
 
 func stageSkillReplacements(layout lock.Layout, replacements []skillReplacement) (*replacementTxn, error) {
 	if len(replacements) == 0 {
-		return nil, fmt.Errorf("no skill changes to apply")
+		return nil, errors.New("no skill changes to apply")
 	}
 
 	if err := os.MkdirAll(layout.Dir, 0o755); err != nil {
@@ -200,13 +190,11 @@ func stageSkillReplacements(layout lock.Layout, replacements []skillReplacement)
 	for _, replacement := range replacements {
 		stagedDir, err := os.MkdirTemp(layout.Dir, "."+replacement.Name+".staged-*")
 		if err != nil {
-			tx.Cleanup()
-			return nil, fmt.Errorf("create staged directory for %q: %w", replacement.Name, err)
+			return nil, errors.Join(fmt.Errorf("create staged directory for %q: %w", replacement.Name, err), tx.Cleanup())
 		}
 
 		if err := copyDir(replacement.SourceDir, stagedDir, replacement.Vercel); err != nil {
-			tx.Cleanup()
-			return nil, fmt.Errorf("stage skill %q: %w", replacement.Name, err)
+			return nil, errors.Join(fmt.Errorf("stage skill %q: %w", replacement.Name, err), tx.Cleanup())
 		}
 
 		tx.staged = append(tx.staged, stagedSkillReplacement{
@@ -222,11 +210,7 @@ func (tx *replacementTxn) Apply() error {
 	for _, replacement := range tx.staged {
 		backupDir, err := tx.swapIn(replacement)
 		if err != nil {
-			rollbackErr := tx.Rollback()
-			if rollbackErr != nil {
-				return fmt.Errorf("%w (rollback: %v)", err, rollbackErr)
-			}
-			return err
+			return errors.Join(err, tx.Rollback())
 		}
 
 		tx.applied = append(tx.applied, appliedSkillReplacement{
@@ -269,6 +253,7 @@ func (tx *replacementTxn) Cleanup() error {
 		if replacement.StagedDir == "" {
 			continue
 		}
+
 		if err := os.RemoveAll(replacement.StagedDir); err != nil && !errors.Is(err, os.ErrNotExist) {
 			errs = append(errs, fmt.Errorf("cleanup staged skill %q: %w", replacement.Name, err))
 		}
@@ -278,6 +263,7 @@ func (tx *replacementTxn) Cleanup() error {
 		if applied.BackupDir == "" {
 			continue
 		}
+
 		if err := os.RemoveAll(applied.BackupDir); err != nil && !errors.Is(err, os.ErrNotExist) {
 			errs = append(errs, fmt.Errorf("cleanup backup for %q: %w", applied.Name, err))
 		}
@@ -295,9 +281,11 @@ func (tx *replacementTxn) swapIn(replacement stagedSkillReplacement) (string, er
 		if err != nil {
 			return "", fmt.Errorf("prepare backup for %q: %w", replacement.Name, err)
 		}
+
 		if err := os.Rename(dst, path); err != nil {
 			return "", fmt.Errorf("backup existing skill %q: %w", replacement.Name, err)
 		}
+
 		backupDir = path
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("stat existing skill %q: %w", replacement.Name, err)
@@ -307,6 +295,7 @@ func (tx *replacementTxn) swapIn(replacement stagedSkillReplacement) (string, er
 		if backupDir != "" {
 			_ = os.Rename(backupDir, dst)
 		}
+
 		return "", fmt.Errorf("activate staged skill %q: %w", replacement.Name, err)
 	}
 
@@ -318,34 +307,12 @@ func tempPath(parentDir, pattern string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	if err := os.Remove(path); err != nil {
 		return "", err
 	}
+
 	return path, nil
-}
-
-func readOrInitLockFile(path string) (lock.File, error) {
-	lf, err := lock.ReadFile(path)
-	if err == nil {
-		return lf, nil
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		return lock.File{}, fmt.Errorf("read lockfile: %w", err)
-	}
-
-	return lock.File{
-		Version: 1,
-		Skills:  map[string]lock.Entry{},
-	}, nil
-}
-
-func rollbackAfterLockFailure(tx *replacementTxn, err error) error {
-	rollbackErr := tx.Rollback()
-	if rollbackErr == nil {
-		return err
-	}
-
-	return fmt.Errorf("%w (rollback: %v)", err, rollbackErr)
 }
 
 // skipCopy reports whether a copy of a skill leaves d out: .git always, and
@@ -354,62 +321,71 @@ func skipCopy(d os.DirEntry, vercel bool) bool {
 	if d.IsDir() {
 		return d.Name() == ".git" || vercel && (d.Name() == "__pycache__" || d.Name() == "__pypackages__")
 	}
+
 	return vercel && d.Name() == "metadata.json"
 }
 
-// copyDir copies src into dst, leaving out dst itself and what skipCopy
-// skips.
-func copyDir(src, dst string, vercel bool) error {
-	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+// copyDir copies the regular files of src into dst, leaving out dst itself
+// and what skipCopy skips. src must be a directory, not a link to one.
+func copyDir(src, dst string, vercel bool) (err error) {
+	info, err := os.Lstat(src)
+	if err != nil {
+		return err
+	}
+
+	if !info.IsDir() {
+		return fmt.Errorf("copy %q: not a directory", src)
+	}
+
+	root, err := os.OpenRoot(src)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, root.Close()) }()
+
+	return fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if path == dst || skipCopy(d, vercel) {
+
+		target := filepath.Join(dst, filepath.FromSlash(rel))
+		if filepath.Join(src, filepath.FromSlash(rel)) == dst || skipCopy(d, vercel) {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
+
 			return nil
 		}
 
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-
-		target := filepath.Join(dst, rel)
 		if d.IsDir() {
 			return os.MkdirAll(target, 0o755)
 		}
 
-		return copyFile(path, target)
+		if !d.Type().IsRegular() {
+			return nil
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+
+		return copyFile(root, rel, target, info.Mode().Perm())
 	})
 }
 
-func copyFile(src, dst string) error {
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return err
-	}
-
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	info, err := in.Stat()
+func copyFile(root *os.Root, rel, target string, perm fs.FileMode) error {
+	in, err := root.Open(rel)
 	if err != nil {
 		return err
 	}
 
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
+	out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
 	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	if _, err := io.Copy(out, in); err != nil {
-		return err
+		return errors.Join(err, in.Close())
 	}
 
-	return out.Close()
+	_, err = io.Copy(out, in)
+
+	return errors.Join(err, out.Close(), in.Close())
 }
