@@ -1,6 +1,7 @@
 package skill_test
 
 import (
+	"io/fs"
 	"path/filepath"
 	"testing"
 
@@ -28,8 +29,8 @@ func TestVerifyTrackedRootSkill(t *testing.T) {
 		}
 
 		fns := skill.UpstreamFuncs{
-			FetchTree: func(_, _, tree string) (git.Snapshot, error) {
-				return git.ReadTree(t.Context(), repo, tree)
+			FetchTree: func(_, _, tree string) (fs.FS, error) {
+				return newCache(t).ReadTree(t.Context(), repo, tree)
 			},
 		}
 

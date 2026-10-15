@@ -344,12 +344,9 @@ func hasSkillMD(repo fs.FS, dir string) bool {
 	return err == nil
 }
 
-// NewCloneFunc returns a CloneFunc that fetches sources, and a cleanup
-// function that releases what it fetched.
-func NewCloneFunc(ctx context.Context) (CloneFunc, func()) {
-	var snaps snapshots
-
-	cloneFn := func(source string) (fs.FS, error) {
+// NewCloneFunc returns a CloneFunc that fetches sources through c.
+func NewCloneFunc(ctx context.Context, c *git.Cache) CloneFunc {
+	return func(source string) (fs.FS, error) {
 		ref, err := ParseSource(source)
 		if err != nil {
 			return nil, err
@@ -360,38 +357,9 @@ func NewCloneFunc(ctx context.Context) (CloneFunc, func()) {
 			return nil, err
 		}
 
-		snap, err := snaps.add(git.Fetch(ctx, ref.CloneURL, resolved))
+		snap, err := c.Fetch(ctx, ref.CloneURL, resolved)
 
 		return snap.FS, err
-	}
-
-	return cloneFn, snaps.close
-}
-
-type snapshots struct {
-	mu   sync.Mutex
-	list []git.Snapshot
-}
-
-func (s *snapshots) add(snap git.Snapshot, err error) (git.Snapshot, error) {
-	if err != nil {
-		return snap, err
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.list = append(s.list, snap)
-
-	return snap, nil
-}
-
-func (s *snapshots) close() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for _, snap := range s.list {
-		_ = snap.Close()
 	}
 }
 

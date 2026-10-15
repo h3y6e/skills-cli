@@ -129,31 +129,27 @@ type UpstreamFuncs struct {
 	// latest release, then default branch).
 	FetchLatest func(repoURL string) (git.Snapshot, error)
 	// FetchTree reads the tree treeSHA of repoURL, fetching ref when the
-	// tree is not cached. Close the snapshot when done.
-	FetchTree func(repoURL, ref, treeSHA string) (git.Snapshot, error)
+	// tree is not cached.
+	FetchTree func(repoURL, ref, treeSHA string) (fs.FS, error)
 }
 
-// NewUpstreamFuncs returns the production UpstreamFuncs along with a cleanup
-// function releasing what they fetched.
-func NewUpstreamFuncs(ctx context.Context) (UpstreamFuncs, func()) {
-	var (
-		snaps      snapshots
-		prefetched onceMap[[2]string, struct{}]
-	)
+// NewUpstreamFuncs returns the production UpstreamFuncs, fetching through c.
+func NewUpstreamFuncs(ctx context.Context, c *git.Cache) UpstreamFuncs {
+	var prefetched onceMap[[2]string, struct{}]
 
-	fns := UpstreamFuncs{
+	return UpstreamFuncs{
 		FetchLatest: func(repoURL string) (git.Snapshot, error) {
 			resolved, err := git.ResolveLatest(ctx, repoURL, "")
 			if err != nil {
 				return git.Snapshot{}, err
 			}
 
-			return snaps.add(git.Fetch(ctx, repoURL, resolved))
+			return c.Fetch(ctx, repoURL, resolved)
 		},
-		FetchTree: func(repoURL, ref, treeSHA string) (git.Snapshot, error) {
-			snap, err := git.ReadTree(ctx, repoURL, treeSHA)
+		FetchTree: func(repoURL, ref, treeSHA string) (fs.FS, error) {
+			tree, err := c.ReadTree(ctx, repoURL, treeSHA)
 			if !errors.Is(err, git.ErrNotCached) {
-				return snap, err
+				return tree, err
 			}
 
 			if err := prefetched.doErr([2]string{repoURL, ref}, func() error {
@@ -162,21 +158,19 @@ func NewUpstreamFuncs(ctx context.Context) (UpstreamFuncs, func()) {
 					return err
 				}
 
-				return git.Prefetch(ctx, repoURL, resolved)
+				return c.Prefetch(ctx, repoURL, resolved)
 			}); err != nil {
-				return git.Snapshot{}, fmt.Errorf("fetch %s: %w", ref, err)
+				return nil, fmt.Errorf("fetch %s: %w", ref, err)
 			}
 
-			snap, err = git.ReadTree(ctx, repoURL, treeSHA)
+			tree, err = c.ReadTree(ctx, repoURL, treeSHA)
 			if errors.Is(err, git.ErrNotCached) {
-				return snap, fmt.Errorf("%s no longer holds tree %s", ref, treeSHA)
+				return nil, fmt.Errorf("%s no longer holds tree %s", ref, treeSHA)
 			}
 
-			return snap, err
+			return tree, err
 		},
 	}
-
-	return fns, snaps.close
 }
 
 // partitionInstalled reports pinned, local and unlocatable gh skill installs
@@ -292,7 +286,7 @@ func fetchRepo(repoURL string, fns UpstreamFuncs) (git.Snapshot, []DiscoveredSki
 // resolved to, staging the upstream skill with fresh metadata when update
 // would replace it.
 func resolveTracked(candidate UpdateCandidate, s InstalledSkill, up DiscoveredSkill, snap git.Snapshot) UpdateCandidate {
-	treeSHA, err := snap.Tree(up.Path)
+	treeSHA, err := snap.TreeSHA(up.Path)
 	if err != nil {
 		candidate.Status, candidate.Reason = StatusCheckFailed, err.Error()
 		return candidate

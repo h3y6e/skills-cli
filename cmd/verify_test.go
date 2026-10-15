@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -248,14 +249,14 @@ func TestVerifySkillFilter(t *testing.T) {
 		addSkills(t, "-s", "alpha", "-d", dir, bareURL)
 
 		orig := cmd.NewUpstreamFuncs
-		cmd.NewUpstreamFuncs = func(ctx context.Context) (skill.UpstreamFuncs, func()) {
-			fns, cleanup := orig(ctx)
-			fns.FetchTree = func(string, string, string) (git.Snapshot, error) {
+		cmd.NewUpstreamFuncs = func(ctx context.Context, c *git.Cache) skill.UpstreamFuncs {
+			fns := orig(ctx, c)
+			fns.FetchTree = func(string, string, string) (fs.FS, error) {
 				t.Error("verify fetched a skill that -s did not select")
-				return git.Snapshot{}, errors.New("unexpected fetch")
+				return nil, errors.New("unexpected fetch")
 			}
 
-			return fns, cleanup
+			return fns
 		}
 
 		t.Cleanup(func() { cmd.NewUpstreamFuncs = orig })

@@ -99,7 +99,7 @@ func InstallTrackedSkills(skills []DiscoveredSkill, snap git.Snapshot, ref Sourc
 
 	replacements := make([]skillReplacement, len(skills))
 	for i, s := range skills {
-		treeSHA, err := snap.Tree(s.Path)
+		treeSHA, err := snap.TreeSHA(s.Path)
 		if err != nil {
 			return err
 		}

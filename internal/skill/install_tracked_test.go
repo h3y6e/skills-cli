@@ -2,6 +2,7 @@ package skill_test
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,34 +34,29 @@ func checkoutRepo(t *testing.T, dir string) git.Snapshot {
 		t.Fatal(err)
 	}
 
-	snap, err := git.Fetch(t.Context(), dir, ref)
+	snap, err := newCache(t).Fetch(t.Context(), dir, ref)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	t.Cleanup(func() { _ = snap.Close() })
 
 	return snap
 }
 
-// snapshotOf presents dir, read without following links out of it, as
-// refs/tags/v2.0.0 whose every directory has the tree SHA tree.
-func snapshotOf(t *testing.T, dir, tree string) git.Snapshot {
+func newCache(t *testing.T) *git.Cache {
 	t.Helper()
 
-	trees := map[string]string{}
+	c := git.NewCache()
 
-	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-		if err == nil && d.IsDir() {
-			rel, _ := filepath.Rel(dir, path)
-			trees[filepath.ToSlash(rel)] = tree
-		}
+	t.Cleanup(func() { _ = c.Close() })
 
-		return err
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	return c
+}
+
+// snapshotOf presents dir, read without following links out of it, as
+// refs/tags/v2.0.0 whose every directory has the tree SHA tree, unless
+// trees names another.
+func snapshotOf(t *testing.T, dir, tree string, trees map[string]string) git.Snapshot {
+	t.Helper()
 
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -69,7 +65,19 @@ func snapshotOf(t *testing.T, dir, tree string) git.Snapshot {
 
 	t.Cleanup(func() { _ = root.Close() })
 
-	return git.Snapshot{FS: root.FS(), Ref: git.ResolvedRef{Full: "refs/tags/v2.0.0"}, Trees: trees}
+	treeSHA := func(path string) (string, error) {
+		if sha, ok := trees[path]; ok {
+			return sha, nil
+		}
+
+		if _, err := fs.Stat(root.FS(), path); err != nil {
+			return "", err
+		}
+
+		return tree, nil
+	}
+
+	return git.Snapshot{FS: root.FS(), Ref: git.ResolvedRef{Full: "refs/tags/v2.0.0"}, TreeSHA: treeSHA}
 }
 
 func installTracked(t *testing.T, repo string, ref skill.SourceRef, resolved git.ResolvedRef, skillsDir string) []skill.DiscoveredSkill {
@@ -193,7 +201,7 @@ func TestInstallTrackedSkills(t *testing.T) {
 		}
 
 		// Act
-		err = skill.InstallTrackedSkills(discovered, git.Snapshot{FS: os.DirFS(repoRoot), Ref: resolved}, ref, lock.NewLayout(skillsDir))
+		err = skill.InstallTrackedSkills(discovered, git.Snapshot{FS: os.DirFS(repoRoot), Ref: resolved, TreeSHA: func(string) (string, error) { return "", nil }}, ref, lock.NewLayout(skillsDir))
 
 		// Assert
 		if err == nil {

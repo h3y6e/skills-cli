@@ -117,13 +117,12 @@ func VerifyTracked(installed []InstalledSkill, fns UpstreamFuncs) []VerifyResult
 }
 
 func verifyTracked(s InstalledSkill, fns UpstreamFuncs) (VerifyStatus, []string, string) {
-	snap, err := fns.FetchTree(s.Meta.RepoURL, s.Meta.Ref, s.Meta.TreeSHA)
+	tree, err := fns.FetchTree(s.Meta.RepoURL, s.Meta.Ref, s.Meta.TreeSHA)
 	if err != nil {
 		return VerifyUnverifiable, nil, err.Error()
 	}
-	defer func() { _ = snap.Close() }()
 
-	want, err := withMetadata(snap.FS, s.Meta)
+	want, err := withMetadata(tree, s.Meta)
 	if err != nil {
 		return VerifyUnverifiable, nil, err.Error()
 	}

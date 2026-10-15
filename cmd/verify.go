@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/h3y6e/skolar/internal/git"
 	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
 	"github.com/spf13/cobra"
@@ -69,11 +70,10 @@ func runVerify(cmd *cobra.Command, opts verifyOptions) (err error) {
 		unrecorded = slices.DeleteFunc(unrecorded, func(r skill.VerifyResult) bool { return !skill.Selected(skillFilter, r.SkillName) })
 	}
 
-	fns, cleanup := NewUpstreamFuncs(cmd.Context())
-	defer cleanup()
+	cache := git.NewCache()
+	defer func() { _ = cache.Close() }()
 
-	cloneFn, cloneCleanup := skill.NewCloneFunc(cmd.Context())
-	defer cloneCleanup()
+	fns, cloneFn := NewUpstreamFuncs(cmd.Context(), cache), skill.NewCloneFunc(cmd.Context(), cache)
 
 	all := slices.Concat(skill.VerifyLocked(layout, entries, cloneFn), skill.VerifyTracked(foreign, fns), unrecorded)
 	slices.SortFunc(all, func(a, b skill.VerifyResult) int { return cmp.Compare(a.SkillName, b.SkillName) })

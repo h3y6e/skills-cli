@@ -172,7 +172,7 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 			dir := t.TempDir()
 			testutil.WriteFiles(t, dir, files)
 
-			return snapshotOf(t, dir, tree), nil
+			return snapshotOf(t, dir, tree, nil), nil
 		}
 	}
 
@@ -195,10 +195,7 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 		skills := []skill.InstalledSkill{installed("foo", "https://github.com/o/r", "tree-1", "skills/foo")}
 		fns := skill.UpstreamFuncs{
 			FetchLatest: func(string) (git.Snapshot, error) {
-				snap := snapshotOf(t, clone, "tree-2")
-				snap.Trees["skills/foo"] = "tree-2"
-
-				return snap, nil
+				return snapshotOf(t, clone, "tree-2", map[string]string{"skills/foo": "tree-2"}), nil
 			},
 		}
 
@@ -256,7 +253,7 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 					"skills/foo/SKILL.md": "# Foo v2\n",
 				})
 
-				return snapshotOf(t, dir, "tree-new"), nil
+				return snapshotOf(t, dir, "tree-new", nil), nil
 			},
 		}
 
@@ -321,7 +318,7 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				return snapshotOf(t, dir, "tree-new"), nil
+				return snapshotOf(t, dir, "tree-new", nil), nil
 			},
 		}
 
@@ -462,7 +459,7 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 				dir := t.TempDir()
 				testutil.WriteFiles(t, dir, map[string]string{"skills/foo/SKILL.md": "# Foo\n"})
 
-				return snapshotOf(t, dir, "tree-2"), nil
+				return snapshotOf(t, dir, "tree-2", nil), nil
 			},
 		}
 
@@ -504,7 +501,7 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 					"skills/good/SKILL.md": "---\nname: good\n---\n",
 				})
 
-				return snapshotOf(t, dir, "tree-new"), nil
+				return snapshotOf(t, dir, "tree-new", nil), nil
 			},
 		}
 
@@ -573,10 +570,7 @@ func TestCollectTrackedUpdateCandidates(t *testing.T) {
 					"skills/bar/SKILL.md": "# Bar\n",
 				})
 
-				snap := snapshotOf(t, dir, "tree-2")
-				snap.Trees["skills/foo"] = "tree-1"
-
-				return snap, nil
+				return snapshotOf(t, dir, "tree-2", map[string]string{"skills/foo": "tree-1"}), nil
 			},
 		}
 

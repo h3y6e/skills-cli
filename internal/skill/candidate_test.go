@@ -519,7 +519,7 @@ func TestCollectUpdateCandidates(t *testing.T) {
 		installed := []skill.InstalledSkill{{Name: "b", Meta: skill.SourceMetadata{RepoURL: "https://github.com/o/r", TreeSHA: "t", Path: "skills/b"}}}
 		fns := skill.UpstreamFuncs{
 			FetchLatest: func(string) (git.Snapshot, error) {
-				return snapshotOf(t, src, "t"), nil
+				return snapshotOf(t, src, "t", nil), nil
 			},
 		}
 

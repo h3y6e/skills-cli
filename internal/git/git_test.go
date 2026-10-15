@@ -27,12 +27,17 @@ func fetch(t *testing.T, url, ref string) (git.Snapshot, error) {
 		return git.Snapshot{}, err
 	}
 
-	s, err := git.Fetch(t.Context(), url, resolved)
-	if err == nil {
-		t.Cleanup(func() { _ = s.Close() })
-	}
+	return newCache(t).Fetch(t.Context(), url, resolved)
+}
 
-	return s, err
+func newCache(t *testing.T) *git.Cache {
+	t.Helper()
+
+	c := git.NewCache()
+
+	t.Cleanup(func() { _ = c.Close() })
+
+	return c
 }
 
 func readSkill(t *testing.T, s git.Snapshot) string {
@@ -181,20 +186,16 @@ func TestFetch(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		first, err := git.Fetch(t.Context(), repo, ref)
-		if err != nil {
+		if _, err := newCache(t).Fetch(t.Context(), repo, ref); err != nil {
 			t.Fatal(err)
 		}
-
-		_ = first.Close()
 
 		if err := os.RemoveAll(strings.TrimPrefix(repo, "file://")); err != nil {
 			t.Fatal(err)
 		}
 
 		// Act
-		s, err := git.Fetch(t.Context(), repo, ref)
-		t.Cleanup(func() { _ = s.Close() })
+		s, err := newCache(t).Fetch(t.Context(), repo, ref)
 		// Assert
 		if err != nil {
 			t.Fatal(err)
@@ -249,7 +250,7 @@ func TestFetch(t *testing.T) {
 		}
 	})
 
-	t.Run("when fetched, Trees holds the tree SHA of the root and every directory", func(t *testing.T) {
+	t.Run("when fetched, TreeSHA returns the tree SHA of the root and of a directory", func(t *testing.T) {
 		t.Parallel()
 
 		// Arrange
@@ -264,8 +265,8 @@ func TestFetch(t *testing.T) {
 		}
 
 		for path, rev := range map[string]string{".": "v1.0.0^{tree}", "skills/my-skill": "v1.0.0:skills/my-skill"} {
-			if want := strings.TrimSpace(testutil.Git(t, bare, "rev-parse", rev)); s.Trees[path] != want {
-				t.Errorf("Trees[%q] = %q, want %q", path, s.Trees[path], want)
+			if got, err := s.TreeSHA(path); got != strings.TrimSpace(testutil.Git(t, bare, "rev-parse", rev)) {
+				t.Errorf("TreeSHA(%q) = %q, %v, want %s", path, got, err, rev)
 			}
 		}
 	})
@@ -293,7 +294,11 @@ func TestFetch(t *testing.T) {
 		cancel()
 
 		// Act
-		_, err := git.Fetch(ctx, repo, ref)
+		c := git.NewCache()
+
+		t.Cleanup(func() { _ = c.Close() })
+
+		_, err := c.Fetch(ctx, repo, ref)
 
 		// Assert
 		if err == nil {
@@ -317,15 +322,18 @@ func TestReadTree(t *testing.T) {
 		}
 
 		// Act
-		tree, err := git.ReadTree(t.Context(), repo, s.Trees["skills/my-skill"])
+		sha, err := s.TreeSHA("skills/my-skill")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		tree, err := newCache(t).ReadTree(t.Context(), repo, sha)
 		// Assert
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		t.Cleanup(func() { _ = tree.Close() })
-
-		if data, err := fs.ReadFile(tree.FS, "SKILL.md"); string(data) != "# v1.0.0\n" {
+		if data, err := fs.ReadFile(tree, "SKILL.md"); string(data) != "# v1.0.0\n" {
 			t.Errorf("SKILL.md = %q, %v, want the v1.0.0 content", data, err)
 		}
 	})
@@ -343,7 +351,7 @@ func TestReadTree(t *testing.T) {
 		feature := strings.TrimSpace(testutil.Git(t, bare, "rev-parse", "feature/install:skills/my-skill"))
 
 		// Act
-		_, err := git.ReadTree(t.Context(), repo, feature)
+		_, err := newCache(t).ReadTree(t.Context(), repo, feature)
 
 		// Assert
 		if !errors.Is(err, git.ErrNotCached) {
@@ -361,7 +369,7 @@ func TestReadTree(t *testing.T) {
 		}
 
 		// Act
-		_, err := git.ReadTree(t.Context(), repo, "refs/tags/v1.0.0")
+		_, err := newCache(t).ReadTree(t.Context(), repo, "refs/tags/v1.0.0")
 
 		// Assert
 		if err == nil || errors.Is(err, git.ErrNotCached) {

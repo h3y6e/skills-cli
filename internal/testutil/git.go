@@ -2,9 +2,11 @@
 package testutil
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -36,10 +38,10 @@ func Main(m *testing.M) {
 
 // Git runs git in dir, isolated from the user and system config, and
 // returns its output.
-func Git(t *testing.T, dir string, args ...string) string {
-	t.Helper()
+func Git(tb testing.TB, dir string, args ...string) string {
+	tb.Helper()
 
-	cmd := exec.CommandContext(t.Context(), "git", args...)
+	cmd := exec.CommandContext(tb.Context(), "git", args...)
 	cmd.Dir = dir
 
 	cmd.Env = append(os.Environ(),
@@ -49,67 +51,92 @@ func Git(t *testing.T, dir string, args ...string) string {
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		tb.Fatalf("git %v failed: %v\n%s", args, err, out)
 	}
 
 	return string(out)
 }
 
 // WriteFiles writes files, keyed by slash-separated path, under base.
-func WriteFiles(t *testing.T, base string, files map[string]string) {
-	t.Helper()
+func WriteFiles(tb testing.TB, base string, files map[string]string) {
+	tb.Helper()
 
 	for name, content := range files {
 		p := filepath.Join(base, name)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
+			tb.Fatal(err)
 		}
 
 		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
+			tb.Fatal(err)
 		}
 	}
 }
 
 // InitWorkRepo creates a repository on main with a commit identity.
-func InitWorkRepo(t *testing.T) string {
-	t.Helper()
+func InitWorkRepo(tb testing.TB) string {
+	tb.Helper()
 
-	work := t.TempDir()
-	Git(t, work, "init", "-b", "main")
-	Git(t, work, "config", "user.email", "test@test.com")
-	Git(t, work, "config", "user.name", "Test")
+	work := tb.TempDir()
+	Git(tb, work, "init", "-b", "main")
+	Git(tb, work, "config", "user.email", "test@test.com")
+	Git(tb, work, "config", "user.name", "Test")
 
 	return work
 }
 
 // Commit writes files into work and commits everything.
-func Commit(t *testing.T, work, msg string, files map[string]string) {
-	t.Helper()
+func Commit(tb testing.TB, work, msg string, files map[string]string) {
+	tb.Helper()
 
-	WriteFiles(t, work, files)
-	Git(t, work, "add", "-A")
-	Git(t, work, "commit", "-m", msg)
+	WriteFiles(tb, work, files)
+	Git(tb, work, "add", "-A")
+	Git(tb, work, "commit", "-m", msg)
 }
 
 // BareClone returns a file:// URL of a bare clone of work.
-func BareClone(t *testing.T, work string) string {
-	t.Helper()
+func BareClone(tb testing.TB, work string) string {
+	tb.Helper()
 
-	bare := t.TempDir()
-	Git(t, work, "clone", "--bare", work, bare)
+	bare := tb.TempDir()
+	Git(tb, work, "clone", "--bare", work, bare)
 
 	return "file://" + bare
 }
 
 // BareRepo returns a file:// URL of a bare repo with two commits (an empty
 // base, then files) so shallow clones behave realistically.
-func BareRepo(t *testing.T, files map[string]string) string {
-	t.Helper()
+func BareRepo(tb testing.TB, files map[string]string) string {
+	tb.Helper()
 
-	work := InitWorkRepo(t)
-	Commit(t, work, "base", map[string]string{".gitkeep": ""})
-	Commit(t, work, "add files", files)
+	work := InitWorkRepo(tb)
+	Commit(tb, work, "base", map[string]string{".gitkeep": ""})
+	Commit(tb, work, "add files", files)
 
-	return BareClone(t, work)
+	return BareClone(tb, work)
+}
+
+// SkillRepo returns a file:// URL of a bare repo shaped like a large skill
+// collection: skills under skills/<group>/<name>, each with a SKILL.md and
+// files reference files.
+func SkillRepo(tb testing.TB, skills, files int) string {
+	tb.Helper()
+
+	work := InitWorkRepo(tb)
+	body := strings.Repeat("Explain the step, then show an example of it.\n", 80)
+
+	all := map[string]string{}
+
+	for i := range skills {
+		dir := fmt.Sprintf("skills/group-%d/skill-%d", i%8, i)
+		all[dir+"/SKILL.md"] = fmt.Sprintf("---\nname: skill-%d\ndescription: Skill %d.\n---\n%s", i, i, body)
+
+		for j := range files {
+			all[fmt.Sprintf("%s/references/ref-%d.md", dir, j)] = fmt.Sprintf("# Reference %d\n%s", j, body)
+		}
+	}
+
+	Commit(tb, work, "skills", all)
+
+	return BareClone(tb, work)
 }

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/h3y6e/skolar/internal/git"
 	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
 	"github.com/spf13/cobra"
@@ -152,12 +153,10 @@ func updateCandidates(cmd *cobra.Command, inv inventory, source string, skills [
 func collectCandidates(
 	ctx context.Context, stderr io.Writer, entries map[string]lock.Entry, foreign []skill.InstalledSkill,
 ) ([]skill.UpdateCandidate, []skill.SkippedEntry, func()) {
-	cloneFn, cloneCleanup := skill.NewCloneFunc(ctx)
-	fns, upstreamCleanup := NewUpstreamFuncs(ctx)
+	cache := git.NewCache()
+	candidates, skipped := skill.CollectUpdateCandidates(entries, foreign, skill.NewCloneFunc(ctx, cache), NewUpstreamFuncs(ctx, cache), progress(stderr))
 
-	candidates, skipped := skill.CollectUpdateCandidates(entries, foreign, cloneFn, fns, progress(stderr))
-
-	return candidates, skipped, func() { cloneCleanup(); upstreamCleanup() }
+	return candidates, skipped, func() { _ = cache.Close() }
 }
 
 // progress counts fetched sources on a terminal, erasing the count when done.
