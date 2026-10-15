@@ -344,7 +344,8 @@ func hasSkillMD(repo fs.FS, dir string) bool {
 	return err == nil
 }
 
-// NewCloneFunc returns a CloneFunc that fetches sources through c.
+// NewCloneFunc returns a CloneFunc that checks sources out through c, as
+// vercel-labs/skills clones them.
 func NewCloneFunc(ctx context.Context, c *git.Cache) CloneFunc {
 	return func(source string) (fs.FS, error) {
 		ref, err := ParseSource(source)
@@ -357,9 +358,7 @@ func NewCloneFunc(ctx context.Context, c *git.Cache) CloneFunc {
 			return nil, err
 		}
 
-		snap, err := c.Fetch(ctx, ref.CloneURL, resolved)
-
-		return snap.FS, err
+		return c.Checkout(ctx, ref.CloneURL, resolved)
 	}
 }
 

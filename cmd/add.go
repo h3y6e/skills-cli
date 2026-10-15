@@ -109,6 +109,17 @@ func fetchSource(ctx context.Context, cache *git.Cache, ref skill.SourceRef, tra
 		return git.Snapshot{}, fmt.Errorf("resolve ref for %s: %w", ref.CanonicalSource, err)
 	}
 
+	// The lockfile records the hash of files as vercel-labs/skills clones
+	// them; gh skill metadata records git trees, read as stored.
+	if !tracked {
+		fsys, err := cache.Checkout(ctx, ref.CloneURL, resolved)
+		if err != nil {
+			return git.Snapshot{}, fmt.Errorf("fetch %s: %w", ref.CanonicalSource, err)
+		}
+
+		return git.Snapshot{Ref: resolved, FS: fsys}, nil
+	}
+
 	snap, err := cache.Fetch(ctx, ref.CloneURL, resolved)
 	if err != nil {
 		return git.Snapshot{}, fmt.Errorf("fetch %s: %w", ref.CanonicalSource, err)

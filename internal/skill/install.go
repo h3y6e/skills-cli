@@ -192,6 +192,10 @@ func stageSkillReplacements(layout lock.Layout, replacements []skillReplacement)
 			return nil, errors.Join(fmt.Errorf("create staged directory for %q: %w", replacement.Name, err), tx.Cleanup())
 		}
 
+		if err := os.Chmod(stagedDir, 0o755); err != nil {
+			return nil, errors.Join(fmt.Errorf("create staged directory for %q: %w", replacement.Name, err), tx.Cleanup())
+		}
+
 		if err := copyDir(replacement.Source, stagedDir, replacement.Vercel); err != nil {
 			return nil, errors.Join(fmt.Errorf("stage skill %q: %w", replacement.Name, err), tx.Cleanup())
 		}

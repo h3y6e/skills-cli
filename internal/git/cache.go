@@ -32,8 +32,9 @@ type Snapshot struct {
 // repository per remote, so that a commit fetched before is read offline.
 // It reads each repository through a single git process until Close.
 type Cache struct {
-	mu    sync.Mutex
-	repos map[string]func() (*repo, error)
+	mu        sync.Mutex
+	repos     map[string]func() (*repo, error)
+	checkouts []*os.Root
 }
 
 // NewCache opens the cache.
@@ -54,7 +55,55 @@ func (c *Cache) Close() error {
 		}
 	}
 
+	for _, root := range c.checkouts {
+		errs = append(errs, root.Close(), os.RemoveAll(root.Name()))
+	}
+
 	return errors.Join(errs...)
+}
+
+// Checkout reads ref of cloneURL as git checkout writes it, converting line
+// endings and applying filters as .gitattributes and core.autocrlf direct,
+// fetching ref unless the cache holds it.
+func (c *Cache) Checkout(ctx context.Context, cloneURL string, ref ResolvedRef) (fs.FS, error) {
+	r, err := c.repo(ctx, cloneURL)
+	if err != nil {
+		return nil, err
+	}
+
+	tree, err := r.fetch(ctx, cloneURL, ref)
+	if err != nil {
+		return nil, err
+	}
+
+	dir, err := os.MkdirTemp("", "skolar-checkout-*")
+	if err != nil {
+		return nil, err
+	}
+
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, errors.Join(err, os.RemoveAll(dir))
+	}
+
+	c.mu.Lock()
+	c.checkouts = append(c.checkouts, root)
+	c.mu.Unlock()
+
+	// A private index keeps concurrent checkouts off the repository's index.lock.
+	restore, err := gitCommand(ctx, "--git-dir", r.gitDir, "--work-tree", dir, "restore", "--source", tree, "--worktree", "--", ":/")
+	if err != nil {
+		return nil, err
+	}
+
+	restore.Env = append(restore.Env, "GIT_INDEX_FILE="+dir+".index")
+	defer os.Remove(dir + ".index")
+
+	if out, err := restore.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("git restore: %w\n%s", err, out)
+	}
+
+	return root.FS(), nil
 }
 
 // Fetch reads ref of cloneURL, fetching it unless the cache holds it.
