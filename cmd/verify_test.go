@@ -280,3 +280,44 @@ func TestVerifyFix(t *testing.T) {
 		}
 	})
 }
+
+func TestVerifyLockfileExcludedFiles(t *testing.T) {
+	t.Parallel()
+	bareURL := initBareRepo(t, map[string]string{
+		"skills/alpha/SKILL.md":      "# Alpha\n",
+		"skills/alpha/metadata.json": "{}\n",
+	})
+
+	t.Run("when upstream holds files vercel-labs/skills leaves out, an untouched install verifies", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		dir := filepath.Join(t.TempDir(), ".agents", "skills")
+		addSkills(t, "-d", dir, bareURL)
+
+		// Act
+		rec, err := runVerifyJSON(t, dir)
+
+		// Assert
+		if err != nil || len(rec.Results) != 1 || rec.Results[0].Status != "verified" {
+			t.Errorf("verify = %v, %+v, want alpha verified", err, rec.Results)
+		}
+	})
+
+	t.Run("when such an install is changed, verify lists the changed file", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		dir := filepath.Join(t.TempDir(), ".agents", "skills")
+		addSkills(t, "-d", dir, bareURL)
+		if err := os.WriteFile(filepath.Join(dir, "alpha", "SKILL.md"), []byte("# Tampered\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Act
+		rec, err := runVerifyJSON(t, dir)
+
+		// Assert
+		if err == nil || len(rec.Results) != 1 || rec.Results[0].Status != "modified" || !slices.Equal(rec.Results[0].Files, []string{"SKILL.md"}) {
+			t.Errorf("verify = %v, %+v, want alpha modified in SKILL.md", err, rec.Results)
+		}
+	})
+}

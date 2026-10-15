@@ -348,17 +348,26 @@ func rollbackAfterLockFailure(tx *replacementTxn, err error) error {
 	return fmt.Errorf("%w (rollback: %v)", err, rollbackErr)
 }
 
-// copyDir copies src into dst, leaving out .git and dst itself. With vercel,
-// it also leaves out what vercel-labs/skills skips when it installs a skill.
+// skipCopy reports whether a copy of a skill leaves d out: .git always, and
+// with vercel what vercel-labs/skills skips when it installs a skill.
+func skipCopy(d os.DirEntry, vercel bool) bool {
+	if d.IsDir() {
+		return d.Name() == ".git" || vercel && (d.Name() == "__pycache__" || d.Name() == "__pypackages__")
+	}
+	return vercel && d.Name() == "metadata.json"
+}
+
+// copyDir copies src into dst, leaving out dst itself and what skipCopy
+// skips.
 func copyDir(src, dst string, vercel bool) error {
 	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if path == dst || d.IsDir() && (d.Name() == ".git" || vercel && (d.Name() == "__pycache__" || d.Name() == "__pypackages__")) {
-			return filepath.SkipDir
-		}
-		if vercel && !d.IsDir() && d.Name() == "metadata.json" {
+		if path == dst || skipCopy(d, vercel) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 

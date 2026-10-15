@@ -35,8 +35,12 @@ type VerifyResult struct {
 	Reinstall string `json:"-"`
 }
 
-// VerifyLocked recomputes each lockfile skill's computedHash from disk.
-func VerifyLocked(layout lock.Layout, entries map[string]lock.Entry) []VerifyResult {
+// VerifyLocked recomputes each lockfile skill's computedHash from disk,
+// offline. When the hash differs, it clones the source: if the upstream skill
+// still has the recorded hash, the install is compared file by file with it,
+// minus what vercel-labs/skills leaves out when it installs a skill.
+func VerifyLocked(layout lock.Layout, entries map[string]lock.Entry, cloneFn CloneFunc) []VerifyResult {
+	clones := map[string]string{}
 	results := make([]VerifyResult, 0, len(entries))
 	for _, name := range slices.Sorted(maps.Keys(entries)) {
 		entry := entries[name]
@@ -46,11 +50,42 @@ func VerifyLocked(layout lock.Layout, entries map[string]lock.Entry) []VerifyRes
 		case err != nil:
 			result.Status, result.Reason = VerifyUnverifiable, err.Error()
 		case hash != entry.ComputedHash:
-			result.Status = VerifyModified
+			result.Status, result.Files, result.Reason = verifyLockedOnline(name, entry, layout.SkillDir(name), cloneFn, clones)
 		}
 		results = append(results, result)
 	}
 	return results
+}
+
+func verifyLockedOnline(name string, entry lock.Entry, installed string, cloneFn CloneFunc, clones map[string]string) (VerifyStatus, []string, string) {
+	source := SourceInput(entry)
+	cloneDir, ok := clones[source]
+	if !ok {
+		var err error
+		if cloneDir, err = cloneFn(source); err != nil {
+			return VerifyUnverifiable, nil, fmt.Sprintf("clone %s: %v", source, err)
+		}
+		clones[source] = cloneDir
+	}
+	upstream, err := DiscoverSkills(cloneDir)
+	if err != nil {
+		return VerifyUnverifiable, nil, err.Error()
+	}
+	up, err := resolveUpstream(name, entry, upstream)
+	if err != nil {
+		return VerifyUnverifiable, nil, err.Error()
+	}
+	if up.ComputedHash != entry.ComputedHash {
+		return VerifyUnverifiable, nil, "upstream changed since install"
+	}
+	files, err := diffDirs(up.Dir, installed, true)
+	if err != nil {
+		return VerifyUnverifiable, nil, err.Error()
+	}
+	if len(files) > 0 {
+		return VerifyModified, files, ""
+	}
+	return VerifyVerified, nil, ""
 }
 
 // VerifyTracked compares each gh-format skill with the upstream tree its
@@ -101,7 +136,7 @@ func verifyTracked(s InstalledSkill, fns UpstreamFuncs, clones map[[2]string]str
 	if err := injectStagedMetadata(staged, s.Meta); err != nil {
 		return VerifyUnverifiable, nil, err.Error()
 	}
-	files, err := diffDirs(staged, s.Dir)
+	files, err := diffDirs(staged, s.Dir, false)
 	if err != nil {
 		return VerifyUnverifiable, nil, err.Error()
 	}
@@ -138,13 +173,14 @@ func VerifyUnrecorded(skillsDir string, recorded func(name string) bool) ([]Veri
 }
 
 // diffDirs returns the sorted paths of regular files that differ, or exist
-// in only one of want and got.
-func diffDirs(want, got string) ([]string, error) {
-	wantFiles, err := readFiles(want)
+// in only one of want and got. With vercel, want is read as vercel-labs/skills
+// installs it.
+func diffDirs(want, got string, vercel bool) ([]string, error) {
+	wantFiles, err := readFiles(want, vercel)
 	if err != nil {
 		return nil, err
 	}
-	gotFiles, err := readFiles(got)
+	gotFiles, err := readFiles(got, false)
 	if err != nil {
 		return nil, err
 	}
@@ -163,11 +199,20 @@ func diffDirs(want, got string) ([]string, error) {
 	return diff, nil
 }
 
-func readFiles(dir string) (map[string][]byte, error) {
+func readFiles(dir string, vercel bool) (map[string][]byte, error) {
 	files := map[string][]byte{}
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || !d.Type().IsRegular() {
+		if err != nil {
 			return err
+		}
+		if skipCopy(d, vercel) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return nil
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
