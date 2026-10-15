@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -53,21 +54,13 @@ func runAdd(cmd *cobra.Command, source string, opts addOptions) error {
 		return err
 	}
 
-	// gh skill format resolves the ref like gh skill install: explicit ref,
-	// else latest release, else default branch.
-	resolve := git.ResolveDefault
-	if tracked {
-		resolve = git.ResolveLatest
-	}
+	show := status(cmd.ErrOrStderr())
+	show("fetching " + ref.CanonicalSource)
+	snap, err := fetchSource(ctx, ref, tracked)
+	show("")
 
-	resolved, err := resolve(ctx, ref.CloneURL, ref.Ref)
 	if err != nil {
-		return fmt.Errorf("resolve ref for %s: %w", ref.CanonicalSource, err)
-	}
-
-	snap, err := git.Fetch(ctx, ref.CloneURL, resolved)
-	if err != nil {
-		return fmt.Errorf("fetch %s: %w", ref.CanonicalSource, err)
+		return err
 	}
 	defer func() { _ = snap.Close() }()
 
@@ -98,6 +91,27 @@ func runAdd(cmd *cobra.Command, source string, opts addOptions) error {
 	}
 
 	return skill.InstallSkills(discovered, ref, layout)
+}
+
+// fetchSource fetches ref.Ref, or else, in gh skill format, the latest
+// release, as gh skill install does, and the default branch otherwise.
+func fetchSource(ctx context.Context, ref skill.SourceRef, tracked bool) (git.Snapshot, error) {
+	resolve := git.ResolveDefault
+	if tracked {
+		resolve = git.ResolveLatest
+	}
+
+	resolved, err := resolve(ctx, ref.CloneURL, ref.Ref)
+	if err != nil {
+		return git.Snapshot{}, fmt.Errorf("resolve ref for %s: %w", ref.CanonicalSource, err)
+	}
+
+	snap, err := git.Fetch(ctx, ref.CloneURL, resolved)
+	if err != nil {
+		return git.Snapshot{}, fmt.Errorf("fetch %s: %w", ref.CanonicalSource, err)
+	}
+
+	return snap, nil
 }
 
 func installsTracked(layout lock.Layout, ref skill.SourceRef) (bool, error) {

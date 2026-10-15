@@ -14,7 +14,6 @@ import (
 	"github.com/h3y6e/skolar/internal/lock"
 	"github.com/h3y6e/skolar/internal/skill"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 )
 
 type updateOptions struct {
@@ -163,18 +162,15 @@ func collectCandidates(
 
 // progress counts fetched sources on a terminal, erasing the count when done.
 func progress(w io.Writer) func(n, total int) {
-	f, ok := w.(*os.File)
-	if !ok || !term.IsTerminal(int(f.Fd())) || os.Getenv("TERM") == "dumb" {
-		return func(int, int) {}
-	}
+	show := status(w)
 
 	return func(n, total int) {
-		line := fmt.Sprintf("checking %d/%d sources", n, total)
 		if n == total {
-			line = strings.Repeat(" ", len(line))
+			show("")
+			return
 		}
 
-		fmt.Fprintf(w, "\r%s\r", line)
+		show(fmt.Sprintf("checking %d/%d sources", n, total))
 	}
 }
 
