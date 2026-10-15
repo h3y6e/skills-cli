@@ -18,7 +18,6 @@
       systems = [
         "aarch64-darwin"
         "aarch64-linux"
-        "x86_64-darwin"
         "x86_64-linux"
       ];
 
@@ -39,7 +38,9 @@
             packages = [
               pkgs.git
               pkgs.go_1_26
+              pkgs.gh
               pkgs.go-tools
+              pkgs.skills
             ];
           };
         };
