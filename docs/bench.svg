@@ -1,14 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 330" width="900" height="330" role="img" aria-labelledby="t d">
   <title id="t">Time to update installed skills</title>
-  <desc id="d">repeat run: skolar 0.51 s · skills 0.82 s. Median wall time of 5 runs on darwin/arm64 · Apple M4 Max with skolar d299120 · skills 1.7.1 · gh skill 2.102.0; a first run starts from an empty cache, a repeat run from the cache the first one filled.
-install into a skills-lock.json project, skolar: 0.56 s repeat run, 1.27 s first run
-install into a skills-lock.json project, skills: 0.89 s repeat run, 0.87 s first run
-install into a gh skill directory, skolar: 0.47 s repeat run, 1.18 s first run
-install into a gh skill directory, gh skill: 2.57 s repeat run, 2.70 s first run
-update a skills-lock.json project, skolar: 0.51 s repeat run, 1.41 s first run
-update a skills-lock.json project, skills: 0.82 s repeat run, 0.85 s first run
-update a gh skill directory, skolar: 0.44 s repeat run, 1.16 s first run
-update a gh skill directory, gh skill: 0.94 s repeat run, 0.94 s first run
+  <desc id="d">repeat run: skolar 0.15 s · skills 0.60 s. Median wall time of 5 runs on linux/amd64 · AMD EPYC 7763 64-Core Processor                 with skolar d8b9378 · skills 1.7.1 · gh skill 2.102.0; a first run starts from an empty cache, a repeat run from the cache the first one filled.
+install into a skills-lock.json project, skolar: 0.16 s repeat run, 0.88 s first run
+install into a skills-lock.json project, skills: 1.20 s repeat run, 1.47 s first run
+install into a gh skill directory, skolar: 0.11 s repeat run, 0.66 s first run
+install into a gh skill directory, gh skill: 1.89 s repeat run, 1.79 s first run
+update a skills-lock.json project, skolar: 0.15 s repeat run, 0.55 s first run
+update a skills-lock.json project, skills: 0.60 s repeat run, 0.95 s first run
+update a gh skill directory, skolar: 0.10 s repeat run, 0.34 s first run
+update a gh skill directory, gh skill: 0.59 s repeat run, 0.62 s first run
 </desc>
   <style>
     text { white-space: pre; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; font-size: 13px; fill: #57575a; }
@@ -38,52 +38,47 @@ update a gh skill directory, gh skill: 0.94 s repeat run, 0.94 s first run
     }
   </style>
   <rect class="card" x=".5" y=".5" width="899" height="329"/>
-  <text class="corner" x="34" y="44">skolar d299120 · skills 1.7.1 · gh skill 2.102.0</text>
+  <text class="corner" x="34" y="44">skolar d8b9378 · skills 1.7.1 · gh skill 2.102.0</text>
   <text class="corner" x="806" y="44" text-anchor="end">REPEAT</text>
   <text class="corner" x="866" y="44" text-anchor="end">FIRST</text>
   <text class="h" x="34" y="84">update a skills-lock.json project</text>
   <text class="mono" x="34" y="108">skolar</text>
-  <rect class="band" x="200" y="98" width="490" height="12" rx="3"/>
-  <rect class="skolar" x="200" y="98" width="176" height="12" rx="3"/>
-  <text class="mono value" x="806" y="108" text-anchor="end">0.51 s</text>
-  <text class="mono muted" x="866" y="108" text-anchor="end">1.41 s</text>
+  <rect class="band" x="200" y="98" width="285" height="12" rx="3"/>
+  <rect class="skolar" x="200" y="98" width="77" height="12" rx="3"/>
+  <text class="mono value" x="806" y="108" text-anchor="end">0.15 s</text>
+  <text class="mono muted" x="866" y="108" text-anchor="end">0.55 s</text>
   <text class="mono" x="34" y="134">skills</text>
-  <rect class="band" x="200" y="124" width="294" height="12" rx="3"/>
-  <rect class="other" x="200" y="124" width="282" height="12" rx="3"/>
-  <text class="mono" x="806" y="134" text-anchor="end">0.82 s</text>
-  <text class="mono muted" x="866" y="134" text-anchor="end">0.85 s</text>
+  <rect class="band" x="200" y="124" width="492" height="12" rx="3"/>
+  <rect class="other" x="200" y="124" width="310" height="12" rx="3"/>
+  <text class="mono" x="806" y="134" text-anchor="end">0.60 s</text>
+  <text class="mono muted" x="866" y="134" text-anchor="end">0.95 s</text>
   <text class="h" x="34" y="168">update a gh skill directory</text>
   <text class="mono" x="34" y="192">skolar</text>
-  <rect class="band" x="200" y="182" width="402" height="12" rx="3"/>
-  <rect class="skolar" x="200" y="182" width="153" height="12" rx="3"/>
-  <text class="mono value" x="806" y="192" text-anchor="end">0.44 s</text>
-  <text class="mono muted" x="866" y="192" text-anchor="end">1.16 s</text>
+  <rect class="band" x="200" y="182" width="175" height="12" rx="3"/>
+  <rect class="skolar" x="200" y="182" width="52" height="12" rx="3"/>
+  <text class="mono value" x="806" y="192" text-anchor="end">0.10 s</text>
+  <text class="mono muted" x="866" y="192" text-anchor="end">0.34 s</text>
   <text class="mono" x="34" y="218">gh skill</text>
-  <rect class="band" x="200" y="208" width="326" height="12" rx="3"/>
-  <rect class="other" x="200" y="208" width="327" height="12" rx="3"/>
-  <text class="mono" x="806" y="218" text-anchor="end">0.94 s</text>
-  <text class="mono muted" x="866" y="218" text-anchor="end">0.94 s</text>
+  <rect class="band" x="200" y="208" width="322" height="12" rx="3"/>
+  <rect class="other" x="200" y="208" width="306" height="12" rx="3"/>
+  <text class="mono" x="806" y="218" text-anchor="end">0.59 s</text>
+  <text class="mono muted" x="866" y="218" text-anchor="end">0.62 s</text>
   <line class="rule" x1="200" x2="720" y1="252" y2="252"/>
   <path class="rule" d="M 200 252 V 260"/><text class="mono muted" x="200" y="274" text-anchor="middle">0.0 s</text>
-  <path class="rule" d="M 234 252 V 256"/>
-  <path class="rule" d="M 269 252 V 256"/>
-  <path class="rule" d="M 303 252 V 256"/>
-  <path class="rule" d="M 338 252 V 256"/>
-  <path class="rule" d="M 373 252 V 260"/><text class="mono muted" x="373" y="274" text-anchor="middle">0.5 s</text>
-  <path class="rule" d="M 407 252 V 256"/>
-  <path class="rule" d="M 442 252 V 256"/>
-  <path class="rule" d="M 477 252 V 256"/>
+  <path class="rule" d="M 252 252 V 256"/>
+  <path class="rule" d="M 304 252 V 256"/>
+  <path class="rule" d="M 356 252 V 256"/>
+  <path class="rule" d="M 408 252 V 256"/>
+  <path class="rule" d="M 460 252 V 260"/><text class="mono muted" x="460" y="274" text-anchor="middle">0.5 s</text>
   <path class="rule" d="M 512 252 V 256"/>
-  <path class="rule" d="M 546 252 V 260"/><text class="mono muted" x="546" y="274" text-anchor="middle">1.0 s</text>
-  <path class="rule" d="M 581 252 V 256"/>
-  <path class="rule" d="M 615 252 V 256"/>
-  <path class="rule" d="M 650 252 V 256"/>
-  <path class="rule" d="M 685 252 V 256"/>
-  <path class="rule" d="M 720 252 V 260"/><text class="mono muted" x="720" y="274" text-anchor="middle">1.5 s</text>
+  <path class="rule" d="M 564 252 V 256"/>
+  <path class="rule" d="M 616 252 V 256"/>
+  <path class="rule" d="M 668 252 V 256"/>
+  <path class="rule" d="M 720 252 V 260"/><text class="mono muted" x="720" y="274" text-anchor="middle">1.0 s</text>
   <g transform="translate(34 306)">
     <rect class="skolar" width="12" height="12" rx="3" y="-10"/><text class="corner" x="18">SKOLAR</text>
     <rect class="other" width="12" height="12" rx="3" y="-10" x="96"/><text class="corner" x="114">OTHER TOOL</text>
     <rect class="band" width="12" height="12" rx="3" y="-10" x="214"/><text class="corner" x="232">FIRST RUN</text>
   </g>
-  <text class="corner" x="866" y="306" text-anchor="end">darwin/arm64</text>
+  <text class="corner" x="866" y="306" text-anchor="end">linux/amd64</text>
 </svg>
