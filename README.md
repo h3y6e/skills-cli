@@ -44,6 +44,16 @@ skolar remove spec-plan
 
 skolar records each skill in `gh skill` metadata in its `SKILL.md`, so `gh skill` manages it too. Beside a `skills-lock.json`, `.agents/skills` keeps using the lockfile, so vercel-labs/skills manages it too.
 
+## Interop
+
+### Compatibility
+
+![Which interop cases skolar passes alongside vercel-labs/skills and gh skill](docs/compat.svg)
+
+### Benchmark
+
+![Time skolar, vercel-labs/skills, and gh skill take to update installed skills](docs/bench.svg)
+
 ## License
 
 [MIT](LICENSE)

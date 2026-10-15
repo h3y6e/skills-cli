@@ -14,7 +14,7 @@ permissions:
 jobs:
   tagpr:
     runs-on: ubuntu-slim
-    timeout-minutes: 5
+    timeout-minutes: 30
     outputs:
       tag: ${{ steps.tagpr.outputs.tag }}
     steps:
@@ -32,6 +32,7 @@ jobs:
         uses: Songmu/tagpr@967f2ab22be958948fb5bd439bfa3d404dd9dee8 # v1.21.1
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
   release:
     needs: tagpr

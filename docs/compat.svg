@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 384" width="900" height="384" role="img" aria-labelledby="t d">
+  <title id="t">skolar alongside vercel-labs/skills and gh skill</title>
+  <desc id="d">10 checks pass · 2 gaps in gh skill, with skolar d299120 · skills 1.7.1 · gh skill 2.102.0.
+skills, detect (pass): when vercel installed the skills, skolar reports them up to date and update changes nothing
+gh skill, detect (pass): when gh installed the skills, skolar reports them up to date and update changes nothing
+skills, detect without skillPath (pass): when the lock entries have no skillPath, skolar still finds every skill vercel installed
+skills, follow a move (pass): when a skillPath no longer exists upstream, skolar reports the move and update restores the lock entry vercel writes
+gh skill, follow a move (pass): when a github-path no longer exists upstream, skolar reports the move and update restores the files gh installs
+skills, install (pass): when skolar installs every skill vercel installs into a lockfile project, files and lock entries match and vercel update changes nothing
+gh skill, install (pass): when skolar installs without a lockfile, files match a gh install and gh update changes nothing
+gh skill, update (pass): when an unpinned install is behind the latest release, skolar update yields the same files as gh update
+gh skill, hand back (pass): when skolar updated a gh install and upstream is unchanged, gh update changes nothing
+gh skill, reinstall (pass): when gh reinstalls a skill skolar updated, the files match a fresh gh install
+gh skill, undiscoverable path (gap): when skolar records root-skill in gh format, the metadata holds its real path and gh update leaves the outdated install alone until gh can discover .
+gh skill, undiscoverable path (gap): when skolar records theta in gh format, the metadata holds its real path and gh update leaves the outdated install alone until gh can discover extras/theta
+</desc>
+  <style>
+    text { white-space: pre; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; font-size: 13px; fill: #57575a; }
+    .mono, .corner { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+    .mono { font-size: 11.5px; }
+    .corner { font-size: 10.5px; letter-spacing: .1em; fill: #8c8c90; }
+    .muted { fill: #8c8c90; }
+    .h { font-size: 14px; font-weight: 600; fill: #18181a; }
+    .card { fill: #fbfbfa; stroke: #8a8a8f; stroke-width: .6; }
+    .band { fill: #ededea; }
+    .rule { stroke: #d4d4d6; stroke-width: .6; }
+    @media (prefers-color-scheme: dark) {
+      text { fill: #a3a3a3; }
+      .corner, .muted { fill: #6e6e6e; }
+      .h { fill: #e6e6e6; }
+      .card { fill: #131313; stroke: #6a6a6a; }
+      .band { fill: #262626; }
+      .rule { stroke: #3e3e3e; }
+    }
+    .glyph { font-size: 11px; font-weight: 700; fill: #ffffff; }
+    .pass { fill: #0ca30c; }
+    .gap { fill: #fab219; }
+    .gap + .glyph { fill: #18181a; }
+    .fail { fill: #d03b3b; }
+    .none { fill: none; stroke: #b4b4b8; stroke-width: .6; }
+    .none + .glyph { fill: #8c8c90; font-weight: 400; }
+    @media (prefers-color-scheme: dark) {
+      .rule { stroke: #222222; }
+      .none { stroke: #3e3e3e; }
+      .none + .glyph { fill: #6e6e6e; }
+    }
+  </style>
+  <rect class="card" x=".5" y=".5" width="899" height="383"/>
+  <text class="corner" x="34" y="44">skolar d299120 · skills 1.7.1 · gh skill 2.102.0</text>
+  <text class="h" x="600" y="44" text-anchor="middle">skills</text>
+  <text class="h" x="760" y="44" text-anchor="middle">gh skill</text>
+  <line class="rule" x1="34" x2="866" y1="68" y2="68"/>
+  <text x="34" y="88">detect</text>
+  <g><title>skills, detect: pass</title><rect class="pass" x="592" y="76" width="16" height="16" rx="4"/><text class="glyph" x="600" y="88" text-anchor="middle">✓</text></g>
+  <g><title>gh skill, detect: pass</title><rect class="pass" x="752" y="76" width="16" height="16" rx="4"/><text class="glyph" x="760" y="88" text-anchor="middle">✓</text></g>
+  <line class="rule" x1="34" x2="866" y1="100" y2="100"/>
+  <text x="34" y="120">detect without skillPath</text>
+  <g><title>skills, detect without skillPath: pass</title><rect class="pass" x="592" y="108" width="16" height="16" rx="4"/><text class="glyph" x="600" y="120" text-anchor="middle">✓</text></g>
+  <g><title>gh skill, detect without skillPath: not covered</title><rect class="none" x="752" y="108" width="16" height="16" rx="4"/><text class="glyph" x="760" y="120" text-anchor="middle">–</text></g>
+  <line class="rule" x1="34" x2="866" y1="132" y2="132"/>
+  <text x="34" y="152">follow a move</text>
+  <g><title>skills, follow a move: pass</title><rect class="pass" x="592" y="140" width="16" height="16" rx="4"/><text class="glyph" x="600" y="152" text-anchor="middle">✓</text></g>
+  <g><title>gh skill, follow a move: pass</title><rect class="pass" x="752" y="140" width="16" height="16" rx="4"/><text class="glyph" x="760" y="152" text-anchor="middle">✓</text></g>
+  <line class="rule" x1="34" x2="866" y1="164" y2="164"/>
+  <text x="34" y="184">install</text>
+  <g><title>skills, install: pass</title><rect class="pass" x="592" y="172" width="16" height="16" rx="4"/><text class="glyph" x="600" y="184" text-anchor="middle">✓</text></g>
+  <g><title>gh skill, install: pass</title><rect class="pass" x="752" y="172" width="16" height="16" rx="4"/><text class="glyph" x="760" y="184" text-anchor="middle">✓</text></g>
+  <line class="rule" x1="34" x2="866" y1="196" y2="196"/>
+  <text x="34" y="216">update</text>
+  <g><title>skills, update: not covered</title><rect class="none" x="592" y="204" width="16" height="16" rx="4"/><text class="glyph" x="600" y="216" text-anchor="middle">–</text></g>
+  <g><title>gh skill, update: pass</title><rect class="pass" x="752" y="204" width="16" height="16" rx="4"/><text class="glyph" x="760" y="216" text-anchor="middle">✓</text></g>
+  <line class="rule" x1="34" x2="866" y1="228" y2="228"/>
+  <text x="34" y="248">hand back</text>
+  <g><title>skills, hand back: not covered</title><rect class="none" x="592" y="236" width="16" height="16" rx="4"/><text class="glyph" x="600" y="248" text-anchor="middle">–</text></g>
+  <g><title>gh skill, hand back: pass</title><rect class="pass" x="752" y="236" width="16" height="16" rx="4"/><text class="glyph" x="760" y="248" text-anchor="middle">✓</text></g>
+  <line class="rule" x1="34" x2="866" y1="260" y2="260"/>
+  <text x="34" y="280">reinstall</text>
+  <g><title>skills, reinstall: not covered</title><rect class="none" x="592" y="268" width="16" height="16" rx="4"/><text class="glyph" x="600" y="280" text-anchor="middle">–</text></g>
+  <g><title>gh skill, reinstall: pass</title><rect class="pass" x="752" y="268" width="16" height="16" rx="4"/><text class="glyph" x="760" y="280" text-anchor="middle">✓</text></g>
+  <line class="rule" x1="34" x2="866" y1="292" y2="292"/>
+  <text x="34" y="312">undiscoverable path</text>
+  <g><title>skills, undiscoverable path: not covered</title><rect class="none" x="592" y="300" width="16" height="16" rx="4"/><text class="glyph" x="600" y="312" text-anchor="middle">–</text></g>
+  <g><title>gh skill, undiscoverable path: gap</title><rect class="gap" x="752" y="300" width="16" height="16" rx="4"/><text class="glyph" x="760" y="312" text-anchor="middle">!</text></g>
+  <g transform="translate(34 360)">
+    <rect class="pass" width="12" height="12" rx="3" y="-10"/><text class="corner" x="18">PASS</text>
+    <rect class="gap" width="12" height="12" rx="3" y="-10" x="80"/><text class="corner" x="98">GAP IN THE TOOL</text>
+    <rect class="fail" width="12" height="12" rx="3" y="-10" x="232"/><text class="corner" x="250">FAIL</text>
+    <rect class="none" width="12" height="12" rx="3" y="-10" x="312"/><text class="corner" x="330">NOT COVERED</text>
+  </g>
+</svg>
