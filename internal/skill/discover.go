@@ -106,49 +106,46 @@ func DiscoverSkills(repoRoot string) ([]DiscoveredSkill, error) {
 func findSkillDirs(repoRoot string) (map[string]skillDir, error) {
 	dirs := map[string]skillDir{}
 	err := filepath.WalkDir(repoRoot, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
+		if err != nil || !d.IsDir() {
 			return err
 		}
-		if !d.IsDir() {
-			return nil
+		if info, err := os.Stat(filepath.Join(p, "SKILL.md")); err == nil && info.Mode().IsRegular() {
+			rel, err := filepath.Rel(repoRoot, p)
+			if err != nil {
+				return err
+			}
+			if dir, ok := readSkillDir(p, filepath.ToSlash(rel)); ok {
+				dirs[dir.path] = dir
+			}
 		}
 		if p != repoRoot && slices.Contains(skipDirs, d.Name()) {
 			return filepath.SkipDir
 		}
-		info, err := os.Stat(filepath.Join(p, "SKILL.md"))
-		if err != nil || !info.Mode().IsRegular() {
-			return nil
-		}
-		rel, err := filepath.Rel(repoRoot, p)
-		if err != nil {
-			return err
-		}
-		dir, err := readSkillDir(p, filepath.ToSlash(rel))
-		if err != nil {
-			return err
-		}
-		dirs[dir.path] = dir
 		return nil
 	})
 	return dirs, err
 }
 
-func readSkillDir(dir, rel string) (skillDir, error) {
+// readSkillDir reads a skill's SKILL.md, reporting false when it is
+// unreadable or its frontmatter is malformed, which vercel-labs/skills skips.
+func readSkillDir(dir, rel string) (skillDir, bool) {
 	data, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
 	if err != nil {
-		return skillDir{}, err
+		return skillDir{}, false
 	}
 	raw, _, err := parseFrontmatter(string(data))
 	if err != nil {
-		return skillDir{}, err
+		return skillDir{}, false
 	}
 	name, _ := raw["name"].(string)
 	description, _ := raw["description"].(string)
-	d := skillDir{path: rel, name: name, vercelValid: name != "" && description != ""}
+	metadata, _ := raw["metadata"].(map[string]any)
+	internal := metadata["internal"] == true && !slices.Contains([]string{"1", "true"}, os.Getenv("INSTALL_INTERNAL_SKILLS"))
+	d := skillDir{path: rel, name: name, vercelValid: name != "" && description != "" && !internal}
 	if d.name == "" && rel != "." {
 		d.name = path.Base(rel)
 	}
-	return d, nil
+	return d, true
 }
 
 // vercelDefaults returns, in search order, the skill directories

@@ -156,3 +156,73 @@ func TestDiscoverSkillsLayouts(t *testing.T) {
 		}
 	})
 }
+
+func TestDiscoverSkillsEdges(t *testing.T) {
+	t.Run("when a skill directory is named like a skipped directory, it is still found", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		root := writeRepo(t, map[string]string{"skills/build/SKILL.md": fm("build"), "skills/build/dist/SKILL.md": fm("hidden")})
+
+		// Act
+		skills, err := skill.DiscoverSkills(root)
+
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := discoveredPaths(t, skills, false); !maps.Equal(got, map[string]string{"build": "skills/build"}) {
+			t.Errorf("DiscoverSkills() = %v", got)
+		}
+	})
+
+	t.Run("when one SKILL.md has malformed frontmatter, the other skills are still found", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		root := writeRepo(t, map[string]string{"skills/good/SKILL.md": fm("good"), "extras/bad/SKILL.md": "---\nname: [\n---\n"})
+
+		// Act
+		skills, err := skill.DiscoverSkills(root)
+
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := discoveredPaths(t, skills, false); !maps.Equal(got, map[string]string{"good": "skills/good"}) {
+			t.Errorf("DiscoverSkills() = %v", got)
+		}
+	})
+
+	t.Run("when a skill only vercel-labs/skills finds is marked internal, it is found but not a default", func(t *testing.T) {
+		// Arrange
+		t.Setenv("INSTALL_INTERNAL_SKILLS", "")
+		root := writeRepo(t, map[string]string{".claude/skills/secret/SKILL.md": "---\nname: secret\ndescription: d\nmetadata:\n  internal: true\n---\n"})
+
+		// Act
+		skills, err := skill.DiscoverSkills(root)
+
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(skills) != 1 || skills[0].Default {
+			t.Errorf("skills = %+v, want secret found but not a default", skills)
+		}
+	})
+
+	t.Run("when INSTALL_INTERNAL_SKILLS opts in, an internal skill is a default", func(t *testing.T) {
+		// Arrange
+		t.Setenv("INSTALL_INTERNAL_SKILLS", "1")
+		root := writeRepo(t, map[string]string{".claude/skills/secret/SKILL.md": "---\nname: secret\ndescription: d\nmetadata:\n  internal: true\n---\n"})
+
+		// Act
+		skills, err := skill.DiscoverSkills(root)
+
+		// Assert
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(skills) != 1 || !skills[0].Default {
+			t.Errorf("skills = %+v, want secret as a default", skills)
+		}
+	})
+}

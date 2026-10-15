@@ -116,10 +116,12 @@ func FilterInstalledBySource(installed []InstalledSkill, source string) ([]Insta
 // repositories. Replaceable in tests.
 type UpstreamFuncs struct {
 	// FetchLatest resolves the latest ref of repoURL (gh skill semantics:
-	// latest release, then default branch) and clones it into a new temp
-	// directory, returning the clone path and the resolved ref.
+	// latest release, then default branch) and clones it into a new directory
+	// whose parent is free for staging, returning the clone path and the
+	// resolved ref.
 	FetchLatest func(repoURL string) (cloneDir string, ref git.ResolvedRef, err error)
-	// FetchRef clones repoURL at ref into a new temp directory.
+	// FetchRef clones repoURL at ref into a new directory whose parent is
+	// free for staging.
 	FetchRef func(repoURL, ref string) (cloneDir string, err error)
 	// TreeSHA returns the git tree SHA of path within a repository directory.
 	TreeSHA func(repoDir, path string) (string, error)
@@ -140,12 +142,9 @@ func NewUpstreamFuncs(ctx context.Context, tmpPrefix string) (UpstreamFuncs, fun
 			if err != nil {
 				return "", git.ResolvedRef{}, fmt.Errorf("create temp dir: %w", err)
 			}
-			if err := git.ShallowClone(ctx, repoURL, resolved.Full, tmpDir); err != nil {
-				os.RemoveAll(tmpDir)
-				return "", git.ResolvedRef{}, err
-			}
 			dirs = append(dirs, tmpDir)
-			return tmpDir, resolved, nil
+			cloneDir := filepath.Join(tmpDir, "repo")
+			return cloneDir, resolved, git.ShallowClone(ctx, repoURL, resolved.Full, cloneDir)
 		},
 		FetchRef: func(repoURL, ref string) (string, error) {
 			tmpDir, err := os.MkdirTemp("", tmpPrefix)
@@ -153,7 +152,8 @@ func NewUpstreamFuncs(ctx context.Context, tmpPrefix string) (UpstreamFuncs, fun
 				return "", fmt.Errorf("create temp dir: %w", err)
 			}
 			dirs = append(dirs, tmpDir)
-			return tmpDir, git.ShallowClone(ctx, repoURL, ref, tmpDir)
+			cloneDir := filepath.Join(tmpDir, "repo")
+			return cloneDir, git.ShallowClone(ctx, repoURL, ref, cloneDir)
 		},
 		TreeSHA: func(repoDir, path string) (string, error) {
 			return git.TreeSHA(ctx, repoDir, path)
@@ -311,8 +311,10 @@ func injectStagedMetadata(stagedDir string, meta SourceMetadata) error {
 	return os.WriteFile(path, []byte(injected), 0o644)
 }
 
-func copyToStaging(parentDir, srcDir string) (string, error) {
-	dir, err := os.MkdirTemp(parentDir, ".staged-*")
+// copyToStaging copies srcDir, a directory within cloneDir, beside the clone
+// so that no staged copy ends up inside another skill's tree.
+func copyToStaging(cloneDir, srcDir string) (string, error) {
+	dir, err := os.MkdirTemp(filepath.Dir(cloneDir), "staged-*")
 	if err != nil {
 		return "", err
 	}
